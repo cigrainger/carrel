@@ -1,32 +1,99 @@
 //! carrel-cli: headless development interface for Carrel.
-//!
-//! The CLI is intentionally small for now. Brief 4 gives it real store-backed
-//! commands once the schema exists.
 
 #![deny(unsafe_code)]
 
+use std::path::PathBuf;
+use std::process::ExitCode;
+
 use clap::{Parser, Subcommand};
+use tracing_subscriber::filter::LevelFilter;
+
+mod commands;
+mod config;
+mod error;
+mod output;
+
+use crate::commands::db::DbCommand;
+use crate::commands::init::InitCommand;
+use crate::error::Result;
 
 /// Command-line entry point for Carrel development tasks.
 #[derive(Debug, Parser)]
 #[command(version, about = "Headless development interface for Carrel")]
 struct Cli {
+    /// Override the Carrel data directory.
+    #[arg(long, global = true, value_name = "PATH")]
+    data_dir: Option<PathBuf>,
+
+    /// Emit machine-readable JSON where a command supports it.
+    #[arg(long, global = true)]
+    json: bool,
+
+    /// Enable info-level diagnostic logging.
+    #[arg(long, global = true, conflicts_with = "debug")]
+    verbose: bool,
+
+    /// Enable debug-level diagnostic logging.
+    #[arg(long, global = true)]
+    debug: bool,
+
     /// Command to run.
     #[command(subcommand)]
-    command: Option<Command>,
+    command: Command,
 }
 
 /// Available CLI commands.
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Print the CLI version.
-    Version,
+    /// Initialize a fresh Carrel data directory.
+    Init(InitCommand),
+
+    /// Print diagnostic information about the current install.
+    Info,
+
+    /// Inspect or maintain the local Cozo store.
+    Db {
+        /// Database command to run.
+        #[command(subcommand)]
+        command: DbCommand,
+    },
 }
 
-fn main() {
+fn main() -> ExitCode {
     let cli = Cli::parse();
+    init_tracing(&cli);
 
-    match cli.command.unwrap_or(Command::Version) {
-        Command::Version => println!("carrel-cli {}", env!("CARGO_PKG_VERSION")),
+    match run(cli) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("error: {error}");
+            ExitCode::from(error.exit_code())
+        }
     }
+}
+
+fn run(cli: Cli) -> Result<()> {
+    let context = config::Context::resolve(cli.data_dir, cli.json)?;
+
+    match cli.command {
+        Command::Init(command) => commands::init::run(&context, &command),
+        Command::Info => commands::info::run(&context),
+        Command::Db { command } => commands::db::run(&context, &command),
+    }
+}
+
+fn init_tracing(cli: &Cli) {
+    let level = if cli.debug {
+        LevelFilter::DEBUG
+    } else if cli.verbose {
+        LevelFilter::INFO
+    } else {
+        LevelFilter::WARN
+    };
+
+    let _ = tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .with_max_level(level)
+        .without_time()
+        .try_init();
 }

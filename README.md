@@ -27,10 +27,10 @@ Carrel is a Rust workspace. The common development commands are:
 just check   # format check, clippy, tests
 just test    # run all tests
 just dev     # run the desktop app stub
-just cli     # run the CLI stub
+just cli     # run CLI commands
 ```
 
-The desktop app is only a placeholder binary until the Tauri and Leptos shell is implemented. The CLI is the main dogfooding surface while the lower layers come online.
+The desktop app is only a placeholder binary until the Tauri and Leptos shell is implemented. The CLI can initialize a local data directory, print install info, run schema migrations, and execute raw Cozo queries; it is the main dogfooding surface while the lower layers come online.
 
 ## License
 

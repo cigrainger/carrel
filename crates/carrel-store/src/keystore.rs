@@ -12,8 +12,8 @@ use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
-const MASTER_KEY_FILE: &str = "master-key.json";
-const DEVICE_KEY_FILE: &str = "device-key.json";
+const MASTER_KEY_FILE: &str = "master.enc";
+const DEVICE_KEY_FILE: &str = "device.key";
 const FORMAT_VERSION: u32 = 1;
 const SALT_LENGTH: usize = 16;
 const XCHACHA_NONCE_LENGTH: usize = 24;
