@@ -19,6 +19,19 @@ This repository is the home of the project's design documents, code, and (eventu
 
 If you're trying to understand the project, read VISION first.
 
+## Development
+
+Carrel is a Rust workspace. The common development commands are:
+
+```bash
+just check   # format check, clippy, tests
+just test    # run all tests
+just dev     # run the desktop app stub
+just cli     # run the CLI stub
+```
+
+The desktop app is only a placeholder binary until the Tauri and Leptos shell is implemented.
+
 ## License
 
 To be determined. The project's commitments — no acquisition, no relicensing into a closed product, data and protocols belong to the user — argue for a copyleft license; AGPL is likely. Until a license is chosen, all rights are reserved.
