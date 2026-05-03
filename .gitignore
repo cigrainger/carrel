@@ -1,0 +1,34 @@
+# Rust / Cargo
+target/
+Cargo.lock.bak
+*.rs.bk
+
+# Tauri
+src-tauri/target/
+src-tauri/Cargo.lock.bak
+
+# Leptos / WASM
+dist/
+pkg/
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# OS
+Thumbs.db
+
+# Logs and local state
+*.log
+.env
+.env.local
+
+# Test artifacts
+coverage/
+*.profraw
+
+# Internal workboard — separate private git repo
+/internal/
