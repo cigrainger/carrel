@@ -56,3 +56,28 @@ impl ParsedEntry {
 pub fn feed_guid_identifier(feed_url: &str, feed_guid: &str) -> String {
     format!("feed_guid:{feed_url}:{feed_guid}")
 }
+
+/// Readable article content extracted for a feed entry before store ingest.
+#[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+pub struct ExtractedEntryContent {
+    /// Entry GUID this content belongs to, before feed URL scoping.
+    pub feed_guid: String,
+    /// Extracted or embedded article title, if the extractor found one.
+    pub title: Option<String>,
+    /// Extracted byline text, if present.
+    pub byline: Option<String>,
+    /// Blob id containing sanitized readable HTML.
+    pub blob_id: String,
+    /// Number of bytes in the stored readable HTML blob.
+    pub byte_size: i64,
+    /// Extractor label persisted in `item_content.extracted_with`.
+    pub extracted_with: String,
+    /// Word count of the sanitized readable body.
+    pub word_count: i64,
+    /// Estimated reading time in whole minutes.
+    pub estimated_read_minutes: i64,
+    /// Extracted or inherited language tag, if known.
+    pub language: Option<String>,
+    /// Source site name, if known.
+    pub site_name: Option<String>,
+}

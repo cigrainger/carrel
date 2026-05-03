@@ -6,9 +6,11 @@
 #![deny(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod blobs;
 mod error;
 pub mod feeds;
 pub mod ids;
+pub mod items;
 pub mod keystore;
 mod migrations;
 pub mod schema;

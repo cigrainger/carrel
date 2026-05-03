@@ -39,6 +39,14 @@ pub enum CliError {
     #[error(transparent)]
     Parse(#[from] carrel_feeds::ParseError),
 
+    /// Article extraction failed.
+    #[error(transparent)]
+    Extract(#[from] carrel_feeds::ExtractError),
+
+    /// Blob storage failed.
+    #[error(transparent)]
+    Blob(#[from] carrel_store::blobs::BlobError),
+
     /// Key persistence failed.
     #[error(transparent)]
     Keystore(#[from] carrel_store::keystore::KeystoreError),
@@ -83,6 +91,8 @@ impl CliError {
             | Self::Store(_)
             | Self::Fetch(_)
             | Self::Parse(_)
+            | Self::Extract(_)
+            | Self::Blob(_)
             | Self::Keystore(_)
             | Self::Json(_) => 2,
         }

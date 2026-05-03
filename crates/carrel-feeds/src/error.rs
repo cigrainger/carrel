@@ -1,5 +1,6 @@
-//! Error types for feed fetching and parsing.
+//! Error types for feed fetching, parsing, and extraction.
 
+use std::io;
 use std::time::Duration;
 
 /// Errors raised while fetching a feed or its robots policy.
@@ -97,4 +98,66 @@ pub enum ParseError {
     /// feed-rs could not parse the feed bytes.
     #[error("failed to parse feed: {0}")]
     Feed(#[from] feed_rs::parser::ParseFeedError),
+}
+
+/// Errors raised while extracting readable article content.
+#[derive(Debug, thiserror::Error)]
+pub enum ExtractError {
+    /// The article URL was malformed or unsupported.
+    #[error("invalid article URL {url}: {source}")]
+    InvalidUrl {
+        /// URL that could not be parsed.
+        url: String,
+        /// Underlying URL parse error.
+        #[source]
+        source: url::ParseError,
+    },
+
+    /// Fetching the article or an image failed.
+    #[error(transparent)]
+    Fetch(#[from] FetchError),
+
+    /// The server reported that the article did not change when content was required.
+    #[error("article fetch for {url} returned 304 Not Modified without cached content")]
+    NotModified {
+        /// URL being extracted.
+        url: String,
+    },
+
+    /// The server returned a non-success status for the article URL.
+    #[error("article fetch for {url} returned HTTP {status}")]
+    HttpStatus {
+        /// URL being extracted.
+        url: String,
+        /// HTTP status returned by the server.
+        status: u16,
+    },
+
+    /// The fallback extractor could not be spawned or communicated with.
+    #[error("failed to run fallback extractor {command}: {source}")]
+    FallbackIo {
+        /// Command that failed.
+        command: String,
+        /// Underlying I/O error.
+        #[source]
+        source: io::Error,
+    },
+
+    /// The fallback extractor exited unsuccessfully.
+    #[error("fallback extractor {command} failed with status {status}: {stderr}")]
+    FallbackFailed {
+        /// Command that failed.
+        command: String,
+        /// Process exit status.
+        status: String,
+        /// Standard error captured from the process.
+        stderr: String,
+    },
+
+    /// The extracted output did not contain readable content.
+    #[error("extractor produced no readable content for {url}")]
+    EmptyContent {
+        /// URL or base URL being extracted.
+        url: String,
+    },
 }

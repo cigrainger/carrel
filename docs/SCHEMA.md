@@ -230,7 +230,7 @@ The detection is rule-based and lives in `carrel-feeds`. Adding a new shape attr
 
 ## Content storage
 
-Bulky content — readable HTML, images, EPUBs, PDFs, transcripts — is stored as iroh-blobs and referenced from Cozo facts by hash. Cozo holds metadata; iroh-blobs holds payloads.
+Bulky content — readable HTML, images, EPUBs, PDFs, transcripts — is stored as content-addressed blobs and referenced from Cozo facts by hash. Cozo holds metadata; the blob store holds payloads. The current implementation is a filesystem-backed BLAKE3 store in `carrel-store::blobs`; those 32-byte hashes are intentionally the same shape as the iroh-blobs keys the sync layer will use when blob exchange arrives.
 
 ```
 :create item_content {

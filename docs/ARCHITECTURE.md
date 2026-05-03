@@ -219,7 +219,7 @@ The schema is documented separately in `SCHEMA.md`. The principle here is just t
 
 The exceptions, deliberately scoped:
 
-- **Iroh-blobs** for bulky payloads: cached article HTML, images, EPUBs, PDFs, transcripts. These are content-addressed, so their hashes appear in Cozo facts but their bodies live in the blob store.
+- **Blob storage** for bulky payloads: cached article HTML, images, EPUBs, PDFs, transcripts. These are content-addressed, so their hashes appear in Cozo facts but their bodies live in the blob store. The current `carrel-store::blobs` implementation is a filesystem-backed BLAKE3 store; the ids are chosen to double as future iroh-blobs keys when sync starts moving blobs between peers.
 - **Iroh-docs** for the sync layer: a mirror of the *shareable subset* of facts, reformatted for sync. The bridge keeps these in sync with Cozo. Cozo remains authoritative.
 - **Webview state**: ephemeral UI state (cursor position, what's selected, what's expanded) lives in Leptos signals and is not persisted across app launches except where explicitly designed to be (e.g., last-read position per item, which *is* a fact and lives in Cozo).
 

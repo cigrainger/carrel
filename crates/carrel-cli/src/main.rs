@@ -16,6 +16,7 @@ mod output;
 use crate::commands::db::DbCommand;
 use crate::commands::feed::FeedCommand;
 use crate::commands::init::InitCommand;
+use crate::commands::item::ItemCommand;
 use crate::error::Result;
 
 /// Command-line entry point for Carrel development tasks.
@@ -65,6 +66,13 @@ enum Command {
         #[command(subcommand)]
         command: FeedCommand,
     },
+
+    /// Inspect stored reading items.
+    Item {
+        /// Item command to run.
+        #[command(subcommand)]
+        command: ItemCommand,
+    },
 }
 
 #[tokio::main]
@@ -89,6 +97,7 @@ async fn run(cli: Cli) -> Result<()> {
         Command::Info => commands::info::run(&context),
         Command::Db { command } => commands::db::run(&context, &command),
         Command::Feed { command } => commands::feed::run(&context, &command).await,
+        Command::Item { command } => commands::item::run(&context, &command).await,
     }
 }
 

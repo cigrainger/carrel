@@ -1,10 +1,10 @@
 //! Store-backed feed subscription and ingest operations.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use carrel_core::feed::{
-    DEFAULT_FETCH_INTERVAL_SECONDS, MAX_FETCH_INTERVAL_SECONDS, ParsedEntry, ParsedFeed,
-    SUSPENDED_FAILURE_THRESHOLD, feed_guid_identifier,
+    DEFAULT_FETCH_INTERVAL_SECONDS, ExtractedEntryContent, MAX_FETCH_INTERVAL_SECONDS, ParsedEntry,
+    ParsedFeed, SUSPENDED_FAILURE_THRESHOLD, feed_guid_identifier,
 };
 use cozo::{DataValue, Num, Validity};
 use time::OffsetDateTime;
@@ -193,11 +193,27 @@ impl Store {
         parsed: &ParsedFeed,
         metadata: &FeedFetchMetadata,
     ) -> Result<IngestStats> {
+        self.ingest_feed_with_content(feed_url, parsed, metadata, &[])
+    }
+
+    /// Ingest parsed feed entries plus any extracted readable content blobs.
+    pub fn ingest_feed_with_content(
+        &self,
+        feed_url: &str,
+        parsed: &ParsedFeed,
+        metadata: &FeedFetchMetadata,
+        contents: &[ExtractedEntryContent],
+    ) -> Result<IngestStats> {
         let feed_url = canonical_feed_url(feed_url)?;
         let mut stats = IngestStats::default();
+        let contents_by_guid = contents
+            .iter()
+            .map(|content| (content.feed_guid.as_str(), content))
+            .collect::<HashMap<_, _>>();
 
         for entry in &parsed.entries {
-            match self.ingest_entry(&feed_url, parsed, entry) {
+            let content = contents_by_guid.get(entry.feed_guid.as_str()).copied();
+            match self.ingest_entry(&feed_url, parsed, entry, content) {
                 Ok(true) => stats.new_items += 1,
                 Ok(false) => stats.updated_items += 1,
                 Err(error) => stats.errors.push(EntryError {
@@ -233,6 +249,7 @@ impl Store {
         feed_url: &str,
         parsed: &ParsedFeed,
         entry: &ParsedEntry,
+        content: Option<&ExtractedEntryContent>,
     ) -> Result<bool> {
         let scoped_guid = feed_guid_identifier(feed_url, &entry.feed_guid);
         let canonical_url = entry.url.as_deref().map(canonicalize_external_identifier);
@@ -243,11 +260,21 @@ impl Store {
             .unwrap_or_else(|| id_for_external(&entry.canonical_identifier(feed_url)));
         let is_new = !self.item_exists(&item_id)?;
 
-        self.put_item(feed_url, parsed, entry, &item_id, canonical_url.as_deref())?;
+        self.put_item(
+            feed_url,
+            parsed,
+            entry,
+            &item_id,
+            canonical_url.as_deref(),
+            content,
+        )?;
         if let Some(url) = canonical_url.as_deref() {
             self.put_identifier(&item_id, "url", url, true)?;
         }
         self.put_identifier(&item_id, "feed_guid", &scoped_guid, canonical_url.is_none())?;
+        if let Some(content) = content {
+            self.put_content(&item_id, content)?;
+        }
 
         Ok(is_new)
     }
@@ -313,10 +340,12 @@ impl Store {
         entry: &ParsedEntry,
         item_id: &str,
         canonical_url: Option<&str>,
+        content: Option<&ExtractedEntryContent>,
     ) -> Result<()> {
         let title = entry
             .title
             .clone()
+            .or_else(|| content.and_then(|content| content.title.clone()))
             .or_else(|| canonical_url.map(ToString::to_string))
             .unwrap_or_else(|| entry.feed_guid.clone());
         let byline = if entry.authors.is_empty() {
@@ -324,6 +353,16 @@ impl Store {
         } else {
             Some(entry.authors.join(", "))
         };
+        let stored_byline = content
+            .and_then(|content| content.byline.clone())
+            .or_else(|| byline.clone());
+        let site_name = content
+            .and_then(|content| content.site_name.clone())
+            .or_else(|| parsed.title.clone());
+        let language = content
+            .and_then(|content| content.language.clone())
+            .or_else(|| entry.language.clone())
+            .or_else(|| parsed.language.clone());
 
         self.query_with_params(
             r#"
@@ -344,8 +383,8 @@ impl Store {
                 ?[item_id, feed_url, word_count, estimated_read_minutes, site_name, byline] :=
                     item_id = $id,
                     feed_url = $feed_url,
-                    word_count = null,
-                    estimated_read_minutes = null,
+                    word_count = $word_count,
+                    estimated_read_minutes = $estimated_read_minutes,
                     site_name = $site_name,
                     byline = $byline
                 :put item_article {item_id => feed_url, word_count, estimated_read_minutes, site_name, byline}
@@ -371,13 +410,53 @@ impl Store {
                 ),
                 (
                     "language".to_string(),
-                    option_string(&entry.language.clone().or_else(|| parsed.language.clone())),
+                    option_string(&language),
                 ),
                 ("summary".to_string(), option_string(&entry.summary_html)),
                 ("discovered_at".to_string(), validity_now()),
                 ("feed_url".to_string(), DataValue::from(feed_url)),
-                ("site_name".to_string(), option_string(&parsed.title)),
-                ("byline".to_string(), option_string(&byline)),
+                (
+                    "word_count".to_string(),
+                    option_i64(content.map(|content| content.word_count)),
+                ),
+                (
+                    "estimated_read_minutes".to_string(),
+                    option_i64(content.map(|content| content.estimated_read_minutes)),
+                ),
+                ("site_name".to_string(), option_string(&site_name)),
+                ("byline".to_string(), option_string(&stored_byline)),
+            ]),
+        )?;
+        Ok(())
+    }
+
+    fn put_content(&self, item_id: &str, content: &ExtractedEntryContent) -> Result<()> {
+        self.query_with_params(
+            r#"
+            ?[item_id, format, blob_id, fetched_at, extracted_with, byte_size] :=
+                item_id = $item_id,
+                format = 'html_readable',
+                blob_id = $blob_id,
+                fetched_at = $fetched_at,
+                extracted_with = $extracted_with,
+                byte_size = $byte_size
+            :put item_content {item_id, format => blob_id, fetched_at, extracted_with, byte_size}
+            "#,
+            BTreeMap::from([
+                ("item_id".to_string(), DataValue::from(item_id)),
+                (
+                    "blob_id".to_string(),
+                    DataValue::from(content.blob_id.as_str()),
+                ),
+                ("fetched_at".to_string(), validity_now()),
+                (
+                    "extracted_with".to_string(),
+                    DataValue::from(content.extracted_with.as_str()),
+                ),
+                (
+                    "byte_size".to_string(),
+                    DataValue::Num(Num::Int(content.byte_size)),
+                ),
             ]),
         )?;
         Ok(())
@@ -501,6 +580,12 @@ fn option_str(value: Option<&str>) -> DataValue {
     value.map(DataValue::from).unwrap_or(DataValue::Null)
 }
 
+fn option_i64(value: Option<i64>) -> DataValue {
+    value
+        .map(|value| DataValue::Num(Num::Int(value)))
+        .unwrap_or(DataValue::Null)
+}
+
 fn option_validity(value: Option<i64>) -> DataValue {
     value
         .map(|micros| DataValue::Validity(Validity::from((micros, true))))
@@ -589,7 +674,8 @@ fn deterministic_jitter_seconds(url: &str, failures: i64, interval: i64) -> i64 
 
 #[cfg(test)]
 mod tests {
-    use carrel_core::feed::{ParsedEntry, ParsedFeed};
+    use carrel_core::feed::{ExtractedEntryContent, ParsedEntry, ParsedFeed};
+    use cozo::DataValue;
 
     use super::{FeedFetchMetadata, Store, canonicalize_external_identifier};
 
@@ -661,5 +747,81 @@ mod tests {
             )
             .unwrap();
         assert_eq!(rows.rows.len(), 1);
+    }
+
+    #[test]
+    fn ingest_with_content_writes_item_content_and_article_stats() {
+        let store = Store::open_in_memory().unwrap();
+        store.migrate().unwrap();
+        store.add_feed("https://example.com/feed.xml").unwrap();
+
+        let parsed = ParsedFeed {
+            title: Some("Example".to_string()),
+            description: None,
+            language: Some("en".to_string()),
+            entries: vec![ParsedEntry {
+                feed_guid: "post-1".to_string(),
+                title: Some("Feed Title".to_string()),
+                authors: Vec::new(),
+                url: Some("https://example.com/post-1".to_string()),
+                published_at_micros: None,
+                language: None,
+                summary_html: None,
+                content_html: None,
+            }],
+        };
+        let content = ExtractedEntryContent {
+            feed_guid: "post-1".to_string(),
+            title: Some("Extracted Title".to_string()),
+            byline: Some("Ada".to_string()),
+            blob_id: "abc123".to_string(),
+            byte_size: 42,
+            extracted_with: "readable-readability".to_string(),
+            word_count: 500,
+            estimated_read_minutes: 2,
+            language: Some("en-AU".to_string()),
+            site_name: Some("example.com".to_string()),
+        };
+
+        store
+            .ingest_feed_with_content(
+                "https://example.com/feed.xml",
+                &parsed,
+                &FeedFetchMetadata::default(),
+                &[content],
+            )
+            .unwrap();
+
+        let rows = store
+            .query(
+                r#"
+                ?[id] := *item{id}
+                :limit 1
+                "#,
+            )
+            .unwrap();
+        let DataValue::Str(item_id) = &rows.rows[0][0] else {
+            panic!("expected item id string");
+        };
+        let content = store
+            .get_item_detail(item_id)
+            .unwrap()
+            .unwrap()
+            .readable
+            .unwrap();
+        assert_eq!(content.blob_id, "abc123");
+        assert_eq!(content.byte_size, 42);
+
+        let rows = store
+            .query(
+                r#"
+                ?[word_count, estimated_read_minutes, byline] :=
+                    *item_article{word_count, estimated_read_minutes, byline}
+                "#,
+            )
+            .unwrap();
+        assert_eq!(rows.rows[0][0], cozo::DataValue::Num(cozo::Num::Int(500)));
+        assert_eq!(rows.rows[0][1], cozo::DataValue::Num(cozo::Num::Int(2)));
+        assert_eq!(rows.rows[0][2], cozo::DataValue::from("Ada"));
     }
 }

@@ -1,5 +1,6 @@
 use std::process::{Command, Output};
 
+use carrel_store::ids::{canonicalize_external_identifier, id_for_external};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -114,6 +115,31 @@ async fn feed_add_list_fetch_and_remove_work() {
         )
         .mount(&server)
         .await;
+    Mock::given(method("GET"))
+        .and(path("/article"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(r#"
+<!doctype html>
+<html>
+  <head>
+    <title>CLI Article</title>
+    <meta name="author" content="Ada">
+  </head>
+  <body>
+    <article>
+      <h1>CLI Article</h1>
+      <p>This readable article body is fetched from the item URL and stored as a local content blob.</p>
+      <img src="/image.png" alt="fixture">
+    </article>
+  </body>
+</html>
+"#))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/image.png"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![1, 2, 3]))
+        .mount(&server)
+        .await;
 
     let tempdir = tempfile::tempdir().unwrap();
     let data_dir = tempdir.path().to_str().unwrap();
@@ -149,12 +175,92 @@ async fn feed_add_list_fetch_and_remove_work() {
     assert!(info.stdout.contains("Items:         1"));
     assert!(info.stdout.contains("Feeds:         1"));
 
+    let item_id = id_for_external(&canonicalize_external_identifier(&format!(
+        "{}/article",
+        server.uri()
+    )));
+    let show = run_ok(
+        carrel_cli()
+            .args(["--data-dir", data_dir])
+            .args(["item", "show", &item_id, "--words", "12"]),
+    );
+    assert!(show.stdout.contains("CLI Item"));
+    assert!(show.stdout.contains("readable article body is fetched"));
+
     let remove = run_ok(
         carrel_cli()
             .args(["--data-dir", data_dir])
             .args(["feed", "remove", &feed_url]),
     );
     assert!(remove.stdout.contains("Removed"));
+}
+
+#[tokio::test]
+async fn feed_fetch_uses_embedded_content_without_fetching_item_url() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/robots.txt"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("User-agent: *\nAllow: /\n"))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/feed.json"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(format!(
+            r#"{{
+  "version": "https://jsonfeed.org/version/1.1",
+  "title": "Embedded Feed",
+  "items": [
+    {{
+      "id": "embedded-1",
+      "url": "{}/embedded",
+      "title": "Embedded Item",
+      "content_html": "<p>Embedded body content should be stored without fetching the item URL.</p>"
+    }}
+  ]
+}}"#,
+            server.uri()
+        )))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/embedded"))
+        .respond_with(ResponseTemplate::new(500))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let tempdir = tempfile::tempdir().unwrap();
+    let data_dir = tempdir.path().to_str().unwrap();
+    run_ok(carrel_cli().args(["--data-dir", data_dir]).args([
+        "init",
+        "--passphrase",
+        "test-passphrase",
+    ]));
+
+    let feed_url = format!("{}/feed.json", server.uri());
+    run_ok(
+        carrel_cli()
+            .args(["--data-dir", data_dir])
+            .args(["feed", "add", &feed_url]),
+    );
+    let fetch = run_ok(
+        carrel_cli()
+            .args(["--data-dir", data_dir])
+            .args(["feed", "fetch", "--all"]),
+    );
+    assert!(fetch.stdout.contains("1 new"));
+
+    let item_id = id_for_external(&canonicalize_external_identifier(&format!(
+        "{}/embedded",
+        server.uri()
+    )));
+    let show = run_ok(
+        carrel_cli()
+            .args(["--data-dir", data_dir])
+            .args(["item", "show", &item_id, "--words", "10"]),
+    );
+    assert!(show.stdout.contains("Embedded Item"));
+    assert!(show.stdout.contains("Embedded body content"));
 }
 
 struct CapturedOutput {
