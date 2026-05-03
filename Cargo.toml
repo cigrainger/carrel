@@ -18,6 +18,7 @@ publish = false
 anyhow = "1"
 argon2 = "0.5"
 blake3 = "1"
+bytes = "1"
 carrel-core = { path = "crates/carrel-core" }
 carrel-feeds = { path = "crates/carrel-feeds" }
 carrel-store = { path = "crates/carrel-store" }
@@ -27,16 +28,22 @@ ciborium = "0.2"
 clap = { version = "4", features = ["derive"] }
 cozo = { version = "0.7.6", default-features = false, features = ["rayon", "storage-rocksdb"] }
 ed25519-dalek = { version = "2", features = ["rand_core"] }
+feed-rs = "2.3.1"
 hex = "0.4"
+html-escape = "0.2"
+httpdate = "1"
 proptest = "1"
 rand_core = { version = "0.6", features = ["getrandom"] }
+reqwest = { version = "0.13.3", default-features = false, features = ["brotli", "charset", "deflate", "gzip", "http2", "rustls", "system-proxy", "zstd"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tempfile = "3"
+texting_robots = "0.2.2"
 thiserror = "2"
 time = "0.3"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 url = "2"
+wiremock = "0.6.5"
 zeroize = "1"

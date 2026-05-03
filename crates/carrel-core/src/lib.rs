@@ -6,5 +6,8 @@
 #![deny(unsafe_code)]
 #![warn(missing_docs)]
 
+/// Feed fetching and parsing data structures shared across crates.
+pub mod feed;
+
 /// Cryptographic identity, signing, and certificate primitives.
 pub mod identity;

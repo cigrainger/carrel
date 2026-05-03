@@ -6,4 +6,17 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+bytes = { workspace = true }
 carrel-core = { workspace = true }
+feed-rs = { workspace = true }
+html-escape = { workspace = true }
+httpdate = { workspace = true }
+reqwest = { workspace = true }
+texting_robots = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+url = { workspace = true }
+
+[dev-dependencies]
+wiremock = { workspace = true }

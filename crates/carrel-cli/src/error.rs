@@ -31,6 +31,14 @@ pub enum CliError {
     #[error(transparent)]
     Store(#[from] carrel_store::StoreError),
 
+    /// Feed fetching or parsing failed.
+    #[error(transparent)]
+    Fetch(#[from] carrel_feeds::FetchError),
+
+    /// Feed parsing failed.
+    #[error(transparent)]
+    Parse(#[from] carrel_feeds::ParseError),
+
     /// Key persistence failed.
     #[error(transparent)]
     Keystore(#[from] carrel_store::keystore::KeystoreError),
@@ -68,10 +76,13 @@ impl CliError {
         match self {
             Self::User(_) | Self::Prompt(_) => 1,
             Self::Keystore(carrel_store::keystore::KeystoreError::WrongPassphrase) => 1,
+            Self::Store(carrel_store::StoreError::InvalidUrl { .. }) => 1,
             Self::Io { source, .. } if source.kind() == io::ErrorKind::NotFound => 1,
             Self::Internal(_)
             | Self::Io { .. }
             | Self::Store(_)
+            | Self::Fetch(_)
+            | Self::Parse(_)
             | Self::Keystore(_)
             | Self::Json(_) => 2,
         }

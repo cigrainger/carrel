@@ -5,3 +5,12 @@
 
 #![deny(unsafe_code)]
 #![warn(missing_docs)]
+
+mod error;
+mod fetch;
+mod parse;
+mod politeness;
+
+pub use crate::error::{FetchError, ParseError};
+pub use crate::fetch::{DEFAULT_USER_AGENT, FetchResult, Fetcher, FetcherConfig, HttpHeaders};
+pub use crate::parse::parse_feed;

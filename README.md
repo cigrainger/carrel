@@ -8,7 +8,7 @@ In spirit: a successor to Google Reader's social layer. In practice: a desktop a
 
 Early. Pre-alpha. Not yet a usable reader.
 
-This repository is the home of the project's design documents, code, and (eventually) releases. The design documents are stable enough to guide implementation, and the foundation crates are now taking shape: the Cargo workspace, Cozo schema, identity primitives, and keystore are implemented. The desktop app and CLI are still development surfaces, not end-user software.
+This repository is the home of the project's design documents, code, and (eventually) releases. The design documents are stable enough to guide implementation, and the foundation crates are now taking shape: the Cargo workspace, Cozo schema, identity primitives, keystore, CLI, and first feed ingestion path are implemented. The desktop app is still a placeholder, and the CLI remains a development surface rather than end-user software.
 
 ## Documents
 
@@ -30,7 +30,7 @@ just dev     # run the desktop app stub
 just cli     # run CLI commands
 ```
 
-The desktop app is only a placeholder binary until the Tauri and Leptos shell is implemented. The CLI can initialize a local data directory, print install info, run schema migrations, and execute raw Cozo queries; it is the main dogfooding surface while the lower layers come online.
+The desktop app is only a placeholder binary until the Tauri and Leptos shell is implemented. The CLI can initialize a local data directory, print install info, run schema migrations, execute raw Cozo queries, subscribe to feeds, and manually fetch RSS/Atom/JSON Feed subscriptions; it is the main dogfooding surface while the lower layers come online.
 
 ## License
 

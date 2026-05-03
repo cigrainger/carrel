@@ -14,6 +14,7 @@ mod error;
 mod output;
 
 use crate::commands::db::DbCommand;
+use crate::commands::feed::FeedCommand;
 use crate::commands::init::InitCommand;
 use crate::error::Result;
 
@@ -57,13 +58,21 @@ enum Command {
         #[command(subcommand)]
         command: DbCommand,
     },
+
+    /// Manage and fetch feed subscriptions.
+    Feed {
+        /// Feed command to run.
+        #[command(subcommand)]
+        command: FeedCommand,
+    },
 }
 
-fn main() -> ExitCode {
+#[tokio::main]
+async fn main() -> ExitCode {
     let cli = Cli::parse();
     init_tracing(&cli);
 
-    match run(cli) {
+    match run(cli).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("error: {error}");
@@ -72,13 +81,14 @@ fn main() -> ExitCode {
     }
 }
 
-fn run(cli: Cli) -> Result<()> {
+async fn run(cli: Cli) -> Result<()> {
     let context = config::Context::resolve(cli.data_dir, cli.json)?;
 
     match cli.command {
         Command::Init(command) => commands::init::run(&context, &command),
         Command::Info => commands::info::run(&context),
         Command::Db { command } => commands::db::run(&context, &command),
+        Command::Feed { command } => commands::feed::run(&context, &command).await,
     }
 }
 

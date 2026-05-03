@@ -23,6 +23,16 @@ pub enum StoreError {
     #[error("cozo error: {0}")]
     Cozo(String),
 
+    /// A URL was malformed or used an unsupported scheme.
+    #[error("invalid URL {url}: {source}")]
+    InvalidUrl {
+        /// URL value being validated.
+        url: String,
+        /// Underlying parse error.
+        #[source]
+        source: url::ParseError,
+    },
+
     /// The schema version relation contained an invalid version number.
     #[error("invalid schema version {0}")]
     InvalidSchemaVersion(i64),

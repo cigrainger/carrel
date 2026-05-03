@@ -7,6 +7,7 @@
 #![warn(missing_docs)]
 
 mod error;
+pub mod feeds;
 pub mod ids;
 pub mod keystore;
 mod migrations;

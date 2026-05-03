@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0"
+     xmlns:content="http://purl.org/rss/1.0/modules/content/"
+     xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>Example RSS</title>
+    <description>A feed</description>
+    <language>en</language>
+    <item>
+      <guid>rss-1</guid>
+      <title>One &amp; Two</title>
+      <link>https://example.com/one?utm_source=ignored</link>
+      <dc:creator>Ada</dc:creator>
+      <pubDate>Tue, 14 Nov 2023 22:13:20 GMT</pubDate>
+      <description><![CDATA[<p>Summary RSS</p>]]></description>
+      <content:encoded><![CDATA[<p>Full RSS</p>]]></content:encoded>
+    </item>
+  </channel>
+</rss>
