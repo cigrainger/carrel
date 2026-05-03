@@ -6,7 +6,7 @@ use time::OffsetDateTime;
 
 use carrel_core::feed::{ExtractedEntryContent, ParsedEntry, ParsedFeed};
 use carrel_feeds::{DEFAULT_USER_AGENT, FetchResult, Fetcher, HttpHeaders, parse_feed};
-use carrel_feeds::{extract_embedded_html, extract_from_url, rewrite_images};
+use carrel_feeds::{detect_shape, extract_embedded_html, extract_from_url, rewrite_images};
 use carrel_store::Store;
 use carrel_store::blobs::BlobStore;
 use carrel_store::feeds::{EntryError, FeedFetchMetadata, FeedRecord, IngestStats};
@@ -342,6 +342,7 @@ async fn extract_entry_content(
         .map(|failure| format!("image {} was not cached: {}", failure.url, failure.message))
         .collect();
     article.content_html = rewritten.html;
+    let shape = detect_shape(&article.content_html, article.word_count);
 
     let blob_id = blobs
         .put(article.content_html.as_bytes())
@@ -361,6 +362,7 @@ async fn extract_entry_content(
             estimated_read_minutes: i64::from(article.estimated_read_minutes),
             language: article.language.or_else(|| entry.language.clone()),
             site_name: article.site_name.or_else(|| parsed.title.clone()),
+            shape,
         }),
         warnings,
     })

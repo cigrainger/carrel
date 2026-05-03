@@ -222,7 +222,7 @@ Beyond kind, items have *content-shape* properties that help readers triage. We 
 }
 ```
 
-These facts power triage queries: "unread items that aren't videos" when at the desk, "video posts" for couch-mode, "long-form" for Sunday morning, "link roundups" when you have time to follow rabbit holes. The thresholds are configurable.
+These facts power triage queries: "unread items that aren't videos" when at the desk, "video posts" for couch-mode, "long-form" for Sunday morning, "link roundups" when you have time to follow rabbit holes. The v1 thresholds are fixed in `carrel-feeds::shape`; if they need runtime configuration later, that should be a focused change.
 
 The detection is rule-based and lives in `carrel-feeds`. Adding a new shape attribute means: pick a heuristic, write the detector, add a relation field, write tests with fixture inputs, document the threshold (if any) here. No AI involved.
 

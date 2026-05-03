@@ -56,6 +56,11 @@ fn sanitizer_strips_known_xss_patterns() {
     assert!(cleaned.contains("youtube.com/embed/abc"));
 }
 
+#[test]
+fn sanitizer_drops_byte_order_marks() {
+    assert_eq!(sanitize_html("\t\u{feff}"), "");
+}
+
 proptest! {
     #[test]
     fn sanitization_is_idempotent(input in ".*") {

@@ -1,5 +1,6 @@
 //! HTML sanitization for readable article content.
 
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
 use ammonia::{Builder, UrlRelative};
@@ -7,18 +8,28 @@ use kuchiki::traits::TendrilSink;
 
 /// Sanitize readable article HTML to Carrel's storage-safe subset.
 pub fn sanitize_html(html: &str) -> String {
+    let html = strip_byte_order_marks(html);
     let mut builder = Builder::new();
     builder
         .tags(allowed_tags())
         .clean_content_tags(clean_content_tags())
         .tag_attributes(tag_attributes())
-        .generic_attributes(HashSet::from(["id", "title", "lang"]))
+        .generic_attributes(HashSet::from(["class", "id", "title", "lang"]))
         .url_schemes(HashSet::from(["http", "https", "mailto"]))
         .url_relative(UrlRelative::PassThrough)
         .link_rel(None);
 
-    let cleaned = builder.clean(html).to_string();
-    strip_unsafe_iframes(&cleaned)
+    let cleaned = builder.clean(html.as_ref()).to_string();
+    let cleaned = strip_unsafe_iframes(&cleaned);
+    strip_byte_order_marks(&cleaned).into_owned()
+}
+
+fn strip_byte_order_marks(input: &str) -> Cow<'_, str> {
+    if input.contains('\u{feff}') {
+        Cow::Owned(input.replace('\u{feff}', ""))
+    } else {
+        Cow::Borrowed(input)
+    }
 }
 
 fn allowed_tags() -> HashSet<&'static str> {
@@ -58,7 +69,22 @@ fn allowed_tags() -> HashSet<&'static str> {
         "ins",
         "kbd",
         "li",
+        "math",
         "mark",
+        "mfrac",
+        "mi",
+        "mn",
+        "mo",
+        "mrow",
+        "ms",
+        "mspace",
+        "msqrt",
+        "msub",
+        "msup",
+        "mtable",
+        "mtd",
+        "mtext",
+        "mtr",
         "ol",
         "p",
         "picture",
@@ -70,6 +96,7 @@ fn allowed_tags() -> HashSet<&'static str> {
         "s",
         "samp",
         "small",
+        "span",
         "source",
         "strong",
         "sub",
@@ -138,6 +165,21 @@ fn strip_unsafe_iframes(html: &str) -> String {
 }
 
 fn is_allowed_iframe_src(src: &str) -> bool {
+    const ALLOWED_IFRAME_HOSTS: &[&str] = &[
+        "youtube.com",
+        "youtube-nocookie.com",
+        "youtu.be",
+        "player.vimeo.com",
+        "vimeo.com",
+        "peertube.tv",
+        "soundcloud.com",
+        "open.spotify.com",
+        "podcasters.spotify.com",
+        "anchor.fm",
+        "simplecast.com",
+        "player.fm",
+    ];
+
     let Ok(url) = url::Url::parse(src) else {
         return false;
     };
@@ -149,11 +191,11 @@ fn is_allowed_iframe_src(src: &str) -> bool {
     let Some(host) = url.host_str() else {
         return false;
     };
+    let host = host.strip_prefix("www.").unwrap_or(host);
 
-    matches!(
-        host.strip_prefix("www.").unwrap_or(host),
-        "youtube.com" | "youtube-nocookie.com" | "player.vimeo.com" | "vimeo.com"
-    )
+    ALLOWED_IFRAME_HOSTS
+        .iter()
+        .any(|known| host == *known || host.ends_with(&format!(".{known}")))
 }
 
 fn serialize_body_children(document: &kuchiki::NodeRef) -> String {

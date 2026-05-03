@@ -274,6 +274,7 @@ impl Store {
         self.put_identifier(&item_id, "feed_guid", &scoped_guid, canonical_url.is_none())?;
         if let Some(content) = content {
             self.put_content(&item_id, content)?;
+            self.put_item_shape(&item_id, &content.shape)?;
         }
 
         Ok(is_new)
@@ -781,6 +782,10 @@ mod tests {
             estimated_read_minutes: 2,
             language: Some("en-AU".to_string()),
             site_name: Some("example.com".to_string()),
+            shape: carrel_core::shape::Shape {
+                has_code: true,
+                ..carrel_core::shape::Shape::default()
+            },
         };
 
         store
@@ -811,6 +816,8 @@ mod tests {
             .unwrap();
         assert_eq!(content.blob_id, "abc123");
         assert_eq!(content.byte_size, 42);
+        let shape = store.get_item_shape(item_id).unwrap().unwrap();
+        assert!(shape.shape.has_code);
 
         let rows = store
             .query(

@@ -61,6 +61,18 @@ impl BlobStore {
             })
     }
 
+    /// Load blob bytes by id from synchronous callers.
+    pub fn get_blocking(&self, id: &BlobId) -> Result<Bytes, BlobError> {
+        let path = self.blob_path(id);
+        std::fs::read(&path).map(Bytes::from).map_err(|source| {
+            if source.kind() == std::io::ErrorKind::NotFound {
+                BlobError::NotFound { id: *id }
+            } else {
+                BlobError::Read { path, source }
+            }
+        })
+    }
+
     /// Return true if the blob exists locally.
     pub fn has(&self, id: &BlobId) -> bool {
         self.blob_path(id).exists()

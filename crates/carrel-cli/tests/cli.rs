@@ -128,6 +128,7 @@ async fn feed_add_list_fetch_and_remove_work() {
     <article>
       <h1>CLI Article</h1>
       <p>This readable article body is fetched from the item URL and stored as a local content blob.</p>
+      <pre><code>let answer = 42;</code></pre>
       <img src="/image.png" alt="fixture">
     </article>
   </body>
@@ -186,6 +187,26 @@ async fn feed_add_list_fetch_and_remove_work() {
     );
     assert!(show.stdout.contains("CLI Item"));
     assert!(show.stdout.contains("readable article body is fetched"));
+
+    let shape = run_ok(
+        carrel_cli()
+            .args(["--data-dir", data_dir])
+            .args(["item", "shape", &item_id]),
+    );
+    assert!(shape.stdout.contains("has_code:           true"));
+    assert!(shape.stdout.contains("has_video_embed:    false"));
+
+    let recompute =
+        run_ok(
+            carrel_cli()
+                .args(["--data-dir", data_dir])
+                .args(["db", "recompute", "shapes"]),
+        );
+    assert!(
+        recompute
+            .stdout
+            .contains("Recomputed shapes for 1/1 cached readable items.")
+    );
 
     let remove = run_ok(
         carrel_cli()

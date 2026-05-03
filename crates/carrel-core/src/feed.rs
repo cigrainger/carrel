@@ -1,5 +1,7 @@
 //! Feed-domain data structures shared by fetch, store, and CLI layers.
 
+use crate::shape::Shape;
+
 /// Default fetch interval for a newly subscribed feed: one hour.
 pub const DEFAULT_FETCH_INTERVAL_SECONDS: i64 = 60 * 60;
 
@@ -80,4 +82,6 @@ pub struct ExtractedEntryContent {
     pub language: Option<String>,
     /// Source site name, if known.
     pub site_name: Option<String>,
+    /// Structural content shape detected from the sanitized readable HTML.
+    pub shape: Shape,
 }

@@ -11,3 +11,6 @@ pub mod feed;
 
 /// Cryptographic identity, signing, and certificate primitives.
 pub mod identity;
+
+/// Rule-based structural content-shape facts.
+pub mod shape;

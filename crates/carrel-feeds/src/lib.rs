@@ -11,6 +11,7 @@ mod fetch;
 mod parse;
 mod politeness;
 pub mod readability;
+pub mod shape;
 
 pub use crate::error::{ExtractError, FetchError, ParseError};
 pub use crate::fetch::{DEFAULT_USER_AGENT, FetchResult, Fetcher, FetcherConfig, HttpHeaders};
@@ -20,3 +21,4 @@ pub use crate::readability::{
     TrafilaturaConfig, extract_embedded_html, extract_from_html, extract_from_html_with_options,
     extract_from_url, extract_from_url_with_options, html_to_text, rewrite_images, sanitize_html,
 };
+pub use crate::shape::detect_shape;
