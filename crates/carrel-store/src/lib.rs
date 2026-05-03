@@ -8,6 +8,7 @@
 
 mod error;
 pub mod ids;
+pub mod keystore;
 mod migrations;
 pub mod schema;
 

@@ -6,12 +6,19 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+argon2 = { workspace = true }
 blake3 = { workspace = true }
 carrel-core = { workspace = true }
+chacha20poly1305 = { workspace = true }
 cozo = { workspace = true }
+hex = { workspace = true }
+rand_core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 thiserror = { workspace = true }
 time = { workspace = true }
 url = { workspace = true }
+zeroize = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }

@@ -5,3 +5,6 @@
 
 #![deny(unsafe_code)]
 #![warn(missing_docs)]
+
+/// Cryptographic identity, signing, and certificate primitives.
+pub mod identity;

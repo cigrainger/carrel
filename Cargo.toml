@@ -16,15 +16,20 @@ publish = false
 
 [workspace.dependencies]
 anyhow = "1"
+argon2 = "0.5"
 blake3 = "1"
 carrel-core = { path = "crates/carrel-core" }
 carrel-feeds = { path = "crates/carrel-feeds" }
 carrel-store = { path = "crates/carrel-store" }
 carrel-sync = { path = "crates/carrel-sync" }
+chacha20poly1305 = "0.10"
+ciborium = "0.2"
 clap = { version = "4", features = ["derive"] }
 cozo = { version = "0.7.6", default-features = false, features = ["rayon", "storage-rocksdb"] }
-ed25519-dalek = "2"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+hex = "0.4"
 proptest = "1"
+rand_core = { version = "0.6", features = ["getrandom"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tempfile = "3"
@@ -34,3 +39,4 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 url = "2"
+zeroize = "1"

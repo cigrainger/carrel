@@ -89,6 +89,8 @@ The `peer` relation lists every public key your local instance knows about, incl
 
 When a peer presents a fact signed by a device sub-key, the bridge verifies (a) the signature on the fact against the device key, and (b) the device cert against the master key. If either fails, the fact is dropped.
 
+`device_cert` is canonical CBOR for the `DeviceCert` structure in `carrel-core::identity`. The master signature covers exactly `(master_pubkey, device_pubkey, authorized_at_micros, device_name)` encoded as canonical CBOR. Revocation certificates use the same rule: the master signs `(master_pubkey, device_pubkey, revoked_at_micros)`.
+
 Revocation: writing a `revoked_at` value invalidates the device. The bridge propagates revocations to peers via the social sync layer (your followers learn that your phone is no longer authorized).
 
 **Trust:** signed. Cross-syncs to your own devices via `doc:self`. Visible to followers via `doc:public` so they can verify your facts.
