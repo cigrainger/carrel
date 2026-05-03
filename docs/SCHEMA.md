@@ -30,6 +30,17 @@ This is the mechanism by which we get monotonic semantics for non-monotonic oper
 
 For the rare cases where we genuinely want to delete (a privacy concern, or a request to remove user-created content), we issue a *tombstone* fact and the application layer treats tombstoned entities as absent. We do not garbage-collect tombstoned data automatically; that's a deliberate compaction step, not implicit behavior.
 
+```
+:create entity_tombstone {
+    id: String,
+    tombstoned_at: Validity,
+    =>
+    reason: String?
+}
+```
+
+Tombstones are entity-scoped. Once an entity ID is tombstoned, future writes for that entity ID are rejected where the store can enforce that cheaply, and read paths treat the entity as absent. The `reason` field is developer-facing context, not user-facing copy.
+
 ### Signatures and trust
 
 Facts that may cross trust boundaries — that may be sent to or received from another peer — carry a cryptographic signature by the originating author. The bridge layer (`carrel-sync`) verifies every incoming signed fact against the claimed author's public key before writing it to Cozo.
@@ -538,6 +549,7 @@ This section is the canonical reference for which fact types the bridge accepts 
 | `share_reaction` | Yes | Reactions to your shares come from peers |
 | `share_reply` | Yes | Discussion |
 | `feed` | No | Your subscriptions are yours |
+| `entity_tombstone` | No | Local privacy/deletion marker; shared deletion semantics need an explicit design |
 
 The bridge enforces this list. Adding a new relation requires deciding its trust class explicitly, in this document, before the code accepts it.
 
