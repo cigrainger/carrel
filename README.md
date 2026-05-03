@@ -6,9 +6,9 @@ In spirit: a successor to Google Reader's social layer. In practice: a desktop a
 
 ## Status
 
-Early. Pre-alpha. Not yet usable.
+Early. Pre-alpha. Not yet a usable reader.
 
-This repository is the home of the project's design documents, code, and (eventually) releases. The design documents are stable; the code does not yet exist in any meaningful form.
+This repository is the home of the project's design documents, code, and (eventually) releases. The design documents are stable enough to guide implementation, and the foundation crates are now taking shape: the Cargo workspace, Cozo schema, identity primitives, and keystore are implemented. The desktop app and CLI are still development surfaces, not end-user software.
 
 ## Documents
 
@@ -30,11 +30,11 @@ just dev     # run the desktop app stub
 just cli     # run the CLI stub
 ```
 
-The desktop app is only a placeholder binary until the Tauri and Leptos shell is implemented.
+The desktop app is only a placeholder binary until the Tauri and Leptos shell is implemented. The CLI is the main dogfooding surface while the lower layers come online.
 
 ## License
 
-To be determined. The project's commitments — no acquisition, no relicensing into a closed product, data and protocols belong to the user — argue for a copyleft license; AGPL is likely. Until a license is chosen, all rights are reserved.
+Carrel is licensed under the GNU Affero General Public License v3.0 or later. See [`LICENSE`](LICENSE).
 
 ## Contributing
 
