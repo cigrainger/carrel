@@ -42,6 +42,24 @@ pub struct ItemSummary {
     pub discovered_at_micros: i64,
 }
 
+/// User keymap configuration returned by the native shell.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KeymapConfig {
+    pub path: String,
+    pub overrides: Vec<KeymapBindingOverride>,
+    pub warnings: Vec<String>,
+}
+
+/// One valid user keymap override.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KeymapBindingOverride {
+    pub layer: String,
+    pub key: String,
+    pub action: String,
+}
+
 /// Error returned while invoking a native command.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ApiError {
@@ -82,6 +100,26 @@ pub async fn list_items(filter: ItemFilter) -> Result<Vec<ItemSummary>, ApiError
 #[cfg(not(target_arch = "wasm32"))]
 pub async fn list_items(_filter: ItemFilter) -> Result<Vec<ItemSummary>, ApiError> {
     Ok(Vec::new())
+}
+
+/// Load keymap overrides for the webview.
+#[cfg(target_arch = "wasm32")]
+pub async fn keymap_config() -> Result<KeymapConfig, ApiError> {
+    let value = tauri_invoke("keymap_config", wasm_bindgen::JsValue::UNDEFINED)
+        .await
+        .map_err(api_error_from_js)?;
+
+    serde_wasm_bindgen::from_value(value).map_err(|error| ApiError::new(error.to_string()))
+}
+
+/// Load keymap overrides for SSR tests and non-wasm builds.
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn keymap_config() -> Result<KeymapConfig, ApiError> {
+    Ok(KeymapConfig {
+        path: String::new(),
+        overrides: Vec::new(),
+        warnings: Vec::new(),
+    })
 }
 
 #[cfg(target_arch = "wasm32")]

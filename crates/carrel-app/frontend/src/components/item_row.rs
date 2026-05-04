@@ -6,15 +6,20 @@ use crate::api::ItemSummary;
 
 /// Render a list of items.
 #[component]
-pub fn TodayList(items: Vec<ItemSummary>) -> impl IntoView {
+pub fn TodayList(items: Vec<ItemSummary>, selected_index: usize) -> impl IntoView {
+    let indexed_items = items.into_iter().enumerate().collect::<Vec<_>>();
+
     view! {
         <ul class="item-list" aria-label="Today">
             <For
-                each=move || items.clone()
-                key=|item| item.id.clone()
-                let:item
+                each=move || indexed_items.clone()
+                key=|(_, item)| item.id.clone()
+                let:row
             >
-                <ItemRow item=item/>
+                {
+                    let (index, item) = row;
+                    view! { <ItemRow item=item selected=index == selected_index/> }
+                }
             </For>
         </ul>
     }
@@ -22,16 +27,21 @@ pub fn TodayList(items: Vec<ItemSummary>) -> impl IntoView {
 
 /// One item row in a list route.
 #[component]
-pub fn ItemRow(item: ItemSummary) -> impl IntoView {
+pub fn ItemRow(item: ItemSummary, selected: bool) -> impl IntoView {
     let indicator = if item.read_state == "unread" {
         "●"
     } else {
         "○"
     };
     let excerpt = item.summary.unwrap_or_default();
+    let class = if selected {
+        "item-row is-selected"
+    } else {
+        "item-row"
+    };
 
     view! {
-        <li class="item-row">
+        <li class=class aria-selected=selected.to_string()>
             <span class="read-indicator" aria-hidden="true">{indicator}</span>
             <div class="item-row-body">
                 <div class="item-row-topline">
@@ -68,8 +78,9 @@ mod tests {
             discovered_at_micros: 1,
         }];
 
-        let html = Owner::new().with(|| view! { <TodayList items=items/> }.to_html());
-        let expected = r#"<ul aria-label="Today" class="item-list"> <li class="item-row"><span aria-hidden="true" class="read-indicator">●</span><div class="item-row-body"><div class="item-row-topline"><h2>The shape of a small reader</h2><p class="item-meta"><span>Example</span><span>5 min</span><span>2h ago</span></p></div><p class="item-excerpt">A compact summary.</p></div></li><!></ul>"#;
+        let html =
+            Owner::new().with(|| view! { <TodayList items=items selected_index=0/> }.to_html());
+        let expected = r#"<ul aria-label="Today" class="item-list"> <li aria-selected="true" class="item-row is-selected"><span aria-hidden="true" class="read-indicator">●</span><div class="item-row-body"><div class="item-row-topline"><h2>The shape of a small reader</h2><p class="item-meta"><span>Example</span><span>5 min</span><span>2h ago</span></p></div><p class="item-excerpt">A compact summary.</p></div></li><!></ul>"#;
 
         assert_eq!(html, expected);
     }

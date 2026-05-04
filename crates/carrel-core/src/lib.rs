@@ -10,7 +10,11 @@
 pub mod feed;
 
 /// Cryptographic identity, signing, and certificate primitives.
+#[cfg(feature = "identity")]
 pub mod identity;
+
+/// Keyboard shortcut parsing and dispatch.
+pub mod keymap;
 
 /// Rule-based structural content-shape facts.
 pub mod shape;

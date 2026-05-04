@@ -612,6 +612,7 @@ dependencies = [
 name = "carrel-app"
 version = "0.1.0"
 dependencies = [
+ "carrel-core",
  "carrel-store",
  "cozo",
  "serde",
@@ -619,6 +620,7 @@ dependencies = [
  "tauri-build",
  "thiserror 2.0.18",
  "time",
+ "toml 1.1.2+spec-1.1.0",
  "tracing",
  "tracing-subscriber",
  "url",
@@ -628,6 +630,7 @@ dependencies = [
 name = "carrel-app-frontend"
 version = "0.1.0"
 dependencies = [
+ "carrel-core",
  "leptos",
  "leptos_router",
  "serde",

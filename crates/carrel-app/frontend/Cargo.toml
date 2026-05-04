@@ -24,6 +24,7 @@ csr = [
 ssr = ["leptos/ssr", "leptos_router/ssr"]
 
 [dependencies]
+carrel-core = { path = "../../carrel-core", default-features = false }
 leptos = { workspace = true }
 leptos_router = { workspace = true }
 serde = { workspace = true }

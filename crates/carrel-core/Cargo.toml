@@ -5,15 +5,26 @@ edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 
+[features]
+default = ["identity"]
+identity = [
+    "dep:ciborium",
+    "dep:ed25519-dalek",
+    "dep:hex",
+    "dep:rand_core",
+    "dep:time",
+    "dep:zeroize",
+]
+
 [dependencies]
-ciborium = { workspace = true }
-ed25519-dalek = { workspace = true }
-hex = { workspace = true }
-rand_core = { workspace = true }
+ciborium = { workspace = true, optional = true }
+ed25519-dalek = { workspace = true, optional = true }
+hex = { workspace = true, optional = true }
+rand_core = { workspace = true, optional = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
-time = { workspace = true }
-zeroize = { workspace = true }
+time = { workspace = true, optional = true }
+zeroize = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest = { workspace = true }

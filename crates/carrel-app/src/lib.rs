@@ -22,6 +22,7 @@ pub fn run() -> Result<()> {
         .invoke_handler(tauri::generate_handler![
             commands::items::get_item,
             commands::items::list_items,
+            commands::keymap::keymap_config,
             commands::status::version,
         ])
         .run(tauri::generate_context!())

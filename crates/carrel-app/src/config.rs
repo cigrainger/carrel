@@ -6,10 +6,12 @@ use std::path::PathBuf;
 use crate::{AppError, Result};
 
 const DATA_DIR_ENV: &str = "CARREL_DATA_DIR";
+const CONFIG_DIR_ENV: &str = "CARREL_CONFIG_DIR";
 
 /// Paths inside the local Carrel install.
 #[derive(Clone, Debug)]
 pub struct InstallPaths {
+    pub(crate) keymap_config: PathBuf,
     pub(crate) root: PathBuf,
     pub(crate) store: PathBuf,
 }
@@ -20,8 +22,13 @@ impl InstallPaths {
             .map(PathBuf::from)
             .map(Ok)
             .unwrap_or_else(default_data_dir)?;
+        let config_root = env::var_os(CONFIG_DIR_ENV)
+            .map(PathBuf::from)
+            .map(Ok)
+            .unwrap_or_else(default_config_dir)?;
 
         Ok(Self {
+            keymap_config: config_root.join("keymap.toml"),
             store: root.join("store"),
             root,
         })
@@ -34,6 +41,10 @@ impl InstallPaths {
 
 fn default_data_dir() -> Result<PathBuf> {
     default_data_dir_for_platform()
+}
+
+fn default_config_dir() -> Result<PathBuf> {
+    default_config_dir_for_platform()
 }
 
 #[cfg(target_os = "macos")]
@@ -62,6 +73,29 @@ fn default_data_dir_for_platform() -> Result<PathBuf> {
 #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
 fn default_data_dir_for_platform() -> Result<PathBuf> {
     Ok(home_dir()?.join(".carrel"))
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn default_config_dir_for_platform() -> Result<PathBuf> {
+    if let Some(path) = env::var_os("XDG_CONFIG_HOME") {
+        Ok(PathBuf::from(path).join("carrel"))
+    } else {
+        Ok(home_dir()?.join(".config/carrel"))
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn default_config_dir_for_platform() -> Result<PathBuf> {
+    if let Some(path) = env::var_os("APPDATA") {
+        Ok(PathBuf::from(path).join("Carrel"))
+    } else {
+        Ok(home_dir()?.join(".config/carrel"))
+    }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+fn default_config_dir_for_platform() -> Result<PathBuf> {
+    Ok(home_dir()?.join(".config/carrel"))
 }
 
 fn home_dir() -> Result<PathBuf> {
