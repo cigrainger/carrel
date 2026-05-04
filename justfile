@@ -21,7 +21,11 @@ fmt:
 
 # Run the desktop app in dev mode
 dev:
-    cargo run -p carrel-app
+    cd crates/carrel-app && cargo tauri dev
+
+# Build the desktop app bundle
+build:
+    cd crates/carrel-app && cargo tauri build
 
 # Run the CLI
 cli *ARGS:

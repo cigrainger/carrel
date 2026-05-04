@@ -1,0 +1,54 @@
+.reading-view {
+  max-width: var(--reading-measure);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-feature-settings: "kern" 1, "liga" 1, "onum" 1, "calt" 1;
+  font-optical-sizing: auto;
+  font-size: var(--reading-size);
+  line-height: var(--reading-line-height);
+}
+
+.reading-view p {
+  margin: 0;
+  text-indent: var(--reading-paragraph-indent);
+}
+
+.reading-view p:first-of-type,
+.reading-view h1 + p,
+.reading-view h2 + p,
+.reading-view h3 + p,
+.reading-view blockquote p:first-child {
+  text-indent: 0;
+}
+
+.reading-view h1 {
+  margin: 2em 0 0.5em;
+  font-size: 1.75em;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.reading-view h2 {
+  margin: 1.5em 0 0.5em;
+  font-size: 1.3em;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.reading-view h3 {
+  margin: 1.5em 0 0.25em;
+  font-size: 1.1em;
+  font-style: italic;
+  font-weight: 600;
+}
+
+.reading-view code,
+.reading-view pre {
+  font-family: var(--font-mono);
+  font-variant-ligatures: none;
+}
+
+[data-flourishes="on"] .reading-view > p:first-of-type::first-line {
+  font-variant-caps: small-caps;
+  letter-spacing: 0.05em;
+}

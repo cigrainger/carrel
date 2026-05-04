@@ -6,6 +6,7 @@ Cargo.lock.bak
 # Tauri
 src-tauri/target/
 src-tauri/Cargo.lock.bak
+crates/carrel-app/gen/
 
 # Leptos / WASM
 dist/

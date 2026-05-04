@@ -1,0 +1,106 @@
+@font-face {
+  font-family: "Source Serif 4";
+  src: url("/fonts/source-serif-4-latin-variable.woff2") format("woff2-variations");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 200 900;
+}
+
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/inter-latin-variable.woff2") format("woff2-variations");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 100 900;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/fonts/jetbrains-mono-latin-variable.woff2") format("woff2-variations");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 100 800;
+}
+
+:root {
+  --font-body: "Source Serif 4", Georgia, serif;
+  --font-chrome: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+
+  --reading-size: 1.125rem;
+  --reading-line-height: 1.65;
+  --reading-measure: 68ch;
+  --reading-paragraph-indent: 1.5em;
+
+  --color-text: #1a1a1a;
+  --color-text-secondary: #5a5a5a;
+  --color-text-tertiary: #8a8a8a;
+  --color-bg: #fafaf7;
+  --color-bg-elevated: #ffffff;
+  --color-rule: #e5e5e0;
+  --color-rule-strong: #cfcfc7;
+  --color-accent: #b85c38;
+  --color-highlight: #fff3a8;
+  --color-highlight-friend: #b8d4e8;
+  --color-selected: color-mix(in srgb, var(--color-accent) 8%, transparent);
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+
+  --radius-sm: 6px;
+  --sidebar-width: 240px;
+  --status-strip-height: 28px;
+}
+
+[data-theme="dark"] {
+  --color-text: #e8e6e0;
+  --color-text-secondary: #a8a6a0;
+  --color-text-tertiary: #6a6864;
+  --color-bg: #1a1a18;
+  --color-bg-elevated: #242422;
+  --color-rule: #2a2a28;
+  --color-rule-strong: #3a3a36;
+  --color-accent: #d97a52;
+  --color-highlight: #5a4d1a;
+  --color-highlight-friend: #2d4659;
+}
+
+[data-theme="sepia"] {
+  --color-text: #3a2f24;
+  --color-text-secondary: #6a5d4e;
+  --color-text-tertiary: #9a8e7e;
+  --color-bg: #f4ecd8;
+  --color-bg-elevated: #ede4cd;
+  --color-rule: #d8cdb3;
+  --color-rule-strong: #c9b990;
+  --color-accent: #8a4a2a;
+  --color-highlight: #d8c878;
+  --color-highlight-friend: #b8c8a8;
+}
+
+[data-theme="black"] {
+  --color-text: #d4d2cc;
+  --color-text-secondary: #948e84;
+  --color-text-tertiary: #5a564e;
+  --color-bg: #000000;
+  --color-bg-elevated: #0e0e0c;
+  --color-rule: #1a1a18;
+  --color-rule-strong: #2a2a28;
+  --color-accent: #d97a52;
+  --color-highlight: #4a3d10;
+  --color-highlight-friend: #1d2e3d;
+}

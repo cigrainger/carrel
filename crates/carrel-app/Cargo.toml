@@ -4,9 +4,22 @@ version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
+build = "build.rs"
+
+[lib]
+name = "carrel_app"
+path = "src/lib.rs"
 
 [dependencies]
-carrel-core = { workspace = true }
-carrel-feeds = { workspace = true }
+cozo = { workspace = true }
 carrel-store = { workspace = true }
-carrel-sync = { workspace = true }
+serde = { workspace = true }
+tauri = { workspace = true }
+thiserror = { workspace = true }
+time = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+url = { workspace = true }
+
+[build-dependencies]
+tauri-build = { workspace = true }

@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/carrel-app",
+    "crates/carrel-app/frontend",
     "crates/carrel-cli",
     "crates/carrel-core",
     "crates/carrel-feeds",
@@ -11,7 +12,7 @@ resolver = "3"
 
 [workspace.package]
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.95"
 publish = false
 
 [workspace.dependencies]
@@ -34,12 +35,17 @@ hex = "0.4"
 html-escape = "0.2"
 httpdate = "1"
 kuchiki = "0.8.1"
+leptos = { version = "0.8.19", default-features = false }
+leptos_router = { version = "0.8.13", default-features = false }
 proptest = "1"
 rand_core = { version = "0.6", features = ["getrandom"] }
 readable-readability = "0.4.0"
 reqwest = { version = "0.13.3", default-features = false, features = ["brotli", "charset", "deflate", "gzip", "http2", "rustls", "system-proxy", "zstd"] }
 serde = { version = "1", features = ["derive"] }
+serde-wasm-bindgen = "0.6"
 serde_json = "1"
+tauri = "2.11.0"
+tauri-build = "2.6.0"
 tempfile = "3"
 texting_robots = "0.2.2"
 thiserror = "2"
@@ -48,5 +54,8 @@ tokio = { version = "1", features = ["fs", "macros", "rt-multi-thread", "sync", 
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 url = "2"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = ["Document", "Element", "Storage", "Window"] }
 wiremock = "0.6.5"
 zeroize = "1"

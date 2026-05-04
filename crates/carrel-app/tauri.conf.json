@@ -1,0 +1,37 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Carrel",
+  "version": "0.1.0",
+  "identifier": "net.carrel.reader",
+  "build": {
+    "beforeDevCommand": {
+      "script": "trunk serve --config Trunk.toml --no-default-features --features csr",
+      "cwd": "."
+    },
+    "beforeBuildCommand": {
+      "script": "trunk build --release --config Trunk.toml --no-default-features --features csr",
+      "cwd": "."
+    },
+    "devUrl": "http://127.0.0.1:1420",
+    "frontendDist": "frontend/dist"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Carrel",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 860,
+        "minHeight": 560,
+        "resizable": true
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": ["icons/icon.png"]
+  }
+}
