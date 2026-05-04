@@ -11,6 +11,7 @@ const CONFIG_DIR_ENV: &str = "CARREL_CONFIG_DIR";
 /// Paths inside the local Carrel install.
 #[derive(Clone, Debug)]
 pub struct InstallPaths {
+    pub(crate) blobs: PathBuf,
     pub(crate) keymap_config: PathBuf,
     pub(crate) root: PathBuf,
     pub(crate) store: PathBuf,
@@ -28,6 +29,7 @@ impl InstallPaths {
             .unwrap_or_else(default_config_dir)?;
 
         Ok(Self {
+            blobs: root.join("blobs"),
             keymap_config: config_root.join("keymap.toml"),
             store: root.join("store"),
             root,

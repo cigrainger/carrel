@@ -5,6 +5,7 @@
 pub mod api;
 mod components;
 mod keymap;
+mod navigation;
 mod routes;
 mod theme;
 
@@ -19,6 +20,7 @@ use crate::keymap::{GlobalKeymapActions, KeymapProvider};
 #[component]
 pub fn App() -> impl IntoView {
     let theme = theme::provide_theme_controller();
+    navigation::provide_list_navigation_context();
 
     view! {
         <Router>
@@ -34,7 +36,7 @@ pub fn App() -> impl IntoView {
                             <Route path=path!("/library") view=routes::Library/>
                             <Route path=path!("/highlights") view=routes::Highlights/>
                             <Route path=path!("/lists") view=routes::Lists/>
-                            <Route path=path!("/item/:id") view=routes::Item/>
+                            <Route path=path!("/item/:id") view=routes::ReadingView/>
                         </Routes>
                     </main>
                     <StatusStrip/>

@@ -61,6 +61,16 @@ fn sanitizer_drops_byte_order_marks() {
     assert_eq!(sanitize_html("\t\u{feff}"), "");
 }
 
+#[test]
+fn sanitizer_renders_tex_math_to_mathml() {
+    let cleaned = sanitize_html(r#"<p>Energy <span class="math inline">E = mc^2</span></p>"#);
+
+    assert!(cleaned.contains("<math"));
+    assert!(cleaned.contains("<msup>"));
+    assert!(!cleaned.contains("class=\"math inline\""));
+    assert_eq!(sanitize_html(&cleaned), cleaned);
+}
+
 proptest! {
     #[test]
     fn sanitization_is_idempotent(input in ".*") {
@@ -117,6 +127,46 @@ async fn image_rewrite_uses_blob_urls_and_keeps_failures_best_effort() {
     assert!(result.html.contains(&format!("{expected_blob} 1x")));
     assert!(result.html.contains("/missing.png 2x"));
     assert_eq!(result.failures.len(), 1);
+}
+
+#[tokio::test]
+async fn image_rewrite_adds_dimensions_when_the_blob_has_them() {
+    let server = MockServer::start().await;
+    let mut png = vec![0_u8; 24];
+    png[0..8].copy_from_slice(b"\x89PNG\r\n\x1a\n");
+    png[12..16].copy_from_slice(b"IHDR");
+    png[16..20].copy_from_slice(&16_u32.to_be_bytes());
+    png[20..24].copy_from_slice(&9_u32.to_be_bytes());
+
+    Mock::given(method("GET"))
+        .and(path("/robots.txt"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("User-agent: *\nAllow: /\n"))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/sized.png"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(png.clone()))
+        .mount(&server)
+        .await;
+
+    let fetcher = Fetcher::with_config(
+        DEFAULT_USER_AGENT,
+        FetcherConfig {
+            min_interval_per_host: std::time::Duration::ZERO,
+            ..FetcherConfig::default()
+        },
+    )
+    .unwrap();
+    let result = rewrite_images(
+        r#"<img src="/sized.png" alt="diagram">"#,
+        &format!("{}/article", server.uri()),
+        &fetcher,
+        |bytes| Ok::<_, String>(blake3::hash(bytes).to_hex().to_string()),
+    )
+    .await;
+
+    assert!(result.html.contains("width=\"16\""));
+    assert!(result.html.contains("height=\"9\""));
 }
 
 #[test]

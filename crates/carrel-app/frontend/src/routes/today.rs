@@ -10,6 +10,7 @@ use crate::api::ItemSummary;
 use crate::api::{self, ItemFilter};
 use crate::components::TodayList;
 use crate::keymap::{use_action_handler, use_keymap_layer};
+use crate::navigation::{ListNavigation, use_list_navigation_context};
 
 /// Items discovered recently.
 #[component]
@@ -19,6 +20,7 @@ pub fn Today() -> impl IntoView {
     let error = RwSignal::new(None::<String>);
     let loaded = RwSignal::new(false);
     let navigate = use_navigate();
+    let list_navigation = use_list_navigation_context();
 
     use_keymap_layer(default::list_layer());
     use_keymap_layer(default::item_action_layer());
@@ -58,11 +60,21 @@ pub fn Today() -> impl IntoView {
 
     let open_navigate = navigate.clone();
     use_action_handler("open-item", move || {
-        let item_id =
-            items.with_untracked(|rows| rows.get(cursor.get_untracked()).map(|row| row.id.clone()));
-        if let Some(item_id) = item_id {
-            open_navigate(&format!("/item/{item_id}"), NavigateOptions::default());
-        }
+        let list_context = items.with_untracked(|rows| {
+            let item = rows.get(cursor.get_untracked())?;
+            Some(ListNavigation {
+                item_ids: rows.iter().map(|row| row.id.clone()).collect(),
+                current_id: item.id.clone(),
+                return_path: "/today".to_string(),
+            })
+        });
+        let Some(list_context) = list_context else {
+            return;
+        };
+
+        let item_id = list_context.current_id.clone();
+        list_navigation.set(list_context);
+        open_navigate(&format!("/item/{item_id}"), NavigateOptions::default());
     });
 
     use_action_handler("go-back", move || {});

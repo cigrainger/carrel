@@ -42,6 +42,46 @@ pub struct ItemSummary {
     pub discovered_at_micros: i64,
 }
 
+/// Full item payload returned by the native shell for the reading route.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ItemDetail {
+    pub id: String,
+    pub title: String,
+    pub source_name: String,
+    pub published_at: Option<String>,
+    pub language: Option<String>,
+    pub length_label: String,
+    pub estimated_read_minutes: Option<u32>,
+    pub time_label: String,
+    pub read_state: String,
+    pub starred: bool,
+    pub primary_url: Option<String>,
+    pub summary: Option<String>,
+    pub content_html: String,
+    pub creators: Vec<String>,
+    pub byline: Option<String>,
+    pub readable_blob_id: Option<String>,
+    pub last_scroll: Option<f64>,
+    pub discovered_at_micros: i64,
+}
+
+/// Item-state mutation request.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ItemStateRequest {
+    pub item_id: String,
+}
+
+/// Reading-progress mutation request.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadProgressUpdate {
+    pub item_id: String,
+    pub progress: f64,
+    pub scroll_y: f64,
+}
+
 /// User keymap configuration returned by the native shell.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -100,6 +140,96 @@ pub async fn list_items(filter: ItemFilter) -> Result<Vec<ItemSummary>, ApiError
 #[cfg(not(target_arch = "wasm32"))]
 pub async fn list_items(_filter: ItemFilter) -> Result<Vec<ItemSummary>, ApiError> {
     Ok(Vec::new())
+}
+
+/// Load one item for the reading route.
+#[cfg(target_arch = "wasm32")]
+pub async fn get_item(id: String) -> Result<Option<ItemDetail>, ApiError> {
+    #[derive(Serialize)]
+    struct Args {
+        id: String,
+    }
+
+    let args = serde_wasm_bindgen::to_value(&Args { id })
+        .map_err(|error| ApiError::new(error.to_string()))?;
+    let row = tauri_invoke("get_item", args)
+        .await
+        .map_err(api_error_from_js)?;
+
+    serde_wasm_bindgen::from_value(row).map_err(|error| ApiError::new(error.to_string()))
+}
+
+/// Load one item for SSR tests and non-wasm builds.
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn get_item(_id: String) -> Result<Option<ItemDetail>, ApiError> {
+    Ok(None)
+}
+
+/// Persist local reading progress.
+#[cfg(target_arch = "wasm32")]
+pub async fn update_read_progress(update: ReadProgressUpdate) -> Result<(), ApiError> {
+    #[derive(Serialize)]
+    struct Args {
+        update: ReadProgressUpdate,
+    }
+
+    let args = serde_wasm_bindgen::to_value(&Args { update })
+        .map_err(|error| ApiError::new(error.to_string()))?;
+    tauri_invoke("update_read_progress", args)
+        .await
+        .map(|_| ())
+        .map_err(api_error_from_js)
+}
+
+/// Persist local reading progress for SSR tests and non-wasm builds.
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn update_read_progress(_update: ReadProgressUpdate) -> Result<(), ApiError> {
+    Ok(())
+}
+
+/// Mark one item read.
+#[cfg(target_arch = "wasm32")]
+pub async fn mark_item_read(request: ItemStateRequest) -> Result<(), ApiError> {
+    #[derive(Serialize)]
+    struct Args {
+        request: ItemStateRequest,
+    }
+
+    let args = serde_wasm_bindgen::to_value(&Args { request })
+        .map_err(|error| ApiError::new(error.to_string()))?;
+    tauri_invoke("mark_item_read", args)
+        .await
+        .map(|_| ())
+        .map_err(api_error_from_js)
+}
+
+/// Mark one item read for SSR tests and non-wasm builds.
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn mark_item_read(_request: ItemStateRequest) -> Result<(), ApiError> {
+    Ok(())
+}
+
+/// Toggle the local starred state and return the new value.
+#[cfg(target_arch = "wasm32")]
+pub async fn toggle_item_star(request: ItemStateRequest) -> Result<bool, ApiError> {
+    #[derive(Serialize)]
+    struct Args {
+        request: ItemStateRequest,
+    }
+
+    let args = serde_wasm_bindgen::to_value(&Args { request })
+        .map_err(|error| ApiError::new(error.to_string()))?;
+    let value = tauri_invoke("toggle_item_star", args)
+        .await
+        .map_err(api_error_from_js)?;
+
+    serde_wasm_bindgen::from_value(value).map_err(|error| ApiError::new(error.to_string()))
+}
+
+/// Toggle the local starred state for SSR tests and non-wasm builds.
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn toggle_item_star(_request: ItemStateRequest) -> Result<bool, ApiError> {
+    Ok(false)
 }
 
 /// Load keymap overrides for the webview.

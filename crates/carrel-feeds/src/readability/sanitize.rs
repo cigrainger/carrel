@@ -21,6 +21,7 @@ pub fn sanitize_html(html: &str) -> String {
 
     let cleaned = builder.clean(html.as_ref()).to_string();
     let cleaned = strip_unsafe_iframes(&cleaned);
+    let cleaned = render_math_spans(&cleaned);
     strip_byte_order_marks(&cleaned).into_owned()
 }
 
@@ -36,6 +37,7 @@ fn allowed_tags() -> HashSet<&'static str> {
     HashSet::from([
         "a",
         "abbr",
+        "annotation",
         "audio",
         "b",
         "bdi",
@@ -95,6 +97,7 @@ fn allowed_tags() -> HashSet<&'static str> {
         "ruby",
         "s",
         "samp",
+        "semantics",
         "small",
         "span",
         "source",
@@ -132,7 +135,12 @@ fn tag_attributes() -> HashMap<&'static str, HashSet<&'static str>> {
         ("blockquote", HashSet::from(["cite"])),
         ("col", HashSet::from(["span"])),
         ("iframe", HashSet::from(["src", "title"])),
-        ("img", HashSet::from(["alt", "src", "srcset"])),
+        ("annotation", HashSet::from(["encoding"])),
+        (
+            "img",
+            HashSet::from(["alt", "height", "src", "srcset", "width"]),
+        ),
+        ("math", HashSet::from(["xmlns"])),
         ("ol", HashSet::from(["start"])),
         ("q", HashSet::from(["cite"])),
         ("source", HashSet::from(["src", "srcset", "type"])),
@@ -207,4 +215,77 @@ fn serialize_body_children(document: &kuchiki::NodeRef) -> String {
         .children()
         .map(|child| child.to_string())
         .collect()
+}
+
+fn render_math_spans(html: &str) -> String {
+    let document = kuchiki::parse_html().one(html);
+    let Ok(nodes) = document.select("span.math") else {
+        return html.to_string();
+    };
+    let nodes = nodes.collect::<Vec<_>>();
+
+    for node in nodes {
+        let display = node
+            .attributes
+            .borrow()
+            .get("class")
+            .is_some_and(|class| class.split_whitespace().any(|class| class == "display"));
+        let raw_tex = node.text_contents();
+        let tex = strip_math_delimiters(&raw_tex, display);
+        let Some(rendered) = render_katex_math(tex, display) else {
+            continue;
+        };
+        let fragment = kuchiki::parse_html().one(rendered);
+        let Ok(body) = fragment.select_first("body") else {
+            continue;
+        };
+        let children = body.as_node().children().collect::<Vec<_>>();
+        for child in children {
+            node.as_node().insert_before(child);
+        }
+        node.as_node().detach();
+    }
+
+    serialize_body_children(&document)
+}
+
+fn strip_math_delimiters(value: &str, display: bool) -> &str {
+    let value = value.trim();
+    if display {
+        return value
+            .strip_prefix("$$")
+            .and_then(|value| value.strip_suffix("$$"))
+            .or_else(|| {
+                value
+                    .strip_prefix(r"\[")
+                    .and_then(|value| value.strip_suffix(r"\]"))
+            })
+            .unwrap_or(value)
+            .trim();
+    }
+
+    value
+        .strip_prefix('$')
+        .and_then(|value| value.strip_suffix('$'))
+        .or_else(|| {
+            value
+                .strip_prefix(r"\(")
+                .and_then(|value| value.strip_suffix(r"\)"))
+        })
+        .unwrap_or(value)
+        .trim()
+}
+
+fn render_katex_math(tex: &str, display: bool) -> Option<String> {
+    if tex.is_empty() {
+        return None;
+    }
+
+    let opts = katex::Opts::builder()
+        .display_mode(display)
+        .output_type(katex::OutputType::Mathml)
+        .throw_on_error(false)
+        .build()
+        .ok()?;
+    katex::render_with_opts(tex, opts).ok()
 }

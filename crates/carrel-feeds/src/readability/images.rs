@@ -8,6 +8,18 @@ use url::Url;
 
 use crate::{FetchResult, Fetcher};
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct CachedImage {
+    blob_url: String,
+    dimensions: Option<ImageDimensions>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ImageDimensions {
+    width: u32,
+    height: u32,
+}
+
 /// Image URLs that could not be cached while rewriting an article.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ImageRewriteFailure {
@@ -50,7 +62,7 @@ where
     };
 
     let document = kuchiki::parse_html().one(html);
-    let mut cache = HashMap::<String, Result<String, String>>::new();
+    let mut cache = HashMap::<String, Result<CachedImage, String>>::new();
     let mut failures = Vec::new();
 
     rewrite_src_attributes(
@@ -83,7 +95,7 @@ async fn rewrite_src_attributes<E>(
     base: &Url,
     fetcher: &Fetcher,
     put_blob: &mut impl FnMut(&Bytes) -> Result<String, E>,
-    cache: &mut HashMap<String, Result<String, String>>,
+    cache: &mut HashMap<String, Result<CachedImage, String>>,
     failures: &mut Vec<ImageRewriteFailure>,
 ) where
     E: std::fmt::Display,
@@ -110,8 +122,16 @@ async fn rewrite_src_attributes<E>(
             continue;
         };
 
-        if let Some(blob_url) = fetch_image(&url, fetcher, put_blob, cache, failures).await {
-            node.attributes.borrow_mut().insert(attr_name, blob_url);
+        if let Some(image) = fetch_image(&url, fetcher, put_blob, cache, failures).await {
+            let mut attributes = node.attributes.borrow_mut();
+            attributes.insert(attr_name, image.blob_url);
+            if attr_name == "src"
+                && node.name.local.as_ref() == "img"
+                && let Some(dimensions) = image.dimensions
+            {
+                attributes.insert("width", dimensions.width.to_string());
+                attributes.insert("height", dimensions.height.to_string());
+            }
         }
     }
 }
@@ -121,7 +141,7 @@ async fn rewrite_srcset_attributes<E>(
     base: &Url,
     fetcher: &Fetcher,
     put_blob: &mut impl FnMut(&Bytes) -> Result<String, E>,
-    cache: &mut HashMap<String, Result<String, String>>,
+    cache: &mut HashMap<String, Result<CachedImage, String>>,
     failures: &mut Vec<ImageRewriteFailure>,
 ) where
     E: std::fmt::Display,
@@ -146,10 +166,10 @@ async fn rewrite_srcset_attributes<E>(
                 rewritten.push(candidate.original);
                 continue;
             };
-            if let Some(blob_url) = fetch_image(&url, fetcher, put_blob, cache, failures).await {
+            if let Some(image) = fetch_image(&url, fetcher, put_blob, cache, failures).await {
                 rewritten.push(match candidate.descriptor {
-                    Some(descriptor) => format!("{blob_url} {descriptor}"),
-                    None => blob_url,
+                    Some(descriptor) => format!("{} {descriptor}", image.blob_url),
+                    None => image.blob_url,
                 });
             } else {
                 rewritten.push(candidate.original);
@@ -166,17 +186,23 @@ async fn fetch_image<E>(
     url: &str,
     fetcher: &Fetcher,
     put_blob: &mut impl FnMut(&Bytes) -> Result<String, E>,
-    cache: &mut HashMap<String, Result<String, String>>,
+    cache: &mut HashMap<String, Result<CachedImage, String>>,
     failures: &mut Vec<ImageRewriteFailure>,
-) -> Option<String>
+) -> Option<CachedImage>
 where
     E: std::fmt::Display,
 {
     if !cache.contains_key(url) {
         let result = match fetcher.fetch(url, None, None).await {
-            Ok(FetchResult::Updated { body, .. }) => put_blob(&body)
-                .map(|id| format!("blob://{id}"))
-                .map_err(|source| source.to_string()),
+            Ok(FetchResult::Updated { body, .. }) => {
+                let dimensions = image_dimensions(&body);
+                put_blob(&body)
+                    .map(|id| CachedImage {
+                        blob_url: format!("blob://{id}"),
+                        dimensions,
+                    })
+                    .map_err(|source| source.to_string())
+            }
             Ok(FetchResult::NotModified { .. }) => Err("HTTP 304 without cached image".to_string()),
             Ok(FetchResult::GoneOrError { status, .. }) => Err(format!("HTTP {status}")),
             Err(source) => Err(source.to_string()),
@@ -185,7 +211,7 @@ where
     }
 
     match cache.get(url).expect("cache populated") {
-        Ok(blob_url) => Some(blob_url.clone()),
+        Ok(image) => Some(image.clone()),
         Err(message) => {
             if !failures.iter().any(|failure| failure.url == url) {
                 failures.push(ImageRewriteFailure {
@@ -196,6 +222,108 @@ where
             None
         }
     }
+}
+
+fn image_dimensions(bytes: &[u8]) -> Option<ImageDimensions> {
+    png_dimensions(bytes)
+        .or_else(|| jpeg_dimensions(bytes))
+        .or_else(|| webp_dimensions(bytes))
+}
+
+fn png_dimensions(bytes: &[u8]) -> Option<ImageDimensions> {
+    if bytes.len() < 24 || !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return None;
+    }
+
+    Some(ImageDimensions {
+        width: u32::from_be_bytes(bytes[16..20].try_into().ok()?),
+        height: u32::from_be_bytes(bytes[20..24].try_into().ok()?),
+    })
+    .filter(|dimensions| dimensions.width > 0 && dimensions.height > 0)
+}
+
+fn jpeg_dimensions(bytes: &[u8]) -> Option<ImageDimensions> {
+    if bytes.len() < 4 || !bytes.starts_with(b"\xff\xd8") {
+        return None;
+    }
+
+    let mut index = 2;
+    while index + 4 <= bytes.len() {
+        if bytes[index] != 0xff {
+            index += 1;
+            continue;
+        }
+
+        while index < bytes.len() && bytes[index] == 0xff {
+            index += 1;
+        }
+        let marker = *bytes.get(index)?;
+        index += 1;
+
+        if matches!(marker, 0xd8 | 0xd9 | 0x01) {
+            continue;
+        }
+        if index + 2 > bytes.len() {
+            return None;
+        }
+
+        let len = usize::from(u16::from_be_bytes(bytes[index..index + 2].try_into().ok()?));
+        if len < 2 || index + len > bytes.len() {
+            return None;
+        }
+
+        if matches!(
+            marker,
+            0xc0 | 0xc1
+                | 0xc2
+                | 0xc3
+                | 0xc5
+                | 0xc6
+                | 0xc7
+                | 0xc9
+                | 0xca
+                | 0xcb
+                | 0xcd
+                | 0xce
+                | 0xcf
+        ) && len >= 7
+        {
+            let height = u32::from(u16::from_be_bytes(
+                bytes[index + 3..index + 5].try_into().ok()?,
+            ));
+            let width = u32::from(u16::from_be_bytes(
+                bytes[index + 5..index + 7].try_into().ok()?,
+            ));
+            return Some(ImageDimensions { width, height })
+                .filter(|dimensions| dimensions.width > 0 && dimensions.height > 0);
+        }
+
+        index += len;
+    }
+
+    None
+}
+
+fn webp_dimensions(bytes: &[u8]) -> Option<ImageDimensions> {
+    if bytes.len() < 30 || !bytes.starts_with(b"RIFF") || &bytes[8..12] != b"WEBP" {
+        return None;
+    }
+
+    if &bytes[12..16] == b"VP8X" {
+        let width = 1 + read_webp_u24(&bytes[24..27])?;
+        let height = 1 + read_webp_u24(&bytes[27..30])?;
+        return Some(ImageDimensions { width, height });
+    }
+
+    None
+}
+
+fn read_webp_u24(bytes: &[u8]) -> Option<u32> {
+    Some(
+        u32::from(*bytes.first()?)
+            | (u32::from(*bytes.get(1)?) << 8)
+            | (u32::from(*bytes.get(2)?) << 16),
+    )
 }
 
 fn absolute_url(raw: &str, base: &Url) -> Option<String> {

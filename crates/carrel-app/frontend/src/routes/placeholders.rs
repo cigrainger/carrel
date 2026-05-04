@@ -26,12 +26,6 @@ pub fn Lists() -> impl IntoView {
     placeholder("Lists")
 }
 
-/// Item route placeholder until the reading view lands.
-#[component]
-pub fn Item() -> impl IntoView {
-    placeholder("Item")
-}
-
 /// Fallback route.
 #[component]
 pub fn NotFound() -> impl IntoView {

@@ -15,6 +15,7 @@ cozo = { workspace = true }
 carrel-core = { workspace = true }
 carrel-store = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 tauri = { workspace = true }
 thiserror = { workspace = true }
 time = { workspace = true }
@@ -25,3 +26,6 @@ url = { workspace = true }
 
 [build-dependencies]
 tauri-build = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

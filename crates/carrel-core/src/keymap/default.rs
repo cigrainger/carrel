@@ -87,6 +87,8 @@ pub fn reading_layer() -> Layer {
             bind("p", "prev-item-mark-read", "Previous item and mark read"),
             bind(",", "article-top", "Top of article"),
             bind(".", "article-bottom", "Bottom of article"),
+            bind("Esc", "go-back", "Back").allow_in_input(),
+            bind("q", "go-back", "Back"),
         ],
     )
 }

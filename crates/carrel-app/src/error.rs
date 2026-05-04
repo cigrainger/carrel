@@ -16,6 +16,10 @@ pub enum AppError {
     #[error(transparent)]
     Store(#[from] carrel_store::StoreError),
 
+    /// The blob store failed to read cached content.
+    #[error(transparent)]
+    Blob(#[from] carrel_store::blobs::BlobError),
+
     /// Tauri failed while building or running the shell.
     #[error(transparent)]
     Tauri(#[from] tauri::Error),
@@ -44,6 +48,7 @@ impl Serialize for AppError {
         let kind = match self {
             Self::Config(_) => "config",
             Self::Store(_) => "store",
+            Self::Blob(_) => "blob",
             Self::Tauri(_) => "tauri",
             Self::InvalidData { .. } => "invalid_data",
         };

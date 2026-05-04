@@ -12,6 +12,7 @@ carrel-core = { workspace = true }
 feed-rs = { workspace = true }
 html-escape = { workspace = true }
 httpdate = { workspace = true }
+katex = { workspace = true }
 kuchiki = { workspace = true }
 readable-readability = { workspace = true }
 reqwest = { workspace = true }

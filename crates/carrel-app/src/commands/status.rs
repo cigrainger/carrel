@@ -48,6 +48,7 @@ mod tests {
         let store = Store::open_in_memory().unwrap();
         store.migrate().unwrap();
         let paths = InstallPaths {
+            blobs: "/tmp/carrel-test/blobs".into(),
             keymap_config: "/tmp/carrel-test/config/keymap.toml".into(),
             root: "/tmp/carrel-test".into(),
             store: "/tmp/carrel-test/store".into(),

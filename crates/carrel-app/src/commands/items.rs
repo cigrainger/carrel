@@ -1,8 +1,10 @@
 //! Item-list commands for the desktop shell.
 
 use std::collections::BTreeMap;
+use std::str::FromStr;
 
-use cozo::{DataValue, Num};
+use carrel_store::blobs::{BlobId, BlobStore};
+use cozo::{DataValue, JsonData, Num};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 use time::{Duration, OffsetDateTime};
@@ -25,7 +27,25 @@ pub fn list_items(state: State<'_, AppState>, filter: ItemFilter) -> Result<Vec<
 /// Return one item by id, if it exists.
 #[tauri::command]
 pub fn get_item(state: State<'_, AppState>, id: String) -> Result<Option<ItemDetail>> {
-    get_item_from_store(&state.store, &id)
+    get_item_from_parts(&state.store, &state.blobs, &id)
+}
+
+/// Persist reading progress for one item.
+#[tauri::command]
+pub fn update_read_progress(state: State<'_, AppState>, update: ReadProgressUpdate) -> Result<()> {
+    update_read_progress_in_store(&state.store, update)
+}
+
+/// Mark one item as read.
+#[tauri::command]
+pub fn mark_item_read(state: State<'_, AppState>, request: ItemStateRequest) -> Result<()> {
+    write_read_state(&state.store, &request.item_id, "read", Some(1.0), None)
+}
+
+/// Toggle the starred state for one item and return the new value.
+#[tauri::command]
+pub fn toggle_item_star(state: State<'_, AppState>, request: ItemStateRequest) -> Result<bool> {
+    toggle_star_in_store(&state.store, &request.item_id)
 }
 
 /// Item-list filter accepted by the webview.
@@ -38,6 +58,26 @@ pub struct ItemFilter {
     /// Optional row limit. Values above the app maximum are clamped.
     #[serde(default)]
     pub limit: Option<usize>,
+}
+
+/// Generic item-state mutation request.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ItemStateRequest {
+    /// Stable item id.
+    pub item_id: String,
+}
+
+/// Reading progress update request.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadProgressUpdate {
+    /// Stable item id.
+    pub item_id: String,
+    /// Generic reading progress, clamped from 0.0 to 1.0.
+    pub progress: f64,
+    /// Scroll offset in CSS pixels for HTML content.
+    pub scroll_y: f64,
 }
 
 impl Default for ItemFilter {
@@ -85,7 +125,7 @@ pub struct ItemSummary {
 }
 
 /// Fuller item metadata for the reading route.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ItemDetail {
     /// Stable item id.
@@ -94,22 +134,34 @@ pub struct ItemDetail {
     pub title: String,
     /// Source name derived from article metadata or the URL host.
     pub source_name: String,
+    /// ISO-8601 published timestamp, when known.
+    pub published_at: Option<String>,
+    /// Language tag, when known.
+    pub language: Option<String>,
     /// Human-readable length label.
     pub length_label: String,
+    /// Estimated reading minutes, when known.
+    pub estimated_read_minutes: Option<u32>,
     /// Human-readable relative discovery time.
     pub time_label: String,
     /// Local read state, defaulting to unread.
     pub read_state: String,
+    /// Whether the item is starred locally.
+    pub starred: bool,
     /// Canonical URL, when known.
     pub primary_url: Option<String>,
     /// Short summary or feed description, when known.
     pub summary: Option<String>,
+    /// Sanitized readable HTML from the cached content blob.
+    pub content_html: String,
     /// Generic creator names from the item relation.
     pub creators: Vec<String>,
     /// Raw article byline, when extracted.
     pub byline: Option<String>,
     /// Blob id for cached readable HTML, when available.
     pub readable_blob_id: Option<String>,
+    /// Last scroll offset in CSS pixels, when known.
+    pub last_scroll: Option<f64>,
     /// Discovery timestamp in Unix microseconds.
     pub discovered_at_micros: i64,
 }
@@ -120,6 +172,8 @@ struct ItemRecord {
     title: String,
     creators: Vec<String>,
     primary_url: Option<String>,
+    published_at_micros: Option<i64>,
+    language: Option<String>,
     summary: Option<String>,
     discovered_at_micros: i64,
 }
@@ -130,6 +184,13 @@ struct ArticleMetadata {
     estimated_read_minutes: Option<i64>,
     site_name: Option<String>,
     byline: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+struct ReadStateRecord {
+    state: String,
+    progress: Option<f64>,
+    last_scroll_y: Option<f64>,
 }
 
 pub(crate) fn list_items_from_store(
@@ -155,7 +216,7 @@ pub(crate) fn list_items_from_store(
 
         let article = article_metadata(store, &item.id)?;
         let read_state = read_state(store, &item.id)?;
-        rows.push(summary_from_parts(&item, &article, read_state, now));
+        rows.push(summary_from_parts(&item, &article, read_state.state, now));
 
         if rows.len() == limit {
             break;
@@ -165,8 +226,9 @@ pub(crate) fn list_items_from_store(
     Ok(rows)
 }
 
-pub(crate) fn get_item_from_store(
+pub(crate) fn get_item_from_parts(
     store: &carrel_store::Store,
+    blobs: &BlobStore,
     id: &str,
 ) -> Result<Option<ItemDetail>> {
     let Some(item) = query_item_record(store, id)? else {
@@ -175,23 +237,43 @@ pub(crate) fn get_item_from_store(
 
     let article = article_metadata(store, id)?;
     let read_state = read_state(store, id)?;
-    let summary = summary_from_parts(&item, &article, read_state, OffsetDateTime::now_utc());
+    let starred = starred_state(store, id)?;
+    let summary = summary_from_parts(
+        &item,
+        &article,
+        read_state.state.clone(),
+        OffsetDateTime::now_utc(),
+    );
     let readable_blob_id = store
         .get_item_detail(id)?
         .and_then(|detail| detail.readable.map(|readable| readable.blob_id));
+    let content_html = readable_blob_id
+        .as_deref()
+        .map(|blob_id| readable_html(blobs, blob_id))
+        .transpose()?
+        .or_else(|| item.summary.clone())
+        .unwrap_or_default();
 
     Ok(Some(ItemDetail {
         id: summary.id,
         title: summary.title,
         source_name: summary.source_name,
+        published_at: item.published_at_micros.map(iso8601_timestamp),
+        language: item.language,
         length_label: summary.length_label,
+        estimated_read_minutes: article
+            .estimated_read_minutes
+            .and_then(|minutes| u32::try_from(minutes).ok()),
         time_label: summary.time_label,
         read_state: summary.read_state,
+        starred,
         primary_url: summary.primary_url,
         summary: summary.summary,
+        content_html,
         creators: item.creators,
         byline: article.byline,
         readable_blob_id,
+        last_scroll: read_state.last_scroll_y,
         discovered_at_micros: summary.discovered_at_micros,
     }))
 }
@@ -199,8 +281,8 @@ pub(crate) fn get_item_from_store(
 fn query_item_records(store: &carrel_store::Store, limit: usize) -> Result<Vec<ItemRecord>> {
     let rows = store.query(&format!(
         r#"
-        ?[id, title, creators, primary_url, summary, discovered_at] :=
-            *item{{id, title, creators, primary_url, summary, discovered_at}}
+        ?[id, title, creators, primary_url, published_at, language, summary, discovered_at] :=
+            *item{{id, title, creators, primary_url, published_at, language, summary, discovered_at}}
         :sort -discovered_at
         :limit {limit}
         "#
@@ -212,8 +294,8 @@ fn query_item_records(store: &carrel_store::Store, limit: usize) -> Result<Vec<I
 fn query_item_record(store: &carrel_store::Store, id: &str) -> Result<Option<ItemRecord>> {
     let rows = store.query_with_params(
         r#"
-        ?[id, title, creators, primary_url, summary, discovered_at] :=
-            *item{id, title, creators, primary_url, summary, discovered_at},
+        ?[id, title, creators, primary_url, published_at, language, summary, discovered_at] :=
+            *item{id, title, creators, primary_url, published_at, language, summary, discovered_at},
             id = $id
         :limit 1
         "#,
@@ -253,11 +335,37 @@ fn article_metadata(store: &carrel_store::Store, item_id: &str) -> Result<Articl
     })
 }
 
-fn read_state(store: &carrel_store::Store, item_id: &str) -> Result<String> {
+fn read_state(store: &carrel_store::Store, item_id: &str) -> Result<ReadStateRecord> {
     let rows = store.query_with_params(
         r#"
-        ?[state] :=
-            *read_state{item_id, state},
+        ?[state, progress, last_position] :=
+            *read_state{item_id, state, progress, last_position},
+            item_id = $item_id
+        :limit 1
+        "#,
+        BTreeMap::from([("item_id".to_string(), DataValue::from(item_id))]),
+    )?;
+
+    let Some(row) = rows.rows.first() else {
+        return Ok(ReadStateRecord {
+            state: "unread".to_string(),
+            progress: None,
+            last_scroll_y: None,
+        });
+    };
+
+    Ok(ReadStateRecord {
+        state: value_as_string(required(row, 0, "read_state.state")?)?,
+        progress: optional_f64(required(row, 1, "read_state.progress")?)?,
+        last_scroll_y: optional_scroll_y(required(row, 2, "read_state.last_position")?)?,
+    })
+}
+
+fn starred_state(store: &carrel_store::Store, item_id: &str) -> Result<bool> {
+    let rows = store.query_with_params(
+        r#"
+        ?[starred] :=
+            *item_star{item_id, starred},
             item_id = $item_id
         :limit 1
         "#,
@@ -266,9 +374,128 @@ fn read_state(store: &carrel_store::Store, item_id: &str) -> Result<String> {
 
     rows.rows
         .first()
-        .map(|row| value_as_string(required(row, 0, "read_state.state")?))
+        .map(|row| value_as_bool(required(row, 0, "item_star.starred")?))
         .transpose()
-        .map(|state| state.unwrap_or_else(|| "unread".to_string()))
+        .map(Option::unwrap_or_default)
+}
+
+fn update_read_progress_in_store(
+    store: &carrel_store::Store,
+    update: ReadProgressUpdate,
+) -> Result<()> {
+    let current = read_state(store, &update.item_id)?;
+    let state = if current.state == "read" {
+        "read"
+    } else {
+        "reading"
+    };
+    write_read_state(
+        store,
+        &update.item_id,
+        state,
+        Some(update.progress.clamp(0.0, 1.0)),
+        Some(update.scroll_y.max(0.0)),
+    )
+}
+
+fn write_read_state(
+    store: &carrel_store::Store,
+    item_id: &str,
+    state: &str,
+    progress: Option<f64>,
+    scroll_y: Option<f64>,
+) -> Result<()> {
+    let progress_value = progress
+        .map(|value| DataValue::Num(Num::Float(value)))
+        .unwrap_or(DataValue::Null);
+    let progress_label = progress
+        .map(|value| format!("{}%", (value * 100.0).round()))
+        .map(DataValue::from)
+        .unwrap_or(DataValue::Null);
+    let last_position = scroll_y
+        .map(|value| DataValue::Json(JsonData(serde_json::json!({ "scroll_y": value }))))
+        .unwrap_or(DataValue::Null);
+
+    store.query_with_params(
+        r#"
+        ?[item_id, state, progress, progress_label, last_position, updated_at] :=
+            item_id = $item_id,
+            state = $state,
+            progress = $progress,
+            progress_label = $progress_label,
+            last_position = $last_position,
+            updated_at = $updated_at
+        :put read_state {item_id => state, progress, progress_label, last_position, updated_at}
+        "#,
+        BTreeMap::from([
+            ("item_id".to_string(), DataValue::from(item_id)),
+            ("state".to_string(), DataValue::from(state)),
+            ("progress".to_string(), progress_value),
+            ("progress_label".to_string(), progress_label),
+            ("last_position".to_string(), last_position),
+            (
+                "updated_at".to_string(),
+                DataValue::Validity(cozo::Validity::from((
+                    unix_micros(OffsetDateTime::now_utc()),
+                    true,
+                ))),
+            ),
+        ]),
+    )?;
+
+    Ok(())
+}
+
+fn toggle_star_in_store(store: &carrel_store::Store, item_id: &str) -> Result<bool> {
+    let starred = !starred_state(store, item_id)?;
+    store.query_with_params(
+        r#"
+        ?[item_id, starred, updated_at] :=
+            item_id = $item_id,
+            starred = $starred,
+            updated_at = $updated_at
+        :put item_star {item_id => starred, updated_at}
+        "#,
+        BTreeMap::from([
+            ("item_id".to_string(), DataValue::from(item_id)),
+            ("starred".to_string(), DataValue::Bool(starred)),
+            (
+                "updated_at".to_string(),
+                DataValue::Validity(cozo::Validity::from((
+                    unix_micros(OffsetDateTime::now_utc()),
+                    true,
+                ))),
+            ),
+        ]),
+    )?;
+
+    Ok(starred)
+}
+
+fn readable_html(blobs: &BlobStore, blob_id: &str) -> Result<String> {
+    let blob_id = BlobId::from_str(blob_id)?;
+    let bytes = blobs.get_blocking(&blob_id)?;
+    String::from_utf8(bytes.to_vec()).map_err(|source| AppError::InvalidData {
+        context: "item_content.blob",
+        value: source.to_string(),
+    })
+}
+
+fn iso8601_timestamp(micros: i64) -> String {
+    let timestamp = OffsetDateTime::from_unix_timestamp(micros / 1_000_000)
+        .unwrap_or(OffsetDateTime::UNIX_EPOCH);
+    let date = timestamp.date();
+    let time = timestamp.time();
+
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+        date.year(),
+        u8::from(date.month()),
+        date.day(),
+        time.hour(),
+        time.minute(),
+        time.second()
+    )
 }
 
 fn summary_from_parts(
@@ -346,8 +573,10 @@ fn decode_item_row(row: &[DataValue]) -> Result<ItemRecord> {
         title: value_as_string(required(row, 1, "item.title")?)?,
         creators: value_as_string_list(required(row, 2, "item.creators")?)?,
         primary_url: optional_string(required(row, 3, "item.primary_url")?)?,
-        summary: optional_string(required(row, 4, "item.summary")?)?,
-        discovered_at_micros: value_as_validity_micros(required(row, 5, "item.discovered_at")?)?,
+        published_at_micros: optional_validity_micros(required(row, 4, "item.published_at")?)?,
+        language: optional_string(required(row, 5, "item.language")?)?,
+        summary: optional_string(required(row, 6, "item.summary")?)?,
+        discovered_at_micros: value_as_validity_micros(required(row, 7, "item.discovered_at")?)?,
     })
 }
 
@@ -385,10 +614,44 @@ fn optional_i64(value: &DataValue) -> Result<Option<i64>> {
     }
 }
 
+fn optional_f64(value: &DataValue) -> Result<Option<f64>> {
+    match value {
+        DataValue::Null => Ok(None),
+        DataValue::Num(Num::Float(value)) => Ok(Some(*value)),
+        DataValue::Num(Num::Int(value)) => Ok(Some(*value as f64)),
+        other => Err(unexpected("optional float", other)),
+    }
+}
+
+fn optional_scroll_y(value: &DataValue) -> Result<Option<f64>> {
+    match value {
+        DataValue::Null => Ok(None),
+        DataValue::Json(JsonData(value)) => {
+            Ok(value.get("scroll_y").and_then(serde_json::Value::as_f64))
+        }
+        other => Err(unexpected("optional scroll position", other)),
+    }
+}
+
+fn value_as_bool(value: &DataValue) -> Result<bool> {
+    match value {
+        DataValue::Bool(value) => Ok(*value),
+        other => Err(unexpected("boolean", other)),
+    }
+}
+
 fn value_as_validity_micros(value: &DataValue) -> Result<i64> {
     match value {
         DataValue::Validity(value) => Ok(value.timestamp.0.0),
         other => Err(unexpected("validity", other)),
+    }
+}
+
+fn optional_validity_micros(value: &DataValue) -> Result<Option<i64>> {
+    match value {
+        DataValue::Null => Ok(None),
+        DataValue::Validity(value) => Ok(Some(value.timestamp.0.0)),
+        other => Err(unexpected("optional validity", other)),
     }
 }
 
@@ -465,6 +728,11 @@ mod tests {
     fn item_detail_includes_creators_and_readable_content() {
         let store = carrel_store::Store::open_in_memory().unwrap();
         store.migrate().unwrap();
+        let tempdir = tempfile::tempdir().unwrap();
+        let blobs = BlobStore::open(tempdir.path());
+        let body = b"<p>Cached body.</p>";
+        let blob_id = blobs.put_blocking(body).unwrap().to_string();
+
         insert_item(
             &store,
             InsertItem {
@@ -484,30 +752,98 @@ mod tests {
                 ?[item_id, format, blob_id, fetched_at, extracted_with, byte_size] :=
                     item_id = $item_id,
                     format = 'html_readable',
-                    blob_id = 'abc123',
+                    blob_id = $blob_id,
                     fetched_at = $fetched_at,
                     extracted_with = 'readability',
-                    byte_size = 42
+                    byte_size = $byte_size
                 :put item_content {item_id, format => blob_id, fetched_at, extracted_with, byte_size}
                 "#,
                 BTreeMap::from([
                     ("item_id".to_string(), DataValue::from("item-with-content")),
+                    ("blob_id".to_string(), DataValue::from(blob_id.as_str())),
+                    (
+                        "byte_size".to_string(),
+                        DataValue::Num(Num::Int(i64::try_from(body.len()).unwrap())),
+                    ),
                     (
                         "fetched_at".to_string(),
-                        DataValue::Validity(Validity::from((unix_micros(OffsetDateTime::now_utc()), true))),
+                        DataValue::Validity(Validity::from((
+                            unix_micros(OffsetDateTime::now_utc()),
+                            true,
+                        ))),
                     ),
                 ]),
             )
             .unwrap();
 
-        let detail = get_item_from_store(&store, "item-with-content")
+        let detail = get_item_from_parts(&store, &blobs, "item-with-content")
             .unwrap()
             .unwrap();
 
         assert_eq!(detail.title, "Cached Essay");
         assert_eq!(detail.creators, vec!["Ada"]);
         assert_eq!(detail.source_name, "essays.example");
-        assert_eq!(detail.readable_blob_id.as_deref(), Some("abc123"));
+        assert_eq!(detail.readable_blob_id.as_deref(), Some(blob_id.as_str()));
+        assert_eq!(detail.content_html, "<p>Cached body.</p>");
+    }
+
+    #[test]
+    fn read_progress_persists_scroll_position() {
+        let store = carrel_store::Store::open_in_memory().unwrap();
+        store.migrate().unwrap();
+        insert_item(
+            &store,
+            InsertItem {
+                id: "progress-item",
+                title: "Progress",
+                url: None,
+                summary: Some("fallback"),
+                discovered_at_micros: unix_micros(OffsetDateTime::now_utc()),
+                read_state: None,
+                site_name: None,
+                minutes: None,
+            },
+        );
+
+        update_read_progress_in_store(
+            &store,
+            ReadProgressUpdate {
+                item_id: "progress-item".to_string(),
+                progress: 0.42,
+                scroll_y: 640.0,
+            },
+        )
+        .unwrap();
+
+        let record = read_state(&store, "progress-item").unwrap();
+
+        assert_eq!(record.state, "reading");
+        assert_eq!(record.progress, Some(0.42));
+        assert_eq!(record.last_scroll_y, Some(640.0));
+    }
+
+    #[test]
+    fn toggle_star_returns_the_new_state() {
+        let store = carrel_store::Store::open_in_memory().unwrap();
+        store.migrate().unwrap();
+        insert_item(
+            &store,
+            InsertItem {
+                id: "starred-item",
+                title: "Starred",
+                url: None,
+                summary: None,
+                discovered_at_micros: unix_micros(OffsetDateTime::now_utc()),
+                read_state: None,
+                site_name: None,
+                minutes: None,
+            },
+        );
+
+        assert!(toggle_star_in_store(&store, "starred-item").unwrap());
+        assert!(starred_state(&store, "starred-item").unwrap());
+        assert!(!toggle_star_in_store(&store, "starred-item").unwrap());
+        assert!(!starred_state(&store, "starred-item").unwrap());
     }
 
     struct InsertItem<'a> {
@@ -595,7 +931,7 @@ mod tests {
                     ?[item_id, state, progress, progress_label, last_position, updated_at] :=
                         item_id = $item_id,
                         state = $state,
-                        progress = 30,
+                        progress = 0.3,
                         progress_label = null,
                         last_position = null,
                         updated_at = $updated_at
@@ -606,7 +942,10 @@ mod tests {
                         ("state".to_string(), DataValue::from(state)),
                         (
                             "updated_at".to_string(),
-                            DataValue::Validity(Validity::from((item.discovered_at_micros + 1, true))),
+                            DataValue::Validity(Validity::from((
+                                item.discovered_at_micros + 1,
+                                true,
+                            ))),
                         ),
                     ]),
                 )
