@@ -14,6 +14,8 @@ use tauri::http::{Response, StatusCode, header};
 
 pub use crate::error::{AppError, Result};
 
+const BLOB_URI_SCHEME: &str = "carrel-blob";
+
 /// Start the desktop application.
 pub fn run() -> Result<()> {
     init_tracing();
@@ -25,7 +27,7 @@ pub fn run() -> Result<()> {
     store.migrate()?;
 
     tauri::Builder::default()
-        .register_uri_scheme_protocol("blob", move |_ctx, request| {
+        .register_uri_scheme_protocol(BLOB_URI_SCHEME, move |_ctx, request| {
             blob_protocol_response(&protocol_blobs, request.uri())
         })
         .manage(state::AppState::new(store, blobs, paths))

@@ -160,4 +160,11 @@ pub enum ExtractError {
         /// URL or base URL being extracted.
         url: String,
     },
+
+    /// The fetched document was a browser/offline network error shell.
+    #[error("extractor received a network error page for {url}")]
+    NetworkErrorPage {
+        /// URL or base URL being extracted.
+        url: String,
+    },
 }

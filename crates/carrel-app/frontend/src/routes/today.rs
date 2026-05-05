@@ -10,7 +10,7 @@ use crate::api::ItemSummary;
 use crate::api::{self, ItemFilter};
 use crate::components::TodayList;
 use crate::keymap::{use_action_handler, use_keymap_layer};
-use crate::navigation::{ListNavigation, use_list_navigation_context};
+use crate::navigation::{ListNavigation, ListNavigationContext, use_list_navigation_context};
 
 /// Items discovered recently.
 #[component]
@@ -60,21 +60,17 @@ pub fn Today() -> impl IntoView {
 
     let open_navigate = navigate.clone();
     use_action_handler("open-item", move || {
-        let list_context = items.with_untracked(|rows| {
-            let item = rows.get(cursor.get_untracked())?;
-            Some(ListNavigation {
-                item_ids: rows.iter().map(|row| row.id.clone()).collect(),
-                current_id: item.id.clone(),
-                return_path: "/today".to_string(),
-            })
-        });
-        let Some(list_context) = list_context else {
-            return;
-        };
-
-        let item_id = list_context.current_id.clone();
-        list_navigation.set(list_context);
-        open_navigate(&format!("/item/{item_id}"), NavigateOptions::default());
+        open_item_at(
+            items,
+            cursor,
+            list_navigation,
+            open_navigate.clone(),
+            cursor.get_untracked(),
+        );
+    });
+    let row_navigate = navigate.clone();
+    let open_row = UnsyncCallback::new(move |index| {
+        open_item_at(items, cursor, list_navigation, row_navigate.clone(), index);
     });
 
     use_action_handler("go-back", move || {});
@@ -119,12 +115,37 @@ pub fn Today() -> impl IntoView {
                         <p class="quiet-state">"No items today."</p>
                     }.into_any(),
                     None => view! {
-                        <TodayList items=items.get() selected_index=cursor.get()/>
+                        <TodayList items=items.get() selected_index=cursor.get() on_open=open_row/>
                     }.into_any(),
                 }}
             </Show>
         </section>
     }
+}
+
+fn open_item_at(
+    items: RwSignal<Vec<ItemSummary>>,
+    cursor: RwSignal<usize>,
+    list_navigation: ListNavigationContext,
+    navigate: impl Fn(&str, NavigateOptions),
+    index: usize,
+) {
+    let list_context = items.with_untracked(|rows| {
+        let item = rows.get(index)?;
+        Some(ListNavigation {
+            item_ids: rows.iter().map(|row| row.id.clone()).collect(),
+            current_id: item.id.clone(),
+            return_path: "/today".to_string(),
+        })
+    });
+    let Some(list_context) = list_context else {
+        return;
+    };
+
+    cursor.set(index);
+    let item_id = list_context.current_id.clone();
+    list_navigation.set(list_context);
+    navigate(&format!("/item/{item_id}"), NavigateOptions::default());
 }
 
 #[derive(Clone, Copy)]

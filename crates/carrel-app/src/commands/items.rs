@@ -5,6 +5,7 @@ use std::str::FromStr;
 
 use carrel_store::blobs::{BlobId, BlobStore};
 use cozo::{DataValue, JsonData, Num};
+use kuchiki::traits::TendrilSink;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 use time::{Duration, OffsetDateTime};
@@ -17,6 +18,8 @@ use crate::state::AppState;
 const DEFAULT_ITEM_LIMIT: usize = 100;
 const MAX_ITEM_LIMIT: usize = 100;
 const TODAY_LOOKBACK: Duration = Duration::hours(24);
+const LEGACY_BLOB_URI_PREFIX: &str = "blob://";
+const WEBVIEW_BLOB_URI_PREFIX: &str = "carrel-blob://";
 
 /// List items from the local store.
 #[tauri::command]
@@ -251,7 +254,9 @@ pub(crate) fn get_item_from_parts(
         .as_deref()
         .map(|blob_id| readable_html(blobs, blob_id))
         .transpose()?
-        .or_else(|| item.summary.clone())
+        .filter(|html| !looks_like_network_error_page(html))
+        .or_else(|| item.summary.as_deref().map(summary_content_html))
+        .map(|html| rewrite_blob_uris_for_webview(&html))
         .unwrap_or_default();
 
     Ok(Some(ItemDetail {
@@ -481,6 +486,88 @@ fn readable_html(blobs: &BlobStore, blob_id: &str) -> Result<String> {
     })
 }
 
+fn rewrite_blob_uris_for_webview(html: &str) -> String {
+    let document = kuchiki::parse_html().one(html);
+
+    if let Ok(nodes) =
+        document.select("img[src], source[src], audio[src], video[src], video[poster]")
+    {
+        for node in nodes {
+            for attr_name in ["src", "poster"] {
+                let rewritten = {
+                    let attributes = node.attributes.borrow();
+                    attributes.get(attr_name).and_then(rewrite_legacy_blob_url)
+                };
+                if let Some(rewritten) = rewritten {
+                    node.attributes.borrow_mut().insert(attr_name, rewritten);
+                }
+            }
+        }
+    }
+
+    if let Ok(nodes) = document.select("img[srcset], source[srcset]") {
+        for node in nodes {
+            let Some(rewritten) = node
+                .attributes
+                .borrow()
+                .get("srcset")
+                .and_then(rewrite_legacy_blob_srcset)
+            else {
+                continue;
+            };
+            node.attributes.borrow_mut().insert("srcset", rewritten);
+        }
+    }
+
+    serialize_body_children(&document)
+}
+
+fn rewrite_legacy_blob_url(value: &str) -> Option<String> {
+    value
+        .strip_prefix(LEGACY_BLOB_URI_PREFIX)
+        .map(|suffix| format!("{WEBVIEW_BLOB_URI_PREFIX}{suffix}"))
+}
+
+fn rewrite_legacy_blob_srcset(value: &str) -> Option<String> {
+    let mut changed = false;
+    let rewritten = value
+        .split(',')
+        .map(str::trim)
+        .filter(|candidate| !candidate.is_empty())
+        .map(|candidate| {
+            let mut parts = candidate.split_whitespace();
+            let url = parts.next().unwrap_or_default();
+            let descriptor = parts.collect::<Vec<_>>().join(" ");
+            let url = if let Some(rewritten) = rewrite_legacy_blob_url(url) {
+                changed = true;
+                rewritten
+            } else {
+                url.to_string()
+            };
+
+            if descriptor.is_empty() {
+                url
+            } else {
+                format!("{url} {descriptor}")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    changed.then_some(rewritten)
+}
+
+fn serialize_body_children(document: &kuchiki::NodeRef) -> String {
+    let Ok(body) = document.select_first("body") else {
+        return document.to_string();
+    };
+
+    body.as_node()
+        .children()
+        .map(|child| child.to_string())
+        .collect()
+}
+
 fn iso8601_timestamp(micros: i64) -> String {
     let timestamp = OffsetDateTime::from_unix_timestamp(micros / 1_000_000)
         .unwrap_or(OffsetDateTime::UNIX_EPOCH);
@@ -512,9 +599,32 @@ fn summary_from_parts(
         time_label: time_label(item.discovered_at_micros, now),
         read_state,
         primary_url: item.primary_url.clone(),
-        summary: item.summary.clone(),
+        summary: item.summary.as_deref().map(plain_text_summary),
         discovered_at_micros: item.discovered_at_micros,
     }
+}
+
+fn plain_text_summary(summary: &str) -> String {
+    kuchiki::parse_html()
+        .one(summary)
+        .text_contents()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn summary_content_html(summary: &str) -> String {
+    let summary = plain_text_summary(summary);
+    if summary.is_empty() {
+        String::new()
+    } else {
+        format!("<p>{}</p>", html_escape::encode_text(&summary))
+    }
+}
+
+fn looks_like_network_error_page(html: &str) -> bool {
+    let text = plain_text_summary(html).to_lowercase().replace('’', "'");
+    text.contains("we can't find the internet") && text.contains("attempting to reconnect")
 }
 
 fn source_name(primary_url: Option<&str>, site_name: Option<&str>) -> String {
@@ -725,6 +835,29 @@ mod tests {
     }
 
     #[test]
+    fn item_summary_uses_plain_text_preview() {
+        let item = ItemRecord {
+            id: "html-summary".to_string(),
+            title: "HTML Summary".to_string(),
+            creators: Vec::new(),
+            primary_url: None,
+            published_at_micros: None,
+            language: None,
+            summary: Some("<p>Hello <strong>world</strong>&nbsp;today.</p>".to_string()),
+            discovered_at_micros: unix_micros(OffsetDateTime::now_utc()),
+        };
+
+        let summary = summary_from_parts(
+            &item,
+            &ArticleMetadata::default(),
+            "unread".to_string(),
+            OffsetDateTime::now_utc(),
+        );
+
+        assert_eq!(summary.summary.as_deref(), Some("Hello world today."));
+    }
+
+    #[test]
     fn item_detail_includes_creators_and_readable_content() {
         let store = carrel_store::Store::open_in_memory().unwrap();
         store.migrate().unwrap();
@@ -746,35 +879,7 @@ mod tests {
                 minutes: Some(12),
             },
         );
-        store
-            .query_with_params(
-                r#"
-                ?[item_id, format, blob_id, fetched_at, extracted_with, byte_size] :=
-                    item_id = $item_id,
-                    format = 'html_readable',
-                    blob_id = $blob_id,
-                    fetched_at = $fetched_at,
-                    extracted_with = 'readability',
-                    byte_size = $byte_size
-                :put item_content {item_id, format => blob_id, fetched_at, extracted_with, byte_size}
-                "#,
-                BTreeMap::from([
-                    ("item_id".to_string(), DataValue::from("item-with-content")),
-                    ("blob_id".to_string(), DataValue::from(blob_id.as_str())),
-                    (
-                        "byte_size".to_string(),
-                        DataValue::Num(Num::Int(i64::try_from(body.len()).unwrap())),
-                    ),
-                    (
-                        "fetched_at".to_string(),
-                        DataValue::Validity(Validity::from((
-                            unix_micros(OffsetDateTime::now_utc()),
-                            true,
-                        ))),
-                    ),
-                ]),
-            )
-            .unwrap();
+        insert_item_content(&store, "item-with-content", blob_id.as_str(), body.len());
 
         let detail = get_item_from_parts(&store, &blobs, "item-with-content")
             .unwrap()
@@ -785,6 +890,90 @@ mod tests {
         assert_eq!(detail.source_name, "essays.example");
         assert_eq!(detail.readable_blob_id.as_deref(), Some(blob_id.as_str()));
         assert_eq!(detail.content_html, "<p>Cached body.</p>");
+    }
+
+    #[test]
+    fn item_detail_falls_back_to_summary_for_network_error_body() {
+        let store = carrel_store::Store::open_in_memory().unwrap();
+        store.migrate().unwrap();
+        let tempdir = tempfile::tempdir().unwrap();
+        let blobs = BlobStore::open(tempdir.path());
+        let body =
+            b"<main><h1>We can't find the internet</h1><p>Attempting to reconnect</p></main>";
+        let blob_id = blobs.put_blocking(body).unwrap().to_string();
+
+        insert_item(
+            &store,
+            InsertItem {
+                id: "item-with-network-error-body",
+                title: "Cached Essay",
+                url: Some("https://essays.example/read"),
+                summary: Some("<p>Real feed summary.</p>"),
+                discovered_at_micros: unix_micros(OffsetDateTime::now_utc()),
+                read_state: None,
+                site_name: None,
+                minutes: Some(12),
+            },
+        );
+        insert_item_content(
+            &store,
+            "item-with-network-error-body",
+            blob_id.as_str(),
+            body.len(),
+        );
+
+        let detail = get_item_from_parts(&store, &blobs, "item-with-network-error-body")
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(detail.content_html, "<p>Real feed summary.</p>");
+        assert_eq!(detail.readable_blob_id.as_deref(), Some(blob_id.as_str()));
+    }
+
+    #[test]
+    fn item_detail_rewrites_legacy_blob_urls_for_the_webview_protocol() {
+        let store = carrel_store::Store::open_in_memory().unwrap();
+        store.migrate().unwrap();
+        let tempdir = tempfile::tempdir().unwrap();
+        let blobs = BlobStore::open(tempdir.path());
+        let body = b"<p><img src=\"blob://abc\" srcset=\"blob://def 2x\"><video src=\"blob://ghi\" poster=\"blob://jkl\"></video></p>";
+        let blob_id = blobs.put_blocking(body).unwrap().to_string();
+
+        insert_item(
+            &store,
+            InsertItem {
+                id: "item-with-legacy-blob-url",
+                title: "Cached Essay",
+                url: Some("https://essays.example/read"),
+                summary: None,
+                discovered_at_micros: unix_micros(OffsetDateTime::now_utc()),
+                read_state: None,
+                site_name: None,
+                minutes: Some(12),
+            },
+        );
+        insert_item_content(
+            &store,
+            "item-with-legacy-blob-url",
+            blob_id.as_str(),
+            body.len(),
+        );
+
+        let detail = get_item_from_parts(&store, &blobs, "item-with-legacy-blob-url")
+            .unwrap()
+            .unwrap();
+
+        assert!(detail.content_html.contains("carrel-blob://abc"));
+        assert!(detail.content_html.contains("carrel-blob://def 2x"));
+        assert!(detail.content_html.contains("carrel-blob://ghi"));
+        assert!(detail.content_html.contains("carrel-blob://jkl"));
+        assert!(!detail.content_html.contains("src=\"blob://"));
+        assert!(!detail.content_html.contains("srcset=\"blob://"));
+        assert!(!detail.content_html.contains("poster=\"blob://"));
+        assert_eq!(
+            rewrite_blob_uris_for_webview(&detail.content_html),
+            detail.content_html
+        );
     }
 
     #[test]
@@ -951,5 +1140,42 @@ mod tests {
                 )
                 .unwrap();
         }
+    }
+
+    fn insert_item_content(
+        store: &carrel_store::Store,
+        item_id: &str,
+        blob_id: &str,
+        byte_size: usize,
+    ) {
+        store
+            .query_with_params(
+                r#"
+                ?[item_id, format, blob_id, fetched_at, extracted_with, byte_size] :=
+                    item_id = $item_id,
+                    format = 'html_readable',
+                    blob_id = $blob_id,
+                    fetched_at = $fetched_at,
+                    extracted_with = 'readability',
+                    byte_size = $byte_size
+                :put item_content {item_id, format => blob_id, fetched_at, extracted_with, byte_size}
+                "#,
+                BTreeMap::from([
+                    ("item_id".to_string(), DataValue::from(item_id)),
+                    ("blob_id".to_string(), DataValue::from(blob_id)),
+                    (
+                        "byte_size".to_string(),
+                        DataValue::Num(Num::Int(i64::try_from(byte_size).unwrap())),
+                    ),
+                    (
+                        "fetched_at".to_string(),
+                        DataValue::Validity(Validity::from((
+                            unix_micros(OffsetDateTime::now_utc()),
+                            true,
+                        ))),
+                    ),
+                ]),
+            )
+            .unwrap();
     }
 }

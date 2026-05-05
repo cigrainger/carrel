@@ -6,7 +6,11 @@ use crate::api::ItemSummary;
 
 /// Render a list of items.
 #[component]
-pub fn TodayList(items: Vec<ItemSummary>, selected_index: usize) -> impl IntoView {
+pub fn TodayList(
+    items: Vec<ItemSummary>,
+    selected_index: usize,
+    on_open: UnsyncCallback<usize>,
+) -> impl IntoView {
     let indexed_items = items.into_iter().enumerate().collect::<Vec<_>>();
 
     view! {
@@ -18,7 +22,7 @@ pub fn TodayList(items: Vec<ItemSummary>, selected_index: usize) -> impl IntoVie
             >
                 {
                     let (index, item) = row;
-                    view! { <ItemRow item=item selected=index == selected_index/> }
+                    view! { <ItemRow index=index item=item selected=index == selected_index on_open=on_open/> }
                 }
             </For>
         </ul>
@@ -27,7 +31,12 @@ pub fn TodayList(items: Vec<ItemSummary>, selected_index: usize) -> impl IntoVie
 
 /// One item row in a list route.
 #[component]
-pub fn ItemRow(item: ItemSummary, selected: bool) -> impl IntoView {
+pub fn ItemRow(
+    index: usize,
+    item: ItemSummary,
+    selected: bool,
+    on_open: UnsyncCallback<usize>,
+) -> impl IntoView {
     let indicator = if item.read_state == "unread" {
         "●"
     } else {
@@ -41,7 +50,11 @@ pub fn ItemRow(item: ItemSummary, selected: bool) -> impl IntoView {
     };
 
     view! {
-        <li class=class aria-selected=selected.to_string()>
+        <li
+            class=class
+            aria-selected=selected.to_string()
+            on:click=move |_| on_open.run(index)
+        >
             <span class="read-indicator" aria-hidden="true">{indicator}</span>
             <div class="item-row-body">
                 <div class="item-row-topline">
@@ -78,8 +91,16 @@ mod tests {
             discovered_at_micros: 1,
         }];
 
-        let html =
-            Owner::new().with(|| view! { <TodayList items=items selected_index=0/> }.to_html());
+        let html = Owner::new().with(|| {
+            view! {
+                <TodayList
+                    items=items
+                    selected_index=0
+                    on_open=UnsyncCallback::new(|_: usize| {})
+                />
+            }
+            .to_html()
+        });
         let expected = r#"<ul aria-label="Today" class="item-list"> <li aria-selected="true" class="item-row is-selected"><span aria-hidden="true" class="read-indicator">●</span><div class="item-row-body"><div class="item-row-topline"><h2>The shape of a small reader</h2><p class="item-meta"><span>Example</span><span>5 min</span><span>2h ago</span></p></div><p class="item-excerpt">A compact summary.</p></div></li><!></ul>"#;
 
         assert_eq!(html, expected);

@@ -96,6 +96,12 @@ pub fn extract_from_html_with_options(
     base_url: &str,
     options: &ExtractOptions,
 ) -> Result<ExtractedArticle, ExtractError> {
+    if looks_like_network_error_page(html) {
+        return Err(ExtractError::NetworkErrorPage {
+            url: base_url.to_string(),
+        });
+    }
+
     match readable_extract(html, base_url) {
         Ok(primary) if primary.word_count > 0 || options.trafilatura.is_none() => Ok(primary),
         Ok(_) | Err(ExtractError::EmptyContent { .. }) => run_trafilatura(
@@ -112,6 +118,12 @@ pub fn extract_from_html_with_options(
 
 /// Sanitize already embedded feed content without fetching or readability scoring.
 pub fn extract_embedded_html(html: &str, base_url: &str) -> Result<ExtractedArticle, ExtractError> {
+    if looks_like_network_error_page(html) {
+        return Err(ExtractError::NetworkErrorPage {
+            url: base_url.to_string(),
+        });
+    }
+
     let base = parse_base_url(base_url)?;
     let content_html = sanitize_html(html);
     article_from_sanitized(
@@ -161,6 +173,11 @@ pub fn html_to_text(html: &str) -> String {
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+fn looks_like_network_error_page(html: &str) -> bool {
+    let text = html_to_text(html).to_lowercase().replace('’', "'");
+    text.contains("we can't find the internet") && text.contains("attempting to reconnect")
 }
 
 pub(crate) fn reading_stats(html: &str) -> (usize, u32) {

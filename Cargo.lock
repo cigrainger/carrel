@@ -615,6 +615,8 @@ dependencies = [
  "carrel-core",
  "carrel-store",
  "cozo",
+ "html-escape",
+ "kuchiki",
  "serde",
  "serde_json",
  "tauri",

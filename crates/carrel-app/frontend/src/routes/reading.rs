@@ -55,12 +55,9 @@ pub fn ReadingView() -> impl IntoView {
 
     let back_navigate = navigate.clone();
     use_action_handler("go-back", move || {
-        let return_path = list_navigation
-            .get()
-            .map(|navigation| navigation.return_path)
-            .unwrap_or_else(|| "/today".to_string());
-        back_navigate(&return_path, NavigateOptions::default());
+        navigate_back(list_navigation, back_navigate.clone());
     });
+    let back_button_navigate = navigate.clone();
 
     let next_navigate = navigate.clone();
     use_action_handler("next-item-mark-read", move || {
@@ -140,6 +137,13 @@ pub fn ReadingView() -> impl IntoView {
             node_ref=scroll_ref
             on:scroll=move |_| persist_progress(item, scroll_ref)
         >
+            <button
+                type="button"
+                class="reader-back"
+                on:click=move |_| navigate_back(list_navigation, back_button_navigate.clone())
+            >
+                "Back"
+            </button>
             <Show
                 when=move || loaded.get()
                 fallback=|| view! { <div class="reading-empty" aria-hidden="true"></div> }
@@ -220,6 +224,17 @@ pub fn ArticleContent(item: ItemDetail) -> impl IntoView {
 enum Direction {
     Next,
     Previous,
+}
+
+fn navigate_back(
+    list_navigation: crate::navigation::ListNavigationContext,
+    navigate: impl Fn(&str, NavigateOptions),
+) {
+    let return_path = list_navigation
+        .get()
+        .map(|navigation| navigation.return_path)
+        .unwrap_or_else(|| "/today".to_string());
+    navigate(&return_path, NavigateOptions::default());
 }
 
 fn navigate_adjacent(

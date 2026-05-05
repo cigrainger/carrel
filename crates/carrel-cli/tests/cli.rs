@@ -1,6 +1,7 @@
 use std::process::{Command, Output};
 
 use carrel_store::ids::{canonicalize_external_identifier, id_for_external};
+use serde_json::Value;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -282,6 +283,93 @@ async fn feed_fetch_uses_embedded_content_without_fetching_item_url() {
     );
     assert!(show.stdout.contains("Embedded Item"));
     assert!(show.stdout.contains("Embedded body content"));
+}
+
+#[tokio::test]
+async fn feed_fetch_skips_network_error_article_body() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/robots.txt"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("User-agent: *\nAllow: /\n"))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/feed.xml"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(format!(
+            r#"<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Offline Shell Feed</title>
+    <item>
+      <guid>offline-1</guid>
+      <title>Offline Shell Item</title>
+      <link>{}/offline</link>
+      <description>Summary survives when extracted content is junk.</description>
+    </item>
+  </channel>
+</rss>"#,
+            server.uri()
+        )))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/offline"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            r#"<!doctype html>
+<html>
+  <body>
+    <main>
+      <h1>We can't find the internet</h1>
+      <p>Attempting to reconnect</p>
+    </main>
+  </body>
+</html>"#,
+        ))
+        .mount(&server)
+        .await;
+
+    let tempdir = tempfile::tempdir().unwrap();
+    let data_dir = tempdir.path().to_str().unwrap();
+    run_ok(carrel_cli().args(["--data-dir", data_dir]).args([
+        "init",
+        "--passphrase",
+        "test-passphrase",
+    ]));
+
+    let feed_url = format!("{}/feed.xml", server.uri());
+    run_ok(
+        carrel_cli()
+            .args(["--data-dir", data_dir])
+            .args(["feed", "add", &feed_url]),
+    );
+    let fetch = run_ok(
+        carrel_cli()
+            .args(["--data-dir", data_dir])
+            .args(["feed", "fetch", "--all"]),
+    );
+    assert!(fetch.stdout.contains("1 new"));
+    assert!(
+        fetch.stdout.contains("1 content errors"),
+        "stdout:\n{}",
+        fetch.stdout
+    );
+
+    let item_id = id_for_external(&canonicalize_external_identifier(&format!(
+        "{}/offline",
+        server.uri()
+    )));
+    let show = run_ok(
+        carrel_cli()
+            .args(["--data-dir", data_dir])
+            .args(["--json", "item", "show", &item_id]),
+    );
+    let item: Value = serde_json::from_str(&show.stdout).unwrap();
+    assert!(item["readable"].is_null());
+    assert!(item["preview"].is_null());
+    assert_eq!(
+        item["summary"].as_str(),
+        Some("Summary survives when extracted content is junk.")
+    );
 }
 
 struct CapturedOutput {

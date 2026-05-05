@@ -23,6 +23,19 @@ fn extracts_fixture_article() {
 }
 
 #[test]
+fn network_error_shell_is_not_readable_content() {
+    let html = r#"
+        <main>
+          <h1>We can't find the internet</h1>
+          <p>Attempting to reconnect</p>
+        </main>
+    "#;
+    let error = extract_from_html(html, "https://example.com/offline").unwrap_err();
+
+    assert!(error.to_string().contains("network error page"));
+}
+
+#[test]
 fn embedded_feed_content_skips_readability_scoring() {
     let article = extract_embedded_html(
         "<p>Full feed content with <strong>formatting</strong>.</p>",

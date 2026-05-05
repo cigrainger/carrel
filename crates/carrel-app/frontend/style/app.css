@@ -1,7 +1,3 @@
-@import "tokens.css";
-@import "reset.css";
-@import "typography.css";
-
 body {
   min-width: 320px;
   min-height: 100vh;
@@ -121,10 +117,32 @@ a {
 }
 
 .reading-route {
+  position: relative;
   height: calc(100vh - var(--status-strip-height));
   overflow: auto;
   padding: var(--space-10) var(--space-8);
   background: var(--color-bg);
+}
+
+.reader-back {
+  position: sticky;
+  top: var(--space-4);
+  z-index: 2;
+  height: 30px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-elevated);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-family: var(--font-chrome);
+  font-size: var(--text-sm);
+}
+
+.reader-back:hover,
+.reader-back:focus-visible {
+  background: var(--color-selected);
+  color: var(--color-text);
 }
 
 .reading-empty {
@@ -345,6 +363,7 @@ a {
   min-height: 76px;
   padding: var(--space-3) var(--space-3);
   border-top: 1px solid var(--color-rule);
+  cursor: pointer;
 }
 
 .item-row:hover {
