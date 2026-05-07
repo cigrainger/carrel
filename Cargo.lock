@@ -613,6 +613,7 @@ name = "carrel-app"
 version = "0.1.0"
 dependencies = [
  "carrel-core",
+ "carrel-feeds",
  "carrel-store",
  "cozo",
  "html-escape",
@@ -624,10 +625,12 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "time",
+ "tokio",
  "toml 1.1.2+spec-1.1.0",
  "tracing",
  "tracing-subscriber",
  "url",
+ "wiremock",
 ]
 
 [[package]]

@@ -1,9 +1,11 @@
 //! Leptos webview for the Carrel desktop app.
 
 #![deny(unsafe_code)]
+#![recursion_limit = "256"]
 
 pub mod api;
 mod components;
+mod feeds;
 mod keymap;
 mod navigation;
 mod routes;
@@ -21,6 +23,7 @@ use crate::keymap::{GlobalKeymapActions, KeymapProvider};
 pub fn App() -> impl IntoView {
     let theme = theme::provide_theme_controller();
     navigation::provide_list_navigation_context();
+    feeds::provide_feed_controller();
 
     view! {
         <Router>
@@ -36,6 +39,7 @@ pub fn App() -> impl IntoView {
                             <Route path=path!("/library") view=routes::Library/>
                             <Route path=path!("/highlights") view=routes::Highlights/>
                             <Route path=path!("/lists") view=routes::Lists/>
+                            <Route path=path!("/feed/:url") view=routes::FeedRoute/>
                             <Route path=path!("/item/:id") view=routes::ReadingView/>
                         </Routes>
                     </main>

@@ -9,6 +9,8 @@ use crate::api::ItemSummary;
 #[cfg(target_arch = "wasm32")]
 use crate::api::{self, ItemFilter};
 use crate::components::TodayList;
+#[cfg(target_arch = "wasm32")]
+use crate::feeds::use_feed_controller;
 use crate::keymap::{use_action_handler, use_keymap_layer};
 use crate::navigation::{ListNavigation, ListNavigationContext, use_list_navigation_context};
 
@@ -21,6 +23,8 @@ pub fn Today() -> impl IntoView {
     let loaded = RwSignal::new(false);
     let navigate = use_navigate();
     let list_navigation = use_list_navigation_context();
+    #[cfg(target_arch = "wasm32")]
+    let feed_controller = use_feed_controller();
 
     use_keymap_layer(default::list_layer());
     use_keymap_layer(default::item_action_layer());
@@ -80,6 +84,7 @@ pub fn Today() -> impl IntoView {
         use wasm_bindgen_futures::spawn_local;
 
         Effect::new(move |_| {
+            let _ = feed_controller.refresh_token().get();
             spawn_local(async move {
                 match api::list_items(ItemFilter::today()).await {
                     Ok(rows) => {

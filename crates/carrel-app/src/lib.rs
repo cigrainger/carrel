@@ -2,9 +2,11 @@
 
 #![deny(unsafe_code)]
 
+mod background;
 mod commands;
 mod config;
 mod error;
+mod feed_runner;
 mod state;
 
 use std::str::FromStr;
@@ -25,13 +27,25 @@ pub fn run() -> Result<()> {
     let blobs = BlobStore::open(&paths.blobs);
     let protocol_blobs = blobs.clone();
     store.migrate()?;
+    let app_state = state::AppState::new(store, blobs, paths);
+    let background_state = app_state.clone();
 
     tauri::Builder::default()
         .register_uri_scheme_protocol(BLOB_URI_SCHEME, move |_ctx, request| {
             blob_protocol_response(&protocol_blobs, request.uri())
         })
-        .manage(state::AppState::new(store, blobs, paths))
+        .setup(move |_| {
+            background::spawn_feed_loop(background_state.clone());
+            Ok(())
+        })
+        .manage(app_state)
         .invoke_handler(tauri::generate_handler![
+            commands::feeds::add_feed,
+            commands::feeds::feed_status,
+            commands::feeds::fetch_all_feeds,
+            commands::feeds::fetch_feed,
+            commands::feeds::list_feeds,
+            commands::feeds::remove_feed,
             commands::items::get_item,
             commands::items::list_items,
             commands::keymap::keymap_config,

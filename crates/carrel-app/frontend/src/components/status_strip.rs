@@ -2,6 +2,7 @@
 
 use leptos::prelude::*;
 
+use crate::feeds::use_feed_controller;
 use crate::keymap::use_keymap_warnings;
 use crate::theme::{Theme, use_theme_controller};
 
@@ -10,6 +11,7 @@ use crate::theme::{Theme, use_theme_controller};
 pub fn StatusStrip() -> impl IntoView {
     let theme = use_theme_controller();
     let keymap_warnings = use_keymap_warnings();
+    let feed_status = use_feed_controller().status();
 
     view! {
         <footer class="status-strip" aria-label="Status">
@@ -17,7 +19,15 @@ pub fn StatusStrip() -> impl IntoView {
                 keymap_warnings
                     .and_then(|warnings| warnings.get().first().cloned())
                     .map(|warning| view! { <span class="status-warning">{warning}</span> }.into_any())
-                    .unwrap_or_else(|| view! { <span>"Local store ready"</span> }.into_any())
+                    .unwrap_or_else(|| {
+                        let status = feed_status.get();
+                        let class = if status.feed_errors + status.entry_errors + status.content_errors > 0 {
+                            "status-warning"
+                        } else {
+                            "status-message"
+                        };
+                        view! { <span class=class>{status.message}</span> }.into_any()
+                    })
             }}
             <div class="theme-switcher" role="group" aria-label="Theme">
                 {Theme::ALL.into_iter().map(|option| {

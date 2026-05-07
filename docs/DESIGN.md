@@ -472,6 +472,14 @@ A small star icon, filled when starred, outlined when not. Single click to toggl
 
 Small lowercase labels with a subtle background tint, separated from titles. Clicking a tag filters the current view to items with that tag. No icons; just text.
 
+### Feed management
+
+The sidebar Feeds section lists subscribed feed titles, falling back to host or URL when the feed has not been fetched yet. Feed rows are plain navigation rows with a small explicit remove affordance. No unread counts, badges, or freshness counters appear beside feeds.
+
+Adding a feed uses a compact user-initiated overlay with one URL input. Confirming subscribes and immediately fetches the feed once. Removing a feed uses the same compact overlay style and makes clear that saved items remain in Carrel; removal only stops future fetches.
+
+Feed fetch progress and non-fatal errors surface in the status strip. The sidebar may expose a small explicit "Fetch" command, but it never animates or prompts for attention.
+
 ### Share affordance
 
 In a list, a subtle indicator on items you've shared (a small dot next to the title). In the reading view, the share button appears in the footer along with other actions. Hovering or focusing it reveals the audience(s).

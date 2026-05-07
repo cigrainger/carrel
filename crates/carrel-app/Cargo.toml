@@ -13,6 +13,7 @@ path = "src/lib.rs"
 [dependencies]
 cozo = { workspace = true }
 carrel-core = { workspace = true }
+carrel-feeds = { workspace = true }
 carrel-store = { workspace = true }
 html-escape = { workspace = true }
 kuchiki = { workspace = true }
@@ -21,6 +22,7 @@ serde_json = { workspace = true }
 tauri = { workspace = true }
 thiserror = { workspace = true }
 time = { workspace = true }
+tokio = { workspace = true }
 toml = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
@@ -31,3 +33,4 @@ tauri-build = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+wiremock = { workspace = true }

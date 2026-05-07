@@ -20,6 +20,10 @@ pub enum AppError {
     #[error(transparent)]
     Blob(#[from] carrel_store::blobs::BlobError),
 
+    /// Feed subscription or fetch orchestration failed.
+    #[error("{0}")]
+    Feed(String),
+
     /// Tauri failed while building or running the shell.
     #[error(transparent)]
     Tauri(#[from] tauri::Error),
@@ -49,6 +53,7 @@ impl Serialize for AppError {
             Self::Config(_) => "config",
             Self::Store(_) => "store",
             Self::Blob(_) => "blob",
+            Self::Feed(_) => "feed",
             Self::Tauri(_) => "tauri",
             Self::InvalidData { .. } => "invalid_data",
         };
