@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::str::FromStr;
 
+use carrel_core::shape::Shape;
 use carrel_store::blobs::{BlobId, BlobStore};
 use cozo::{DataValue, JsonData, Num};
 use kuchiki::traits::TendrilSink;
@@ -157,6 +158,8 @@ pub struct ItemDetail {
     pub title: String,
     /// Source name derived from article metadata or the URL host.
     pub source_name: String,
+    /// Feed URL that discovered the item, when known.
+    pub feed_url: Option<String>,
     /// ISO-8601 published timestamp, when known.
     pub published_at: Option<String>,
     /// Language tag, when known.
@@ -165,8 +168,12 @@ pub struct ItemDetail {
     pub length_label: String,
     /// Estimated reading minutes, when known.
     pub estimated_read_minutes: Option<u32>,
+    /// Word count from article extraction, when known.
+    pub word_count: Option<u32>,
     /// Human-readable relative discovery time.
     pub time_label: String,
+    /// ISO-8601 discovery timestamp.
+    pub discovered_at: String,
     /// Local read state, defaulting to unread.
     pub read_state: String,
     /// Whether the item is starred locally.
@@ -183,6 +190,8 @@ pub struct ItemDetail {
     pub byline: Option<String>,
     /// Blob id for cached readable HTML, when available.
     pub readable_blob_id: Option<String>,
+    /// Structural content-shape labels, when detected.
+    pub shape_tags: Vec<String>,
     /// Last scroll offset in CSS pixels, when known.
     pub last_scroll: Option<f64>,
     /// Discovery timestamp in Unix microseconds.
@@ -203,6 +212,7 @@ struct ItemRecord {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct ArticleMetadata {
+    feed_url: Option<String>,
     word_count: Option<i64>,
     estimated_read_minutes: Option<i64>,
     site_name: Option<String>,
@@ -279,6 +289,7 @@ pub(crate) fn get_item_from_parts(
     let article = article_metadata(store, id)?;
     let read_state = read_state(store, id)?;
     let starred = starred_state(store, id)?;
+    let shape_tags = shape_tags(store, id)?;
     let summary = summary_from_parts(
         &item,
         &article,
@@ -302,13 +313,18 @@ pub(crate) fn get_item_from_parts(
         id: summary.id,
         title: summary.title,
         source_name: summary.source_name,
+        feed_url: article.feed_url.clone(),
         published_at: item.published_at_micros.map(iso8601_timestamp),
         language: item.language,
         length_label: summary.length_label,
         estimated_read_minutes: article
             .estimated_read_minutes
             .and_then(|minutes| u32::try_from(minutes).ok()),
+        word_count: article
+            .word_count
+            .and_then(|words| u32::try_from(words).ok()),
         time_label: summary.time_label,
+        discovered_at: iso8601_timestamp(summary.discovered_at_micros),
         read_state: summary.read_state,
         starred,
         primary_url: summary.primary_url,
@@ -317,6 +333,7 @@ pub(crate) fn get_item_from_parts(
         creators: item.creators,
         byline: article.byline,
         readable_blob_id,
+        shape_tags,
         last_scroll: read_state.last_scroll_y,
         discovered_at_micros: summary.discovered_at_micros,
     }))
@@ -422,8 +439,8 @@ fn query_item_record(store: &carrel_store::Store, id: &str) -> Result<Option<Ite
 fn article_metadata(store: &carrel_store::Store, item_id: &str) -> Result<ArticleMetadata> {
     let rows = store.query_with_params(
         r#"
-        ?[word_count, estimated_read_minutes, site_name, byline] :=
-            *item_article{item_id, word_count, estimated_read_minutes, site_name, byline},
+        ?[feed_url, word_count, estimated_read_minutes, site_name, byline] :=
+            *item_article{item_id, feed_url, word_count, estimated_read_minutes, site_name, byline},
             item_id = $item_id
         :limit 1
         "#,
@@ -435,14 +452,15 @@ fn article_metadata(store: &carrel_store::Store, item_id: &str) -> Result<Articl
     };
 
     Ok(ArticleMetadata {
-        word_count: optional_i64(required(row, 0, "item_article.word_count")?)?,
+        feed_url: optional_string(required(row, 0, "item_article.feed_url")?)?,
+        word_count: optional_i64(required(row, 1, "item_article.word_count")?)?,
         estimated_read_minutes: optional_i64(required(
             row,
-            1,
+            2,
             "item_article.estimated_read_minutes",
         )?)?,
-        site_name: optional_string(required(row, 2, "item_article.site_name")?)?,
-        byline: optional_string(required(row, 3, "item_article.byline")?)?,
+        site_name: optional_string(required(row, 3, "item_article.site_name")?)?,
+        byline: optional_string(required(row, 4, "item_article.byline")?)?,
     })
 }
 
@@ -488,6 +506,43 @@ fn starred_state(store: &carrel_store::Store, item_id: &str) -> Result<bool> {
         .map(|row| value_as_bool(required(row, 0, "item_star.starred")?))
         .transpose()
         .map(Option::unwrap_or_default)
+}
+
+fn shape_tags(store: &carrel_store::Store, item_id: &str) -> Result<Vec<String>> {
+    let Some(record) = store.get_item_shape(item_id)? else {
+        return Ok(Vec::new());
+    };
+
+    Ok(shape_tag_labels(&record.shape)
+        .into_iter()
+        .map(str::to_string)
+        .collect())
+}
+
+fn shape_tag_labels(shape: &Shape) -> Vec<&'static str> {
+    let mut tags = Vec::new();
+    if shape.has_video_embed {
+        tags.push("video");
+    }
+    if shape.has_audio_embed {
+        tags.push("audio");
+    }
+    if shape.is_link_roundup {
+        tags.push("link roundup");
+    }
+    if shape.is_long_form {
+        tags.push("long form");
+    }
+    if shape.is_short {
+        tags.push("short");
+    }
+    if shape.has_code {
+        tags.push("code");
+    }
+    if shape.has_math {
+        tags.push("math");
+    }
+    tags
 }
 
 fn update_read_progress_in_store(
@@ -1145,6 +1200,16 @@ mod tests {
                 minutes: Some(12),
             },
         );
+        store
+            .put_item_shape(
+                "item-with-content",
+                &Shape {
+                    is_long_form: true,
+                    has_code: true,
+                    ..Shape::default()
+                },
+            )
+            .unwrap();
         insert_item_content(&store, "item-with-content", blob_id.as_str(), body.len());
 
         let detail = get_item_from_parts(&store, &blobs, "item-with-content")
@@ -1154,7 +1219,9 @@ mod tests {
         assert_eq!(detail.title, "Cached Essay");
         assert_eq!(detail.creators, vec!["Ada"]);
         assert_eq!(detail.source_name, "essays.example");
+        assert_eq!(detail.word_count, Some(1200));
         assert_eq!(detail.readable_blob_id.as_deref(), Some(blob_id.as_str()));
+        assert_eq!(detail.shape_tags, vec!["long form", "code"]);
         assert_eq!(detail.content_html, "<p>Cached body.</p>");
     }
 

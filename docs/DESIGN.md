@@ -290,7 +290,11 @@ The reading view is the application's most important screen and the one that sho
 
 The header is small and quiet: title, byline, source/length/date in muted secondary text. No related-articles strip, no engagement bar, no recommended-for-you. Just the article.
 
-The footer is similarly minimal. A link to the original (so the user can verify the source or grab the URL), and a "send to ereader" action when the user wants to take it elsewhere. That's it.
+The reader has a slim persistent action rail above the scrolling article area. It is part of the page layout, not a floating overlay, so it never covers article text. It exposes Back, previous/next in the current list context, star/unstar, mark read/unread, open original, and item info. The same actions remain available from the keymap; mouse access mirrors keyboard semantics rather than creating a second behavior path.
+
+The item-info surface is user-initiated and appears in the article scroll area before the text, again without overlaying the article. It holds metadata that would clutter the article header: source/feed, canonical URL, cache state, discovery/publish dates, length facts, and content-shape tags. `Esc` closes item info before it navigates away from the reader.
+
+The footer is similarly minimal. It marks the end of the article and may repeat a link to the original so the user can verify the source or grab the URL. Send-to-ereader waits until that flow is real. That's it.
 
 When the user scrolls, the application chrome should fade — not literally animated, but the focus shifts to the text. The sidebar can remain visible but should not have any motion or attention-pulling elements.
 

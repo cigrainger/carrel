@@ -286,31 +286,77 @@ a {
 
 .reading-route {
   position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   height: calc(100vh - var(--status-strip-height));
-  overflow: auto;
-  padding: var(--space-10) var(--space-8);
+  overflow: hidden;
   background: var(--color-bg);
 }
 
-.reader-back {
-  position: sticky;
-  top: var(--space-4);
-  z-index: 2;
-  height: 30px;
-  padding: 0 var(--space-3);
-  border: 1px solid var(--color-rule);
-  border-radius: var(--radius-sm);
-  background: var(--color-bg-elevated);
+.reader-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-rule);
+  background: var(--color-bg);
   color: var(--color-text-secondary);
-  cursor: pointer;
   font-family: var(--font-chrome);
   font-size: var(--text-sm);
 }
 
-.reader-back:hover,
-.reader-back:focus-visible {
+.reader-action-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.reader-actions button,
+.reader-action-link {
+  height: 30px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--text-sm);
+  line-height: 28px;
+}
+
+.reader-action-link {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+.reader-actions button:hover,
+.reader-actions button:focus-visible,
+.reader-action-link:hover,
+.reader-action-link:focus-visible,
+.reader-actions button[aria-pressed="true"] {
   background: var(--color-selected);
   color: var(--color-text);
+}
+
+.reader-actions button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.reader-action-primary {
+  color: var(--color-text);
+}
+
+.reader-scroll {
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-8) var(--space-8) var(--space-10);
 }
 
 .reading-empty {
@@ -326,6 +372,90 @@ a {
   width: min(100%, var(--reading-measure));
   margin: 0 auto;
   padding-bottom: var(--space-10);
+}
+
+.reader-info {
+  width: min(100%, var(--reading-measure));
+  margin: 0 auto var(--space-8);
+  padding: var(--space-5) 0;
+  border-top: 1px solid var(--color-rule);
+  border-bottom: 1px solid var(--color-rule);
+  color: var(--color-text-secondary);
+  font-family: var(--font-chrome);
+}
+
+.reader-info header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.reader-info h2 {
+  color: var(--color-text);
+  font-size: var(--text-lg);
+  font-weight: 650;
+}
+
+.reader-info button {
+  height: 28px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--text-sm);
+}
+
+.reader-info button:hover,
+.reader-info button:focus-visible {
+  background: var(--color-selected);
+  color: var(--color-text);
+}
+
+.reader-info dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.reader-info div {
+  min-width: 0;
+}
+
+.reader-info dt {
+  color: var(--color-text-tertiary);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+}
+
+.reader-info dd {
+  margin-top: var(--space-1);
+  overflow-wrap: anywhere;
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  line-height: 1.4;
+}
+
+.reader-info-url {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.reader-info-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.reader-info-tags span {
+  padding: 1px var(--space-2);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
 }
 
 .reader-header {
@@ -853,9 +983,20 @@ a {
   }
 
   .reading-route {
-    height: auto;
-    min-height: calc(100vh - var(--status-strip-height));
+    height: calc(100vh - var(--status-strip-height));
+  }
+
+  .reader-actions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .reader-scroll {
     padding: var(--space-6) var(--space-4) var(--space-8);
+  }
+
+  .reader-info dl {
+    grid-template-columns: 1fr;
   }
 
   .reader-header {

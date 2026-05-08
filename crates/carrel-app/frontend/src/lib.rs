@@ -9,6 +9,7 @@ mod feeds;
 mod keymap;
 mod navigation;
 mod routes;
+mod status;
 mod theme;
 
 use leptos::prelude::*;
@@ -24,6 +25,7 @@ pub fn App() -> impl IntoView {
     let theme = theme::provide_theme_controller();
     navigation::provide_list_navigation_context();
     feeds::provide_feed_controller();
+    status::provide_status_controller();
 
     view! {
         <Router>
