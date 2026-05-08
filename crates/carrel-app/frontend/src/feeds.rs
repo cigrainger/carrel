@@ -78,7 +78,7 @@ pub(crate) fn use_feed_controller() -> FeedController {
 
 /// Route path for a feed URL.
 pub(crate) fn feed_href(url: &str) -> String {
-    format!("/feed/{}", percent_encode(url))
+    format!("/feeds/{}", percent_encode(url))
 }
 
 /// Decode a feed URL path segment.
@@ -124,11 +124,6 @@ pub(crate) async fn fetch_all(_controller: FeedController) -> Result<(), String>
 pub(crate) async fn fetch_one(controller: FeedController, url: String) -> Result<(), String> {
     let _ = api::fetch_feed(url).await.map_err(message)?;
     refresh_after_mutation(controller).await
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-pub(crate) async fn fetch_one(_controller: FeedController, _url: String) -> Result<(), String> {
-    Ok(())
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -260,10 +255,10 @@ mod tests {
 
         assert_eq!(
             href,
-            "/feed/https%3A%2F%2Fexample.com%2Frss%2Ffeed.xml%3Fx%3D1%26name%3DCarrel"
+            "/feeds/https%3A%2F%2Fexample.com%2Frss%2Ffeed.xml%3Fx%3D1%26name%3DCarrel"
         );
         assert_eq!(
-            decode_feed_path(href.trim_start_matches("/feed/")),
+            decode_feed_path(href.trim_start_matches("/feeds/")),
             Some(url.to_string())
         );
     }

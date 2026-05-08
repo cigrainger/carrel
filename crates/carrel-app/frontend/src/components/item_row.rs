@@ -6,15 +6,16 @@ use crate::api::ItemSummary;
 
 /// Render a list of items.
 #[component]
-pub fn TodayList(
+pub fn ItemList(
     items: Vec<ItemSummary>,
     selected_index: usize,
+    aria_label: String,
     on_open: UnsyncCallback<usize>,
 ) -> impl IntoView {
     let indexed_items = items.into_iter().enumerate().collect::<Vec<_>>();
 
     view! {
-        <ul class="item-list" aria-label="Today">
+        <ul class="item-list" aria-label=aria_label>
             <For
                 each=move || indexed_items.clone()
                 key=|(_, item)| item.id.clone()
@@ -43,6 +44,7 @@ pub fn ItemRow(
         "○"
     };
     let excerpt = item.summary.unwrap_or_default();
+    let starred = item.starred;
     let class = if selected {
         "item-row is-selected"
     } else {
@@ -58,7 +60,12 @@ pub fn ItemRow(
             <span class="read-indicator" aria-hidden="true">{indicator}</span>
             <div class="item-row-body">
                 <div class="item-row-topline">
-                    <h2>{item.title}</h2>
+                    <div class="item-row-title">
+                        <h2>{item.title}</h2>
+                        <Show when=move || starred>
+                            <span class="star-indicator" aria-label="Starred">"★"</span>
+                        </Show>
+                    </div>
                     <p class="item-meta">
                         <span>{item.source_name}</span>
                         <span>{item.length_label}</span>
@@ -78,7 +85,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn today_list_renders_item_rows() {
+    fn item_list_renders_item_rows() {
         let items = vec![ItemSummary {
             id: "item-1".to_string(),
             title: "The shape of a small reader".to_string(),
@@ -86,6 +93,7 @@ mod tests {
             length_label: "5 min".to_string(),
             time_label: "2h ago".to_string(),
             read_state: "unread".to_string(),
+            starred: true,
             primary_url: Some("https://example.com/item".to_string()),
             summary: Some("A compact summary.".to_string()),
             discovered_at_micros: 1,
@@ -93,15 +101,16 @@ mod tests {
 
         let html = Owner::new().with(|| {
             view! {
-                <TodayList
+                <ItemList
                     items=items
                     selected_index=0
+                    aria_label="Today".to_string()
                     on_open=UnsyncCallback::new(|_: usize| {})
                 />
             }
             .to_html()
         });
-        let expected = r#"<ul aria-label="Today" class="item-list"> <li aria-selected="true" class="item-row is-selected"><span aria-hidden="true" class="read-indicator">●</span><div class="item-row-body"><div class="item-row-topline"><h2>The shape of a small reader</h2><p class="item-meta"><span>Example</span><span>5 min</span><span>2h ago</span></p></div><p class="item-excerpt">A compact summary.</p></div></li><!></ul>"#;
+        let expected = r#"<ul aria-label="Today" class="item-list"> <li aria-selected="true" class="item-row is-selected"><span aria-hidden="true" class="read-indicator">●</span><div class="item-row-body"><div class="item-row-topline"><div class="item-row-title"><h2>The shape of a small reader</h2><span aria-label="Starred" class="star-indicator">★</span></div><p class="item-meta"><span>Example</span><span>5 min</span><span>2h ago</span></p></div><p class="item-excerpt">A compact summary.</p></div></li><!></ul>"#;
 
         assert_eq!(html, expected);
     }

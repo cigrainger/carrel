@@ -6,6 +6,6 @@ mod reading;
 mod today;
 
 pub use feed::FeedRoute;
-pub use placeholders::{Friends, Highlights, Library, Lists, NotFound};
+pub use placeholders::{Friends, Highlights, Lists, NotFound};
 pub use reading::ReadingView;
-pub use today::Today;
+pub use today::{Library, Reading, Starred, Today, Unread};

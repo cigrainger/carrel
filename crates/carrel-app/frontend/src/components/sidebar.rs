@@ -29,6 +29,9 @@ pub fn Sidebar() -> impl IntoView {
             <div class="sidebar-brand">"Carrel"</div>
             <nav class="sidebar-nav">
                 <A href="/today">"Today"</A>
+                <A href="/unread">"Unread"</A>
+                <A href="/reading">"Reading"</A>
+                <A href="/starred">"Starred"</A>
                 <A href="/friends">"Friends"</A>
                 <A href="/library">"Library"</A>
                 <A href="/highlights">"Highlights"</A>

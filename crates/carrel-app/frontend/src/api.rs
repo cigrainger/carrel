@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Item-list filter passed to the app shell.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ItemFilter {
     pub view: ItemView,
@@ -13,18 +13,47 @@ pub struct ItemFilter {
 
 impl ItemFilter {
     pub fn today() -> Self {
+        Self::new(ItemView::Today)
+    }
+
+    pub fn library() -> Self {
+        Self::new(ItemView::Library)
+    }
+
+    pub fn unread() -> Self {
+        Self::new(ItemView::Unread)
+    }
+
+    pub fn reading() -> Self {
+        Self::new(ItemView::Reading)
+    }
+
+    pub fn starred() -> Self {
+        Self::new(ItemView::Starred)
+    }
+
+    pub fn feed(url: String) -> Self {
+        Self::new(ItemView::Feed { url })
+    }
+
+    fn new(view: ItemView) -> Self {
         Self {
-            view: ItemView::Today,
+            view,
             limit: Some(100),
         }
     }
 }
 
 /// Supported item-list views.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ItemView {
     Today,
+    Library,
+    Unread,
+    Reading,
+    Starred,
+    Feed { url: String },
 }
 
 /// Item row returned by the native shell.
@@ -37,6 +66,7 @@ pub struct ItemSummary {
     pub length_label: String,
     pub time_label: String,
     pub read_state: String,
+    pub starred: bool,
     pub primary_url: Option<String>,
     pub summary: Option<String>,
     pub discovered_at_micros: i64,
@@ -264,6 +294,28 @@ pub async fn mark_item_read(request: ItemStateRequest) -> Result<(), ApiError> {
 /// Mark one item read for SSR tests and non-wasm builds.
 #[cfg(not(target_arch = "wasm32"))]
 pub async fn mark_item_read(_request: ItemStateRequest) -> Result<(), ApiError> {
+    Ok(())
+}
+
+/// Mark one item unread.
+#[cfg(target_arch = "wasm32")]
+pub async fn mark_item_unread(request: ItemStateRequest) -> Result<(), ApiError> {
+    #[derive(Serialize)]
+    struct Args {
+        request: ItemStateRequest,
+    }
+
+    let args = serde_wasm_bindgen::to_value(&Args { request })
+        .map_err(|error| ApiError::new(error.to_string()))?;
+    tauri_invoke("mark_item_unread", args)
+        .await
+        .map(|_| ())
+        .map_err(api_error_from_js)
+}
+
+/// Mark one item unread for SSR tests and non-wasm builds.
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn mark_item_unread(_request: ItemStateRequest) -> Result<(), ApiError> {
     Ok(())
 }
 

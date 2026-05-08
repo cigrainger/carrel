@@ -244,6 +244,9 @@ The desktop layout has three primary regions: a sidebar (subscriptions, lists, p
 ┌─ Sidebar ─┬─────── Main content ─────────┐
 │           │                                │
 │ Today     │                                │
+│ Unread    │                                │
+│ Reading   │                                │
+│ Starred   │                                │
 │ Friends   │     [list view or              │
 │ Library   │      reading view]             │
 │ Highlights│                                │
@@ -256,7 +259,7 @@ The desktop layout has three primary regions: a sidebar (subscriptions, lists, p
    ↑ status strip (sync, errors, system status, optional)
 ```
 
-The sidebar is the navigation root: the five primary "places" plus user-created lists and the feed list.
+The sidebar is the navigation root: local reading surfaces first, social/list placeholders next, and the feed list below. Local surfaces are plain filters over facts already in the store: Today, Unread, Reading, Starred, Library, and per-feed lists. They do not show counts or badges.
 
 The status strip is small, at the bottom, showing minor system state: last sync time, fetch progress, error count. It's the system-tray-style surface we use *instead of* OS notifications. Users who want to ignore it can hide it; it never demands attention.
 
@@ -293,7 +296,7 @@ When the user scrolls, the application chrome should fade — not literally anim
 
 ### Lists
 
-List views (Today, Friends, Library) display items in chronological order by default. Each item gets a row showing: title, source, time/length, an excerpt (one line truncated), and small affordances for tags or read state.
+List views (Today, Library, Unread, Reading, Starred, and individual feeds) display items in chronological order by default unless the route is explicitly ordered by local action time: Reading uses the latest read-state update, and Starred uses the latest star update. Each item gets a row showing: title, source, time/length, an excerpt (one line truncated), read state, and quiet starred state.
 
 ```
 ● Article Title                          Source · 5min   2h ago
@@ -303,7 +306,7 @@ List views (Today, Friends, Library) display items in chronological order by def
   Excerpt…
 ```
 
-`●` and `○` indicate read/unread state. Star is a small affordance, tags are small text labels. No counts, no engagement signals.
+`●` and `○` indicate read/unread state. Star is a small affordance, tags are small text labels. Clicking a row opens it; keyboard cursor navigation remains primary. No counts, no engagement signals.
 
 The list cursor is a subtle background highlight or a thin left border, signalling which item is selected for keyboard actions.
 
@@ -474,7 +477,7 @@ Small lowercase labels with a subtle background tint, separated from titles. Cli
 
 ### Feed management
 
-The sidebar Feeds section lists subscribed feed titles, falling back to host or URL when the feed has not been fetched yet. Feed rows are plain navigation rows with a small explicit remove affordance. No unread counts, badges, or freshness counters appear beside feeds.
+The sidebar Feeds section lists subscribed feed titles, falling back to host or URL when the feed has not been fetched yet. Feed rows are plain navigation rows with a small explicit remove affordance. Selecting a feed opens a normal item list filtered to that feed. No unread counts, badges, or freshness counters appear beside feeds.
 
 Adding a feed uses a compact user-initiated overlay with one URL input. Confirming subscribes and immediately fetches the feed once. Removing a feed uses the same compact overlay style and makes clear that saved items remain in Carrel; removal only stops future fetches.
 

@@ -4,6 +4,6 @@ mod item_row;
 mod sidebar;
 mod status_strip;
 
-pub use item_row::TodayList;
+pub use item_row::ItemList;
 pub use sidebar::Sidebar;
 pub use status_strip::StatusStrip;

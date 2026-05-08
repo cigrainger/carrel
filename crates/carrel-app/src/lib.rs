@@ -50,6 +50,7 @@ pub fn run() -> Result<()> {
             commands::items::list_items,
             commands::keymap::keymap_config,
             commands::items::mark_item_read,
+            commands::items::mark_item_unread,
             commands::items::toggle_item_star,
             commands::items::update_read_progress,
             commands::status::version,

@@ -45,6 +45,12 @@ pub fn mark_item_read(state: State<'_, AppState>, request: ItemStateRequest) -> 
     write_read_state(&state.store, &request.item_id, "read", Some(1.0), None)
 }
 
+/// Mark one item as unread.
+#[tauri::command]
+pub fn mark_item_unread(state: State<'_, AppState>, request: ItemStateRequest) -> Result<()> {
+    write_read_state(&state.store, &request.item_id, "unread", None, None)
+}
+
 /// Toggle the starred state for one item and return the new value.
 #[tauri::command]
 pub fn toggle_item_star(state: State<'_, AppState>, request: ItemStateRequest) -> Result<bool> {
@@ -99,8 +105,20 @@ pub enum ItemView {
     /// Items discovered in the last day.
     #[default]
     Today,
-    /// All items, newest first.
-    All,
+    /// All saved items, newest first.
+    #[serde(alias = "all")]
+    Library,
+    /// Items with no read state, or an explicit unread state.
+    Unread,
+    /// Items currently in progress, newest local reading update first.
+    Reading,
+    /// Starred items, newest local star update first.
+    Starred,
+    /// Items sourced from one feed.
+    Feed {
+        /// Canonical feed URL.
+        url: String,
+    },
 }
 
 /// Item row rendered by list views.
@@ -119,6 +137,8 @@ pub struct ItemSummary {
     pub time_label: String,
     /// Local read state, defaulting to unread.
     pub read_state: String,
+    /// Whether the item is starred locally.
+    pub starred: bool,
     /// Canonical URL, when known.
     pub primary_url: Option<String>,
     /// Short summary or feed description, when known.
@@ -204,22 +224,40 @@ pub(crate) fn list_items_from_store(
         .limit
         .unwrap_or(DEFAULT_ITEM_LIMIT)
         .clamp(1, MAX_ITEM_LIMIT);
-    let query_limit = match filter.view {
-        ItemView::Today => 500,
-        ItemView::All => limit,
+    let query_limit = match &filter.view {
+        ItemView::Today | ItemView::Unread => DEFAULT_ITEM_LIMIT.saturating_mul(5),
+        ItemView::Library | ItemView::Reading | ItemView::Starred | ItemView::Feed { .. } => limit,
     };
     let now = OffsetDateTime::now_utc();
     let since = now - TODAY_LOOKBACK;
+    let records = match &filter.view {
+        ItemView::Today | ItemView::Library | ItemView::Unread => {
+            query_item_records(store, query_limit)?
+        }
+        ItemView::Reading => query_reading_item_records(store, query_limit)?,
+        ItemView::Starred => query_starred_item_records(store, query_limit)?,
+        ItemView::Feed { url } => query_feed_item_records(store, url, query_limit)?,
+    };
 
     let mut rows = Vec::new();
-    for item in query_item_records(store, query_limit)? {
+    for item in records {
+        let read_state = read_state(store, &item.id)?;
+        let starred = starred_state(store, &item.id)?;
         if filter.view == ItemView::Today && item.discovered_at_micros < unix_micros(since) {
+            continue;
+        }
+        if filter.view == ItemView::Unread && read_state.state != "unread" {
             continue;
         }
 
         let article = article_metadata(store, &item.id)?;
-        let read_state = read_state(store, &item.id)?;
-        rows.push(summary_from_parts(&item, &article, read_state.state, now));
+        rows.push(summary_from_parts(
+            &item,
+            &article,
+            read_state.state,
+            starred,
+            now,
+        ));
 
         if rows.len() == limit {
             break;
@@ -245,6 +283,7 @@ pub(crate) fn get_item_from_parts(
         &item,
         &article,
         read_state.state.clone(),
+        starred,
         OffsetDateTime::now_utc(),
     );
     let readable_blob_id = store
@@ -288,12 +327,79 @@ fn query_item_records(store: &carrel_store::Store, limit: usize) -> Result<Vec<I
         r#"
         ?[id, title, creators, primary_url, published_at, language, summary, discovered_at] :=
             *item{{id, title, creators, primary_url, published_at, language, summary, discovered_at}}
-        :sort -discovered_at
+        :sort discovered_at
         :limit {limit}
         "#
     ))?;
 
     rows.rows.iter().map(|row| decode_item_row(row)).collect()
+}
+
+fn query_feed_item_records(
+    store: &carrel_store::Store,
+    feed_url: &str,
+    limit: usize,
+) -> Result<Vec<ItemRecord>> {
+    let rows = store.query_with_params(
+        &format!(
+            r#"
+        ?[id, title, creators, primary_url, published_at, language, summary, discovered_at] :=
+            *item{{id, title, creators, primary_url, published_at, language, summary, discovered_at}},
+            *item_article{{item_id, feed_url}},
+            item_id = id,
+            feed_url = $feed_url
+        :sort discovered_at
+        :limit {limit}
+        "#
+        ),
+        BTreeMap::from([("feed_url".to_string(), DataValue::from(feed_url))]),
+    )?;
+
+    rows.rows.iter().map(|row| decode_item_row(row)).collect()
+}
+
+fn query_reading_item_records(
+    store: &carrel_store::Store,
+    limit: usize,
+) -> Result<Vec<ItemRecord>> {
+    let rows = store.query(&format!(
+        r#"
+        ?[updated_at, id, title, creators, primary_url, published_at, language, summary, discovered_at] :=
+            *read_state{{item_id, state, updated_at}},
+            state = 'reading',
+            *item{{id, title, creators, primary_url, published_at, language, summary, discovered_at}},
+            id = item_id
+        :sort updated_at
+        :limit {limit}
+        "#
+    ))?;
+
+    rows.rows
+        .iter()
+        .map(|row| decode_item_row_from_offset(row, 1))
+        .collect()
+}
+
+fn query_starred_item_records(
+    store: &carrel_store::Store,
+    limit: usize,
+) -> Result<Vec<ItemRecord>> {
+    let rows = store.query(&format!(
+        r#"
+        ?[updated_at, id, title, creators, primary_url, published_at, language, summary, discovered_at] :=
+            *item_star{{item_id, starred, updated_at}},
+            starred = true,
+            *item{{id, title, creators, primary_url, published_at, language, summary, discovered_at}},
+            id = item_id
+        :sort updated_at
+        :limit {limit}
+        "#
+    ))?;
+
+    rows.rows
+        .iter()
+        .map(|row| decode_item_row_from_offset(row, 1))
+        .collect()
 }
 
 fn query_item_record(store: &carrel_store::Store, id: &str) -> Result<Option<ItemRecord>> {
@@ -589,6 +695,7 @@ fn summary_from_parts(
     item: &ItemRecord,
     article: &ArticleMetadata,
     read_state: String,
+    starred: bool,
     now: OffsetDateTime,
 ) -> ItemSummary {
     ItemSummary {
@@ -598,6 +705,7 @@ fn summary_from_parts(
         length_label: length_label(article),
         time_label: time_label(item.discovered_at_micros, now),
         read_state,
+        starred,
         primary_url: item.primary_url.clone(),
         summary: item.summary.as_deref().map(plain_text_summary),
         discovered_at_micros: item.discovered_at_micros,
@@ -678,15 +786,27 @@ fn time_label(discovered_at_micros: i64, now: OffsetDateTime) -> String {
 }
 
 fn decode_item_row(row: &[DataValue]) -> Result<ItemRecord> {
+    decode_item_row_from_offset(row, 0)
+}
+
+fn decode_item_row_from_offset(row: &[DataValue], offset: usize) -> Result<ItemRecord> {
     Ok(ItemRecord {
-        id: value_as_string(required(row, 0, "item.id")?)?,
-        title: value_as_string(required(row, 1, "item.title")?)?,
-        creators: value_as_string_list(required(row, 2, "item.creators")?)?,
-        primary_url: optional_string(required(row, 3, "item.primary_url")?)?,
-        published_at_micros: optional_validity_micros(required(row, 4, "item.published_at")?)?,
-        language: optional_string(required(row, 5, "item.language")?)?,
-        summary: optional_string(required(row, 6, "item.summary")?)?,
-        discovered_at_micros: value_as_validity_micros(required(row, 7, "item.discovered_at")?)?,
+        id: value_as_string(required(row, offset, "item.id")?)?,
+        title: value_as_string(required(row, offset + 1, "item.title")?)?,
+        creators: value_as_string_list(required(row, offset + 2, "item.creators")?)?,
+        primary_url: optional_string(required(row, offset + 3, "item.primary_url")?)?,
+        published_at_micros: optional_validity_micros(required(
+            row,
+            offset + 4,
+            "item.published_at",
+        )?)?,
+        language: optional_string(required(row, offset + 5, "item.language")?)?,
+        summary: optional_string(required(row, offset + 6, "item.summary")?)?,
+        discovered_at_micros: value_as_validity_micros(required(
+            row,
+            offset + 7,
+            "item.discovered_at",
+        )?)?,
     })
 }
 
@@ -851,10 +971,156 @@ mod tests {
             &item,
             &ArticleMetadata::default(),
             "unread".to_string(),
+            false,
             OffsetDateTime::now_utc(),
         );
 
         assert_eq!(summary.summary.as_deref(), Some("Hello world today."));
+    }
+
+    #[test]
+    fn local_library_filters_cover_read_star_and_feed_surfaces() {
+        let store = carrel_store::Store::open_in_memory().unwrap();
+        store.migrate().unwrap();
+        let now = OffsetDateTime::now_utc();
+        let feed_a = "https://example.com/feed.xml";
+        let feed_b = "https://other.example/feed.xml";
+
+        for (id, hours_ago) in [
+            ("recent-unread", 1),
+            ("older-read", 2),
+            ("reading-newer", 6),
+            ("reading-older", 3),
+            ("starred-newer", 8),
+            ("starred-older", 4),
+            ("other-feed", 5),
+        ] {
+            insert_item(
+                &store,
+                InsertItem {
+                    id,
+                    title: id,
+                    url: Some("https://example.com/item"),
+                    summary: None,
+                    discovered_at_micros: unix_micros(now - Duration::hours(hours_ago)),
+                    read_state: None,
+                    site_name: Some("Example"),
+                    minutes: Some(3),
+                },
+            );
+        }
+
+        set_item_feed(&store, "recent-unread", feed_a);
+        set_item_feed(&store, "older-read", feed_a);
+        set_item_feed(&store, "reading-newer", feed_a);
+        set_item_feed(&store, "reading-older", feed_a);
+        set_item_feed(&store, "starred-newer", feed_a);
+        set_item_feed(&store, "starred-older", feed_a);
+        set_item_feed(&store, "other-feed", feed_b);
+        set_read_state_at(
+            &store,
+            "older-read",
+            "read",
+            unix_micros(now - Duration::minutes(60)),
+        );
+        set_read_state_at(
+            &store,
+            "reading-newer",
+            "reading",
+            unix_micros(now - Duration::minutes(5)),
+        );
+        set_read_state_at(
+            &store,
+            "reading-older",
+            "reading",
+            unix_micros(now - Duration::minutes(30)),
+        );
+        set_star_state_at(
+            &store,
+            "starred-newer",
+            true,
+            unix_micros(now - Duration::minutes(3)),
+        );
+        set_star_state_at(
+            &store,
+            "starred-older",
+            true,
+            unix_micros(now - Duration::minutes(45)),
+        );
+
+        let library = list_items_from_store(
+            &store,
+            ItemFilter {
+                view: ItemView::Library,
+                limit: Some(3),
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            item_ids(&library),
+            vec!["recent-unread", "older-read", "reading-older"]
+        );
+
+        let unread = list_items_from_store(
+            &store,
+            ItemFilter {
+                view: ItemView::Unread,
+                limit: Some(10),
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            item_ids(&unread),
+            vec![
+                "recent-unread",
+                "starred-older",
+                "other-feed",
+                "starred-newer"
+            ]
+        );
+
+        let reading = list_items_from_store(
+            &store,
+            ItemFilter {
+                view: ItemView::Reading,
+                limit: Some(10),
+            },
+        )
+        .unwrap();
+        assert_eq!(item_ids(&reading), vec!["reading-newer", "reading-older"]);
+
+        let starred = list_items_from_store(
+            &store,
+            ItemFilter {
+                view: ItemView::Starred,
+                limit: Some(10),
+            },
+        )
+        .unwrap();
+        assert_eq!(item_ids(&starred), vec!["starred-newer", "starred-older"]);
+        assert!(starred.iter().all(|row| row.starred));
+
+        let feed = list_items_from_store(
+            &store,
+            ItemFilter {
+                view: ItemView::Feed {
+                    url: feed_a.to_string(),
+                },
+                limit: Some(10),
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            item_ids(&feed),
+            vec![
+                "recent-unread",
+                "older-read",
+                "reading-older",
+                "starred-older",
+                "reading-newer",
+                "starred-newer"
+            ]
+        );
     }
 
     #[test]
@@ -1140,6 +1406,88 @@ mod tests {
                 )
                 .unwrap();
         }
+    }
+
+    fn set_item_feed(store: &carrel_store::Store, item_id: &str, feed_url: &str) {
+        store
+            .query_with_params(
+                r#"
+                ?[item_id, feed_url, word_count, estimated_read_minutes, site_name, byline] :=
+                    item_id = $item_id,
+                    feed_url = $feed_url,
+                    word_count = 1200,
+                    estimated_read_minutes = 3,
+                    site_name = 'Example',
+                    byline = 'Ada'
+                :put item_article {item_id => feed_url, word_count, estimated_read_minutes, site_name, byline}
+                "#,
+                BTreeMap::from([
+                    ("item_id".to_string(), DataValue::from(item_id)),
+                    ("feed_url".to_string(), DataValue::from(feed_url)),
+                ]),
+            )
+            .unwrap();
+    }
+
+    fn set_read_state_at(
+        store: &carrel_store::Store,
+        item_id: &str,
+        state: &str,
+        updated_at_micros: i64,
+    ) {
+        store
+            .query_with_params(
+                r#"
+                ?[item_id, state, progress, progress_label, last_position, updated_at] :=
+                    item_id = $item_id,
+                    state = $state,
+                    progress = 0.3,
+                    progress_label = null,
+                    last_position = null,
+                    updated_at = $updated_at
+                :put read_state {item_id => state, progress, progress_label, last_position, updated_at}
+                "#,
+                BTreeMap::from([
+                    ("item_id".to_string(), DataValue::from(item_id)),
+                    ("state".to_string(), DataValue::from(state)),
+                    (
+                        "updated_at".to_string(),
+                        DataValue::Validity(Validity::from((updated_at_micros, true))),
+                    ),
+                ]),
+            )
+            .unwrap();
+    }
+
+    fn set_star_state_at(
+        store: &carrel_store::Store,
+        item_id: &str,
+        starred: bool,
+        updated_at_micros: i64,
+    ) {
+        store
+            .query_with_params(
+                r#"
+                ?[item_id, starred, updated_at] :=
+                    item_id = $item_id,
+                    starred = $starred,
+                    updated_at = $updated_at
+                :put item_star {item_id => starred, updated_at}
+                "#,
+                BTreeMap::from([
+                    ("item_id".to_string(), DataValue::from(item_id)),
+                    ("starred".to_string(), DataValue::Bool(starred)),
+                    (
+                        "updated_at".to_string(),
+                        DataValue::Validity(Validity::from((updated_at_micros, true))),
+                    ),
+                ]),
+            )
+            .unwrap();
+    }
+
+    fn item_ids(rows: &[ItemSummary]) -> Vec<&str> {
+        rows.iter().map(|row| row.id.as_str()).collect()
     }
 
     fn insert_item_content(
