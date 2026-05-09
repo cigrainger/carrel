@@ -12,6 +12,7 @@ const CONFIG_DIR_ENV: &str = "CARREL_CONFIG_DIR";
 #[derive(Clone, Debug)]
 pub struct InstallPaths {
     pub(crate) blobs: PathBuf,
+    pub(crate) keys: PathBuf,
     pub(crate) keymap_config: PathBuf,
     pub(crate) root: PathBuf,
     pub(crate) store: PathBuf,
@@ -30,6 +31,7 @@ impl InstallPaths {
 
         Ok(Self {
             blobs: root.join("blobs"),
+            keys: root.join("keys"),
             keymap_config: config_root.join("keymap.toml"),
             store: root.join("store"),
             root,

@@ -6,6 +6,9 @@
 #![deny(unsafe_code)]
 #![warn(missing_docs)]
 
+/// Highlight and annotation selector primitives.
+pub mod annotation;
+
 /// Feed fetching and parsing data structures shared across crates.
 pub mod feed;
 

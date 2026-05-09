@@ -9,6 +9,7 @@
 pub mod blobs;
 mod error;
 pub mod feeds;
+pub mod highlights;
 pub mod ids;
 pub mod items;
 pub mod keystore;

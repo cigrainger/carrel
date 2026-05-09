@@ -20,6 +20,10 @@ pub enum AppError {
     #[error(transparent)]
     Blob(#[from] carrel_store::blobs::BlobError),
 
+    /// The local device key could not be loaded.
+    #[error(transparent)]
+    Keystore(#[from] carrel_store::keystore::KeystoreError),
+
     /// Feed subscription or fetch orchestration failed.
     #[error("{0}")]
     Feed(String),
@@ -53,6 +57,7 @@ impl Serialize for AppError {
             Self::Config(_) => "config",
             Self::Store(_) => "store",
             Self::Blob(_) => "blob",
+            Self::Keystore(_) => "keystore",
             Self::Feed(_) => "feed",
             Self::Tauri(_) => "tauri",
             Self::InvalidData { .. } => "invalid_data",

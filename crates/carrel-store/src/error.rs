@@ -33,9 +33,27 @@ pub enum StoreError {
         source: url::ParseError,
     },
 
+    /// Caller supplied malformed data for a typed store API.
+    #[error("invalid input for {context}: {message}")]
+    InvalidInput {
+        /// API input or field being validated.
+        context: &'static str,
+        /// Human-readable validation failure.
+        message: String,
+    },
+
     /// The schema version relation contained an invalid version number.
     #[error("invalid schema version {0}")]
     InvalidSchemaVersion(i64),
+
+    /// Canonical signing material could not be produced.
+    #[error("failed to sign {context}: {message}")]
+    Signing {
+        /// Fact payload being signed.
+        context: &'static str,
+        /// Underlying signing failure.
+        message: String,
+    },
 
     /// A query returned a value with an unexpected shape.
     #[error("unexpected value for {context}: {value}")]
