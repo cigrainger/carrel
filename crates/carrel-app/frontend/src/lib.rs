@@ -6,6 +6,7 @@
 pub mod api;
 mod components;
 mod feeds;
+mod highlights;
 mod keymap;
 mod navigation;
 mod routes;

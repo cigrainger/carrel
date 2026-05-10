@@ -1,5 +1,6 @@
 //! Typed wrappers around Tauri commands.
 
+use carrel_core::annotation::HighlightLocation;
 use serde::{Deserialize, Serialize};
 
 /// Item-list filter passed to the app shell.
@@ -98,6 +99,66 @@ pub struct ItemDetail {
     pub shape_tags: Vec<String>,
     pub last_scroll: Option<f64>,
     pub discovered_at_micros: i64,
+}
+
+/// Highlight creation request passed to the native shell.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateHighlightRequest {
+    pub item_id: String,
+    pub location: HighlightLocation,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub location_label: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+}
+
+/// Highlight note creation request passed to the native shell.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateHighlightNoteRequest {
+    pub highlight_id: String,
+    pub body: String,
+}
+
+/// Highlight payload returned by the native shell.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HighlightDetail {
+    pub id: String,
+    pub item_id: String,
+    pub quoted_text: String,
+    pub location: HighlightLocation,
+    pub location_label: Option<String>,
+    pub color: Option<String>,
+    pub created_by: String,
+    pub created_at: String,
+    pub created_at_micros: i64,
+    pub signature: String,
+}
+
+/// Library-level highlight row returned by the native shell.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HighlightListRow {
+    pub highlight: HighlightDetail,
+    pub item_title: String,
+    pub item_primary_url: Option<String>,
+}
+
+/// Note payload returned by the native shell.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NoteDetail {
+    pub id: String,
+    pub body: String,
+    pub target_kind: Option<String>,
+    pub target_id: Option<String>,
+    pub created_by: String,
+    pub created_at: String,
+    pub created_at_micros: i64,
+    pub updated_at_micros: i64,
+    pub signature: String,
 }
 
 /// Item-state mutation request.
@@ -344,6 +405,128 @@ pub async fn toggle_item_star(request: ItemStateRequest) -> Result<bool, ApiErro
 #[cfg(not(target_arch = "wasm32"))]
 pub async fn toggle_item_star(_request: ItemStateRequest) -> Result<bool, ApiError> {
     Ok(false)
+}
+
+/// Create a highlight.
+#[cfg(target_arch = "wasm32")]
+pub async fn create_highlight(
+    request: CreateHighlightRequest,
+) -> Result<HighlightDetail, ApiError> {
+    #[derive(Serialize)]
+    struct Args {
+        request: CreateHighlightRequest,
+    }
+
+    let args = serde_wasm_bindgen::to_value(&Args { request })
+        .map_err(|error| ApiError::new(error.to_string()))?;
+    let value = tauri_invoke("create_highlight", args)
+        .await
+        .map_err(api_error_from_js)?;
+
+    serde_wasm_bindgen::from_value(value).map_err(|error| ApiError::new(error.to_string()))
+}
+
+/// Create a highlight for SSR tests and non-wasm builds.
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn create_highlight(
+    request: CreateHighlightRequest,
+) -> Result<HighlightDetail, ApiError> {
+    Ok(HighlightDetail {
+        id: String::new(),
+        item_id: request.item_id,
+        quoted_text: String::new(),
+        location: request.location,
+        location_label: request.location_label,
+        color: request.color,
+        created_by: String::new(),
+        created_at: String::new(),
+        created_at_micros: 0,
+        signature: String::new(),
+    })
+}
+
+/// List highlights for one item.
+#[cfg(target_arch = "wasm32")]
+pub async fn list_item_highlights(item_id: String) -> Result<Vec<HighlightDetail>, ApiError> {
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Args {
+        item_id: String,
+    }
+
+    let args = serde_wasm_bindgen::to_value(&Args { item_id })
+        .map_err(|error| ApiError::new(error.to_string()))?;
+    let rows = tauri_invoke("list_item_highlights", args)
+        .await
+        .map_err(api_error_from_js)?;
+
+    serde_wasm_bindgen::from_value(rows).map_err(|error| ApiError::new(error.to_string()))
+}
+
+/// List highlights for one item for SSR tests and non-wasm builds.
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn list_item_highlights(_item_id: String) -> Result<Vec<HighlightDetail>, ApiError> {
+    Ok(Vec::new())
+}
+
+/// List highlights across the local library.
+#[cfg(target_arch = "wasm32")]
+pub async fn list_highlights(limit: Option<usize>) -> Result<Vec<HighlightListRow>, ApiError> {
+    #[derive(Serialize)]
+    struct Args {
+        limit: Option<usize>,
+    }
+
+    let args = serde_wasm_bindgen::to_value(&Args { limit })
+        .map_err(|error| ApiError::new(error.to_string()))?;
+    let rows = tauri_invoke("list_highlights", args)
+        .await
+        .map_err(api_error_from_js)?;
+
+    serde_wasm_bindgen::from_value(rows).map_err(|error| ApiError::new(error.to_string()))
+}
+
+/// List highlights across the local library for SSR tests and non-wasm builds.
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn list_highlights(_limit: Option<usize>) -> Result<Vec<HighlightListRow>, ApiError> {
+    Ok(Vec::new())
+}
+
+/// Create a note attached to a highlight.
+#[cfg(target_arch = "wasm32")]
+pub async fn create_highlight_note(
+    request: CreateHighlightNoteRequest,
+) -> Result<NoteDetail, ApiError> {
+    #[derive(Serialize)]
+    struct Args {
+        request: CreateHighlightNoteRequest,
+    }
+
+    let args = serde_wasm_bindgen::to_value(&Args { request })
+        .map_err(|error| ApiError::new(error.to_string()))?;
+    let value = tauri_invoke("create_highlight_note", args)
+        .await
+        .map_err(api_error_from_js)?;
+
+    serde_wasm_bindgen::from_value(value).map_err(|error| ApiError::new(error.to_string()))
+}
+
+/// Create a highlight note for SSR tests and non-wasm builds.
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn create_highlight_note(
+    request: CreateHighlightNoteRequest,
+) -> Result<NoteDetail, ApiError> {
+    Ok(NoteDetail {
+        id: String::new(),
+        body: request.body,
+        target_kind: Some("highlight".to_string()),
+        target_id: Some(request.highlight_id),
+        created_by: String::new(),
+        created_at: String::new(),
+        created_at_micros: 0,
+        updated_at_micros: 0,
+        signature: String::new(),
+    })
 }
 
 /// Load keymap overrides for the webview.

@@ -4,17 +4,26 @@
 use std::time::Duration;
 
 use carrel_core::keymap::default;
+use leptos::ev;
 use leptos::html;
 use leptos::prelude::*;
 use leptos_router::NavigateOptions;
 use leptos_router::hooks::{use_navigate, use_params_map};
 
-use crate::api::ItemDetail;
 #[cfg(target_arch = "wasm32")]
-use crate::api::{self, ItemStateRequest, ReadProgressUpdate};
+use crate::api::{self, CreateHighlightNoteRequest, ItemStateRequest, ReadProgressUpdate};
+use crate::api::{CreateHighlightRequest, HighlightDetail, ItemDetail};
+#[cfg(target_arch = "wasm32")]
+use crate::highlights;
 use crate::keymap::{use_action_handler, use_keymap_layer};
 use crate::navigation::{ListNavigation, use_list_navigation_context};
 use crate::status::{StatusController, use_status_controller};
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PendingNoteDraft {
+    request: CreateHighlightRequest,
+    exact: String,
+}
 
 /// Full-page article reader.
 #[component]
@@ -23,11 +32,14 @@ pub fn ReadingView() -> impl IntoView {
     #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))]
     let item_id = Memo::new(move |_| params.read().get("id").unwrap_or_default());
     let item = RwSignal::new(None::<ItemDetail>);
+    let highlights = RwSignal::new(Vec::<HighlightDetail>::new());
     let error = RwSignal::new(None::<String>);
     let loaded = RwSignal::new(false);
     let info_open = RwSignal::new(false);
+    let pending_note = RwSignal::new(None::<PendingNoteDraft>);
     let restored_item = RwSignal::new(None::<String>);
     let scroll_ref = NodeRef::<html::Div>::new();
+    let body_ref = NodeRef::<html::Div>::new();
     let navigate = use_navigate();
     let list_navigation = use_list_navigation_context();
     let status = use_status_controller();
@@ -103,6 +115,16 @@ pub fn ReadingView() -> impl IntoView {
         info_open.update(|open| *open = !*open);
     });
 
+    let highlight_body_ref = body_ref;
+    use_action_handler("highlight-selection", move || {
+        create_highlight_from_selection(item, highlight_body_ref, highlights, status);
+    });
+
+    let note_body_ref = body_ref;
+    use_action_handler("highlight-with-note", move || {
+        begin_highlight_note(item, note_body_ref, pending_note, status);
+    });
+
     use_action_handler("archive-item", move || {
         status.info("Archive is not available yet.");
     });
@@ -127,14 +149,27 @@ pub fn ReadingView() -> impl IntoView {
         Effect::new(move |_| {
             let id = item_id.get();
             item.set(None);
+            highlights.set(Vec::new());
             error.set(None);
             loaded.set(false);
             restored_item.set(None);
             info_open.set(false);
+            pending_note.set(None);
 
             spawn_local(async move {
-                match api::get_item(id).await {
+                match api::get_item(id.clone()).await {
                     Ok(detail) => {
+                        if detail.is_some() {
+                            match api::list_item_highlights(id).await {
+                                Ok(rows) => highlights.set(rows),
+                                Err(err) => {
+                                    status.warn(format!(
+                                        "Could not load highlights: {}",
+                                        err.message()
+                                    ));
+                                }
+                            }
+                        }
                         item.set(detail);
                     }
                     Err(err) => {
@@ -206,6 +241,34 @@ pub fn ReadingView() -> impl IntoView {
                     }}
                 }
             }
+            {move || {
+                pending_note
+                    .get()
+                    .map(|draft| {
+                        let request = draft.request.clone();
+                        let exact = draft.exact;
+                        let confirm = UnsyncCallback::new(move |body: String| {
+                            confirm_highlight_note(
+                                request.clone(),
+                                body,
+                                highlights,
+                                pending_note,
+                                status,
+                            );
+                        });
+                        let cancel = UnsyncCallback::new(move |()| {
+                            pending_note.set(None);
+                            status.info("Highlight note cancelled.");
+                        });
+                        view! {
+                            <HighlightNoteOverlay
+                                exact=exact
+                                on_confirm=confirm
+                                on_cancel=cancel
+                            />
+                        }.into_any()
+                    })
+            }}
             <div
                 class="reader-scroll"
                 node_ref=scroll_ref
@@ -222,12 +285,17 @@ pub fn ReadingView() -> impl IntoView {
                         None => item.get()
                             .map(|detail| {
                                 let info_detail = detail.clone();
+                                let article_highlights = highlights.get();
                                 let close_info = UnsyncCallback::new(move |()| info_open.set(false));
                                 view! {
                                     <Show when=move || info_open.get()>
                                         <ItemInfo item=info_detail.clone() on_close=close_info/>
                                     </Show>
-                                    <ArticleContent item=detail/>
+                                    <ArticleContent
+                                        item=detail
+                                        highlights=article_highlights
+                                        body_ref=body_ref
+                                    />
                                 }.into_any()
                             })
                             .unwrap_or_else(|| view! {
@@ -417,9 +485,79 @@ pub fn ItemInfo(item: ItemDetail, on_close: UnsyncCallback<()>) -> impl IntoView
     }
 }
 
+/// Small focus-contained note overlay for `H`.
+#[component]
+pub fn HighlightNoteOverlay(
+    exact: String,
+    on_confirm: UnsyncCallback<String>,
+    on_cancel: UnsyncCallback<()>,
+) -> impl IntoView {
+    let note = RwSignal::new(String::new());
+    let note_ref = NodeRef::<html::Textarea>::new();
+    let cancel_ref = NodeRef::<html::Button>::new();
+    let save_ref = NodeRef::<html::Button>::new();
+
+    #[cfg(target_arch = "wasm32")]
+    Effect::new(move |_| {
+        if let Some(textarea) = note_ref.get() {
+            let _ = textarea.focus();
+        }
+    });
+
+    let submit = move || {
+        let body = note.get_untracked();
+        if !body.trim().is_empty() {
+            on_confirm.run(body);
+        }
+    };
+
+    view! {
+        <div class="note-dialog-backdrop">
+            <section
+                class="note-dialog"
+                role="dialog"
+                aria-modal="true"
+                aria-label="Highlight note"
+                on:keydown=move |event| handle_note_dialog_keydown(event, note_ref, cancel_ref, save_ref, submit, on_cancel)
+            >
+                <h2>"Highlight note"</h2>
+                <blockquote>{exact}</blockquote>
+                <textarea
+                    node_ref=note_ref
+                    rows="5"
+                    aria-label="Note"
+                    prop:value=move || note.get()
+                    on:input=move |event| note.set(event_target_value(&event))
+                ></textarea>
+                <div class="note-dialog-actions">
+                    <button
+                        type="button"
+                        node_ref=cancel_ref
+                        on:click=move |_| on_cancel.run(())
+                    >
+                        "Cancel"
+                    </button>
+                    <button
+                        type="button"
+                        node_ref=save_ref
+                        disabled=move || note.with(|value| value.trim().is_empty())
+                        on:click=move |_| submit()
+                    >
+                        "Save"
+                    </button>
+                </div>
+            </section>
+        </div>
+    }
+}
+
 /// Render the article payload itself.
 #[component]
-pub fn ArticleContent(item: ItemDetail) -> impl IntoView {
+pub fn ArticleContent(
+    item: ItemDetail,
+    highlights: Vec<HighlightDetail>,
+    body_ref: NodeRef<html::Div>,
+) -> impl IntoView {
     let byline = item.byline.clone().or_else(|| {
         if item.creators.is_empty() {
             None
@@ -437,6 +575,27 @@ pub fn ArticleContent(item: ItemDetail) -> impl IntoView {
         ""
     };
     let has_original = item.primary_url.is_some();
+    let content_html = item.content_html.clone();
+
+    #[cfg(not(target_arch = "wasm32"))]
+    let _ = &highlights;
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        let content_html = content_html.clone();
+        let highlights = highlights.clone();
+        Effect::new(move |_| {
+            let Some(body) = body_ref.get() else {
+                return;
+            };
+            highlights::render_highlights(
+                &body,
+                &content_html,
+                &highlights,
+                highlights::current_hash_highlight_id().as_deref(),
+            );
+        });
+    }
 
     view! {
         <article class="reader-article" lang=item.language.clone().unwrap_or_else(|| "en".to_string())>
@@ -457,7 +616,7 @@ pub fn ArticleContent(item: ItemDetail) -> impl IntoView {
                     </Show>
                 </div>
             </header>
-            <div class="reader-body" inner_html=item.content_html.clone()></div>
+            <div class="reader-body" node_ref=body_ref inner_html=content_html></div>
             <footer class="reader-footer">
                 <span class="reader-end">"end of article"</span>
                 <Show when=move || has_original>
@@ -493,6 +652,217 @@ fn cache_state_label(item: &ItemDetail) -> &'static str {
         "No readable cache"
     } else {
         "Feed summary fallback"
+    }
+}
+
+fn create_highlight_from_selection(
+    item: RwSignal<Option<ItemDetail>>,
+    body_ref: NodeRef<html::Div>,
+    highlights: RwSignal<Vec<HighlightDetail>>,
+    status: StatusController,
+) {
+    let Some(request) = capture_highlight_request(item, body_ref, status) else {
+        return;
+    };
+    write_highlight(request, highlights, status);
+}
+
+fn begin_highlight_note(
+    item: RwSignal<Option<ItemDetail>>,
+    body_ref: NodeRef<html::Div>,
+    pending_note: RwSignal<Option<PendingNoteDraft>>,
+    status: StatusController,
+) {
+    let Some(request) = capture_highlight_request(item, body_ref, status) else {
+        return;
+    };
+    let exact = match &request.location {
+        carrel_core::annotation::HighlightLocation::HtmlText(selector) => selector.exact.clone(),
+    };
+    pending_note.set(Some(PendingNoteDraft { request, exact }));
+}
+
+fn capture_highlight_request(
+    item: RwSignal<Option<ItemDetail>>,
+    body_ref: NodeRef<html::Div>,
+    status: StatusController,
+) -> Option<CreateHighlightRequest> {
+    let Some(detail) = item.get_untracked() else {
+        status.info("Open an item before highlighting.");
+        return None;
+    };
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        let Some(body) = body_ref.get_untracked() else {
+            status.info("Article text is not ready yet.");
+            return None;
+        };
+        let request = highlights::capture_current_selection(
+            &body,
+            detail.id,
+            detail.readable_blob_id.clone(),
+        );
+        if request.is_none() {
+            status.info("Select text in the article to highlight.");
+        }
+        request
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = (body_ref, detail);
+        status.info("Highlight capture is available in the desktop app.");
+        None
+    }
+}
+
+fn write_highlight(
+    #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))]
+    request: CreateHighlightRequest,
+    #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))] highlights: RwSignal<
+        Vec<HighlightDetail>,
+    >,
+    #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))] status: StatusController,
+) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        use wasm_bindgen_futures::spawn_local;
+
+        spawn_local(async move {
+            match api::create_highlight(request).await {
+                Ok(highlight) => {
+                    highlights.update(|rows| rows.push(highlight));
+                    highlights::clear_current_selection();
+                    status.info("Highlighted.");
+                }
+                Err(error) => {
+                    status.warn(format!("Could not save highlight: {}", error.message()));
+                }
+            }
+        });
+    }
+}
+
+fn confirm_highlight_note(
+    #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))]
+    request: CreateHighlightRequest,
+    #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))] body: String,
+    #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))] highlights: RwSignal<
+        Vec<HighlightDetail>,
+    >,
+    pending_note: RwSignal<Option<PendingNoteDraft>>,
+    #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))] status: StatusController,
+) {
+    if body.trim().is_empty() {
+        status.info("Write a note before saving.");
+        return;
+    }
+
+    pending_note.set(None);
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        use wasm_bindgen_futures::spawn_local;
+
+        spawn_local(async move {
+            match api::create_highlight(request).await {
+                Ok(highlight) => {
+                    let note_request = CreateHighlightNoteRequest {
+                        highlight_id: highlight.id.clone(),
+                        body,
+                    };
+                    match api::create_highlight_note(note_request).await {
+                        Ok(_) => {
+                            highlights.update(|rows| rows.push(highlight));
+                            highlights::clear_current_selection();
+                            status.info("Highlight note saved.");
+                        }
+                        Err(error) => {
+                            highlights.update(|rows| rows.push(highlight));
+                            highlights::clear_current_selection();
+                            status.warn(format!(
+                                "Highlight saved, but note failed: {}",
+                                error.message()
+                            ));
+                        }
+                    }
+                }
+                Err(error) => {
+                    status.warn(format!("Could not save highlight: {}", error.message()));
+                }
+            }
+        });
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn handle_note_dialog_keydown(
+    event: ev::KeyboardEvent,
+    note_ref: NodeRef<html::Textarea>,
+    cancel_ref: NodeRef<html::Button>,
+    save_ref: NodeRef<html::Button>,
+    submit: impl Fn() + Copy + 'static,
+    on_cancel: UnsyncCallback<()>,
+) {
+    match event.key().as_str() {
+        "Escape" => {
+            event.prevent_default();
+            event.stop_propagation();
+            on_cancel.run(());
+        }
+        "Enter" if event.meta_key() || event.ctrl_key() => {
+            event.prevent_default();
+            event.stop_propagation();
+            submit();
+        }
+        "Tab" => trap_note_dialog_focus(&event, note_ref, cancel_ref, save_ref),
+        _ => {}
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn handle_note_dialog_keydown(
+    _event: ev::KeyboardEvent,
+    _note_ref: NodeRef<html::Textarea>,
+    _cancel_ref: NodeRef<html::Button>,
+    _save_ref: NodeRef<html::Button>,
+    _submit: impl Fn() + Copy + 'static,
+    _on_cancel: UnsyncCallback<()>,
+) {
+}
+
+#[cfg(target_arch = "wasm32")]
+fn trap_note_dialog_focus(
+    event: &web_sys::KeyboardEvent,
+    note_ref: NodeRef<html::Textarea>,
+    cancel_ref: NodeRef<html::Button>,
+    save_ref: NodeRef<html::Button>,
+) {
+    use wasm_bindgen::JsCast;
+
+    let Some(document) = web_sys::window().and_then(|window| window.document()) else {
+        return;
+    };
+    let Some(active) = document.active_element() else {
+        return;
+    };
+
+    let Some(note) = note_ref.get_untracked() else {
+        return;
+    };
+    let Some(save) = save_ref.get_untracked() else {
+        return;
+    };
+
+    if event.shift_key() && active.is_same_node(Some(note.unchecked_ref())) {
+        event.prevent_default();
+        if let Some(cancel) = cancel_ref.get_untracked() {
+            let _ = cancel.focus();
+        }
+    } else if !event.shift_key() && active.is_same_node(Some(save.unchecked_ref())) {
+        event.prevent_default();
+        let _ = note.focus();
     }
 }
 
@@ -784,7 +1154,17 @@ mod tests {
     fn article_content_renders_cached_html() {
         let item = sample_item();
 
-        let html = Owner::new().with(|| view! { <ArticleContent item=item/> }.to_html());
+        let html = Owner::new().with(|| {
+            let body_ref = NodeRef::<html::Div>::new();
+            view! {
+                <ArticleContent
+                    item=item
+                    highlights=Vec::new()
+                    body_ref=body_ref
+                />
+            }
+            .to_html()
+        });
 
         assert!(html.contains("<h1>A quiet page</h1>"));
         assert!(html.contains("<p>First paragraph.</p>"));
