@@ -143,7 +143,9 @@ pub struct HighlightDetail {
 pub struct HighlightListRow {
     pub highlight: HighlightDetail,
     pub item_title: String,
+    pub item_source_name: String,
     pub item_primary_url: Option<String>,
+    pub note_excerpt: Option<String>,
 }
 
 /// Note payload returned by the native shell.

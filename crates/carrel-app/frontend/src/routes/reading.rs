@@ -295,6 +295,7 @@ pub fn ReadingView() -> impl IntoView {
                                         item=detail
                                         highlights=article_highlights
                                         body_ref=body_ref
+                                        status=status
                                     />
                                 }.into_any()
                             })
@@ -557,6 +558,7 @@ pub fn ArticleContent(
     item: ItemDetail,
     highlights: Vec<HighlightDetail>,
     body_ref: NodeRef<html::Div>,
+    status: StatusController,
 ) -> impl IntoView {
     let byline = item.byline.clone().or_else(|| {
         if item.creators.is_empty() {
@@ -578,7 +580,7 @@ pub fn ArticleContent(
     let content_html = item.content_html.clone();
 
     #[cfg(not(target_arch = "wasm32"))]
-    let _ = &highlights;
+    let _ = (&highlights, status);
 
     #[cfg(target_arch = "wasm32")]
     {
@@ -588,12 +590,18 @@ pub fn ArticleContent(
             let Some(body) = body_ref.get() else {
                 return;
             };
-            highlights::render_highlights(
+            let focus_id = highlights::current_hash_highlight_id();
+            let failed = highlights::render_highlights(
                 &body,
                 &content_html,
                 &highlights,
-                highlights::current_hash_highlight_id().as_deref(),
+                focus_id.as_deref(),
             );
+            if let Some(focus_id) = focus_id
+                && failed.iter().any(|id| id == &focus_id)
+            {
+                status.warn("Could not locate that highlight in the cached article.");
+            }
         });
     }
 
@@ -1155,12 +1163,14 @@ mod tests {
         let item = sample_item();
 
         let html = Owner::new().with(|| {
+            let status = crate::status::provide_status_controller();
             let body_ref = NodeRef::<html::Div>::new();
             view! {
                 <ArticleContent
                     item=item
                     highlights=Vec::new()
                     body_ref=body_ref
+                    status=status
                 />
             }
             .to_html()

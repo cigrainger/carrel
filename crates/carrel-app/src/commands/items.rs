@@ -790,7 +790,7 @@ fn looks_like_network_error_page(html: &str) -> bool {
     text.contains("we can't find the internet") && text.contains("attempting to reconnect")
 }
 
-fn source_name(primary_url: Option<&str>, site_name: Option<&str>) -> String {
+pub(crate) fn source_name(primary_url: Option<&str>, site_name: Option<&str>) -> String {
     if let Some(site_name) = site_name.filter(|value| !value.trim().is_empty()) {
         return site_name.to_string();
     }

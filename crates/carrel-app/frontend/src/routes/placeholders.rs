@@ -14,12 +14,6 @@ pub fn Library() -> impl IntoView {
     placeholder("Library")
 }
 
-/// Highlights route placeholder.
-#[component]
-pub fn Highlights() -> impl IntoView {
-    placeholder("Highlights")
-}
-
 /// Lists route placeholder.
 #[component]
 pub fn Lists() -> impl IntoView {

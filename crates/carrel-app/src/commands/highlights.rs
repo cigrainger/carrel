@@ -1,5 +1,6 @@
 //! Highlight and note commands for the desktop shell.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::str::FromStr;
 
@@ -11,11 +12,13 @@ use carrel_store::highlights::{
 };
 use carrel_store::items::ItemDetail as StoreItemDetail;
 use carrel_store::keystore::Keystore;
+use cozo::DataValue;
 use kuchiki::traits::TendrilSink;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 use time::OffsetDateTime;
 
+use crate::commands::items::source_name;
 use crate::error::AppError;
 use crate::state::AppState;
 use crate::{Result, config::InstallPaths};
@@ -54,14 +57,20 @@ pub fn list_highlights(
     state: State<'_, AppState>,
     limit: Option<usize>,
 ) -> Result<Vec<HighlightListRow>> {
+    list_highlights_from_store(&state.store, limit)
+}
+
+pub(crate) fn list_highlights_from_store(
+    store: &carrel_store::Store,
+    limit: Option<usize>,
+) -> Result<Vec<HighlightListRow>> {
     let limit = limit
         .unwrap_or(DEFAULT_HIGHLIGHT_LIMIT)
         .clamp(1, MAX_HIGHLIGHT_LIMIT);
-    state
-        .store
+    store
         .list_highlights(limit)?
         .iter()
-        .map(HighlightListRow::from_record)
+        .map(|record| HighlightListRow::from_record(store, record))
         .collect()
 }
 
@@ -133,8 +142,12 @@ pub struct HighlightListRow {
     pub highlight: HighlightDetail,
     /// Current item title.
     pub item_title: String,
+    /// Current item source label.
+    pub item_source_name: String,
     /// Current item URL, if known.
     pub item_primary_url: Option<String>,
+    /// Excerpt from the newest note attached to this highlight, if any.
+    pub note_excerpt: Option<String>,
 }
 
 /// Note DTO returned to the webview.
@@ -328,11 +341,14 @@ impl HighlightDetail {
 }
 
 impl HighlightListRow {
-    fn from_record(record: &HighlightWithItem) -> Result<Self> {
+    fn from_record(store: &carrel_store::Store, record: &HighlightWithItem) -> Result<Self> {
+        let site_name = item_site_name(store, &record.highlight.item_id)?;
         Ok(Self {
             highlight: HighlightDetail::from_record(&record.highlight)?,
             item_title: record.item_title.clone(),
+            item_source_name: source_name(record.item_primary_url.as_deref(), site_name.as_deref()),
             item_primary_url: record.item_primary_url.clone(),
+            note_excerpt: latest_note_excerpt(store, &record.highlight.id)?,
         })
     }
 }
@@ -350,6 +366,66 @@ impl NoteDetail {
             updated_at_micros: record.updated_at_micros,
             signature: record.signature.to_hex(),
         }
+    }
+}
+
+fn item_site_name(store: &carrel_store::Store, item_id: &str) -> Result<Option<String>> {
+    let rows = store.query_with_params(
+        r#"
+        ?[site_name] :=
+            *item_article{item_id, site_name},
+            item_id = $item_id
+        :limit 1
+        "#,
+        BTreeMap::from([("item_id".to_string(), DataValue::from(item_id))]),
+    )?;
+
+    rows.rows
+        .first()
+        .map(|row| optional_string(required(row, 0, "item_article.site_name")?))
+        .transpose()
+        .map(Option::flatten)
+}
+
+fn latest_note_excerpt(store: &carrel_store::Store, highlight_id: &str) -> Result<Option<String>> {
+    let notes = store.list_notes_for_target("highlight", highlight_id)?;
+    Ok(notes.first().and_then(|note| note_excerpt(&note.body)))
+}
+
+fn note_excerpt(body: &str) -> Option<String> {
+    let text = body.split_whitespace().collect::<Vec<_>>().join(" ");
+    if text.is_empty() {
+        return None;
+    }
+
+    const MAX_CHARS: usize = 180;
+    if text.chars().count() <= MAX_CHARS {
+        return Some(text);
+    }
+
+    let excerpt = text.chars().take(MAX_CHARS).collect::<String>();
+    Some(format!("{excerpt}..."))
+}
+
+fn required<'a>(
+    row: &'a [DataValue],
+    index: usize,
+    context: &'static str,
+) -> Result<&'a DataValue> {
+    row.get(index).ok_or_else(|| AppError::InvalidData {
+        context,
+        value: "missing column".to_string(),
+    })
+}
+
+fn optional_string(value: &DataValue) -> Result<Option<String>> {
+    match value {
+        DataValue::Null => Ok(None),
+        DataValue::Str(value) => Ok(Some(value.to_string())),
+        other => Err(AppError::InvalidData {
+            context: "optional string",
+            value: format!("{other:?}"),
+        }),
     }
 }
 
@@ -458,6 +534,56 @@ mod tests {
                 .unwrap()
                 .len(),
             1
+        );
+    }
+
+    #[test]
+    fn list_highlights_returns_source_and_latest_note_context() {
+        let (store, _tempdir, blobs, blob_id) = store_with_readable_item();
+        let device = Keypair::from_seed(&[18_u8; 32]);
+        let highlight = create_highlight_with_device(
+            &store,
+            &blobs,
+            &device,
+            request_for_blob(blob_id.as_str(), "quiet web", 4, 13),
+        )
+        .unwrap();
+
+        store
+            .put_note(
+                PutNoteInput {
+                    body: "Older note.".to_string(),
+                    target_kind: Some("highlight".to_string()),
+                    target_id: Some(highlight.id.clone()),
+                    created_at_micros: Some(1_700_000_000_000_000),
+                },
+                &device,
+            )
+            .unwrap();
+        store
+            .put_note(
+                PutNoteInput {
+                    body: "Newest note\nwith   spacing.".to_string(),
+                    target_kind: Some("highlight".to_string()),
+                    target_id: Some(highlight.id.clone()),
+                    created_at_micros: Some(1_700_000_001_000_000),
+                },
+                &device,
+            )
+            .unwrap();
+
+        let rows = list_highlights_from_store(&store, Some(10)).unwrap();
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].item_title, "A Quiet Web");
+        assert_eq!(rows[0].item_source_name, "Example");
+        assert_eq!(
+            rows[0].item_primary_url.as_deref(),
+            Some("https://example.com/quiet")
+        );
+        assert_eq!(
+            rows[0].note_excerpt.as_deref(),
+            Some("Newest note with spacing.")
         );
     }
 
