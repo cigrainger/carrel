@@ -11,7 +11,7 @@ use carrel_store::highlights::{
     HighlightRecord, HighlightWithItem, NoteRecord, PutHighlightInput, PutNoteInput,
 };
 use carrel_store::items::ItemDetail as StoreItemDetail;
-use carrel_store::keystore::Keystore;
+use carrel_store::keystore::{Keystore, KeystoreError};
 use cozo::DataValue;
 use kuchiki::traits::TendrilSink;
 use serde::{Deserialize, Serialize};
@@ -226,7 +226,18 @@ fn load_device_key(paths: &InstallPaths) -> Result<Keypair> {
 }
 
 fn load_device_key_from_path(path: &Path) -> Result<Keypair> {
-    Ok(Keystore::open(path).load_device()?)
+    let keystore = Keystore::open(path);
+    match keystore.load_device() {
+        Ok(device) => Ok(device),
+        Err(KeystoreError::ReadKeyFile { source, .. })
+            if source.kind() == std::io::ErrorKind::NotFound =>
+        {
+            let device = Keypair::generate();
+            keystore.save_device(&device)?;
+            Ok(device)
+        }
+        Err(source) => Err(source.into()),
+    }
 }
 
 fn require_item(store: &carrel_store::Store, item_id: &str) -> Result<StoreItemDetail> {
@@ -596,6 +607,17 @@ mod tests {
         let loaded = load_device_key_from_path(tempdir.path()).unwrap();
 
         assert_eq!(loaded.public(), device.public());
+    }
+
+    #[test]
+    fn load_device_key_creates_missing_device_key() {
+        let tempdir = tempfile::tempdir().unwrap();
+
+        let first = load_device_key_from_path(tempdir.path()).unwrap();
+        let second = load_device_key_from_path(tempdir.path()).unwrap();
+
+        assert_eq!(first.public(), second.public());
+        assert!(tempdir.path().join("device.key").exists());
     }
 
     fn store_with_readable_item() -> (carrel_store::Store, tempfile::TempDir, BlobStore, String) {
