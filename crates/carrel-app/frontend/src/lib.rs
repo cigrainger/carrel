@@ -7,8 +7,11 @@ pub mod api;
 mod components;
 mod feeds;
 mod highlights;
+mod item_actions;
 mod keymap;
 mod navigation;
+mod progress;
+mod requests;
 mod routes;
 mod status;
 mod theme;
@@ -25,16 +28,19 @@ use crate::keymap::{GlobalKeymapActions, KeymapProvider};
 pub fn App() -> impl IntoView {
     let theme = theme::provide_theme_controller();
     navigation::provide_list_navigation_context();
+    let reading_sidebar = navigation::use_reading_sidebar();
     feeds::provide_feed_controller();
     status::provide_status_controller();
+    item_actions::provide_item_actions();
+    progress::provide_progress_writer();
 
     view! {
         <Router>
             <KeymapProvider>
                 <GlobalKeymapActions/>
-                <div class="app-shell" data-theme=move || theme.current().get().as_str()>
+                <div class="app-shell" class:reader-sidebar-open=move || reading_sidebar.0.get() data-theme=move || theme.current().get().as_str()>
                     <Sidebar/>
-                    <main class="main-content" aria-label="Main content">
+                    <main class="main-content" id="main-content" aria-label="Main content">
                         <Routes fallback=|| view! { <routes::NotFound/> }>
                             <Route path=path!("") view=routes::Today/>
                             <Route path=path!("/today") view=routes::Today/>

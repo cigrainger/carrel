@@ -34,20 +34,22 @@
   --text-xl: 1.25rem;
   --text-2xl: 1.5rem;
   --text-3xl: 1.875rem;
+  --text-display: 3rem;
+  --text-reader-title: 2.25rem;
 
   --reading-size: 1.125rem;
   --reading-line-height: 1.65;
   --reading-measure: 68ch;
   --reading-paragraph-indent: 1.5em;
 
-  --color-text: #1a1a1a;
-  --color-text-secondary: #5a5a5a;
-  --color-text-tertiary: #8a8a8a;
-  --color-bg: #fafaf7;
-  --color-bg-elevated: #ffffff;
-  --color-rule: #e5e5e0;
-  --color-rule-strong: #cfcfc7;
-  --color-accent: #b85c38;
+  --color-text: #252722;
+  --color-text-secondary: #62645d;
+  --color-text-tertiary: #65675f;
+  --color-bg: #f5f2eb;
+  --color-bg-elevated: #faf8f3;
+  --color-rule: #d2d0c5;
+  --color-rule-strong: #bdbbb0;
+  --color-accent: #9a462f;
   --color-highlight: #fff3a8;
   --color-highlight-friend: #b8d4e8;
   --color-selected: color-mix(in srgb, var(--color-accent) 8%, transparent);
@@ -61,15 +63,15 @@
   --space-8: 2rem;
   --space-10: 2.5rem;
 
-  --radius-sm: 6px;
-  --sidebar-width: 240px;
+  --radius-sm: 0;
+  --sidebar-width: 216px;
   --status-strip-height: 28px;
 }
 
 [data-theme="dark"] {
   --color-text: #e8e6e0;
   --color-text-secondary: #a8a6a0;
-  --color-text-tertiary: #6a6864;
+  --color-text-tertiary: #929088;
   --color-bg: #1a1a18;
   --color-bg-elevated: #242422;
   --color-rule: #2a2a28;
@@ -82,7 +84,7 @@
 [data-theme="sepia"] {
   --color-text: #3a2f24;
   --color-text-secondary: #6a5d4e;
-  --color-text-tertiary: #9a8e7e;
+  --color-text-tertiary: #685c4b;
   --color-bg: #f4ecd8;
   --color-bg-elevated: #ede4cd;
   --color-rule: #d8cdb3;
@@ -95,7 +97,7 @@
 [data-theme="black"] {
   --color-text: #d4d2cc;
   --color-text-secondary: #948e84;
-  --color-text-tertiary: #5a564e;
+  --color-text-tertiary: #878278;
   --color-bg: #000000;
   --color-bg-elevated: #0e0e0c;
   --color-rule: #1a1a18;

@@ -1,22 +1,24 @@
 //! Local library list routes.
 
-use std::future::Future;
-
-use carrel_core::keymap::default;
-use leptos::prelude::*;
-use leptos_router::NavigateOptions;
-use leptos_router::hooks::use_navigate;
-
-#[cfg(target_arch = "wasm32")]
-use crate::api::{self, ItemStateRequest};
 use crate::api::{ItemFilter, ItemSummary, ItemView};
 use crate::components::ItemList;
-#[cfg(target_arch = "wasm32")]
-use crate::feeds::{self, use_feed_controller};
+use crate::item_actions::{ItemAction, ItemActions, ItemState, use_item_actions};
 use crate::keymap::{use_action_handler, use_keymap_layer};
-use crate::navigation::{ListNavigation, ListNavigationContext, use_list_navigation_context};
+use crate::navigation::ensure_list_cursor_visible;
+use crate::navigation::{
+    ListNavigation, ListSnapshot, list_scroll_y, restore_list_scroll, restored_index,
+    use_list_navigation_context,
+};
+#[cfg(target_arch = "wasm32")]
+use crate::{
+    api,
+    feeds::{self, use_feed_controller},
+    requests::Requests,
+};
+use carrel_core::keymap::default;
+use leptos::prelude::*;
+use leptos_router::{NavigateOptions, components::A, hooks::use_navigate};
 
-/// Configuration for one local item-list surface.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ListSpec {
     pub(crate) title: String,
@@ -28,25 +30,31 @@ pub(crate) struct ListSpec {
 }
 
 impl ListSpec {
-    fn local(title: &str, filter: ItemFilter, return_path: &str, empty_message: &str) -> Self {
+    fn local(title: &str, filter: ItemFilter, path: &str, empty: &str) -> Self {
         Self {
-            title: title.to_string(),
+            title: title.into(),
             subtitle: None,
             filter,
-            return_path: return_path.to_string(),
-            empty_message: empty_message.to_string(),
+            return_path: path.into(),
+            empty_message: empty.into(),
             fetch_url: None,
         }
     }
 }
 
-/// Items discovered recently.
 #[component]
 pub fn Today() -> impl IntoView {
-    list_route_view(|| ListSpec::local("Today", ItemFilter::today(), "/today", "No items today."))
+    list_route_view(|| {
+        let mut spec = ListSpec::local(
+            "Today",
+            ItemFilter::today(),
+            "/today",
+            "Nothing new in the past 24 hours.",
+        );
+        spec.subtitle = Some("From your subscriptions · past 24 hours".into());
+        spec
+    })
 }
-
-/// All saved items.
 #[component]
 pub fn Library() -> impl IntoView {
     list_route_view(|| {
@@ -58,21 +66,17 @@ pub fn Library() -> impl IntoView {
         )
     })
 }
-
-/// Items that have not been read locally.
 #[component]
 pub fn Unread() -> impl IntoView {
     list_route_view(|| {
         ListSpec::local(
-            "Unread",
+            "Library",
             ItemFilter::unread(),
             "/unread",
-            "No unread items.",
+            "No unread articles.",
         )
     })
 }
-
-/// Items currently in progress.
 #[component]
 pub fn Reading() -> impl IntoView {
     list_route_view(|| {
@@ -80,159 +84,307 @@ pub fn Reading() -> impl IntoView {
             "Reading",
             ItemFilter::reading(),
             "/reading",
-            "Nothing in progress.",
+            "Nothing in progress. Open an article to begin.",
         )
     })
 }
-
-/// Starred items.
 #[component]
 pub fn Starred() -> impl IntoView {
     list_route_view(|| {
         ListSpec::local(
-            "Starred",
+            "Library",
             ItemFilter::starred(),
             "/starred",
-            "No starred items.",
+            "No starred articles.",
         )
     })
 }
 
-/// Shared route implementation for local item lists.
 pub(crate) fn list_route_view(
     spec_builder: impl Fn() -> ListSpec + Send + Sync + 'static,
 ) -> impl IntoView {
     let spec = Memo::new(move |_| spec_builder());
-    let items = RwSignal::new(Vec::<ItemSummary>::new());
-    let cursor = RwSignal::new(0_usize);
-    let error = RwSignal::new(None::<String>);
-    let loaded = RwSignal::new(false);
-    let navigate = use_navigate();
     let list_navigation = use_list_navigation_context();
-
-    use_keymap_layer(default::list_layer());
-    use_keymap_layer(default::item_action_layer());
-
-    Effect::new(move |_| clamp_cursor(items, cursor));
-
-    use_action_handler("next-item", move || {
-        move_cursor(items, cursor, CursorMove::Next);
+    let snapshot = list_navigation.snapshot(&spec.get_untracked().return_path);
+    let items = RwSignal::new(
+        snapshot
+            .as_ref()
+            .map(|snapshot| snapshot.items.clone())
+            .unwrap_or_default(),
+    );
+    let cursor = RwSignal::new(
+        snapshot
+            .as_ref()
+            .map_or(0, |snapshot| snapshot.selected_index),
+    );
+    let loaded = RwSignal::new(snapshot.is_some());
+    let error = RwSignal::new(None::<String>);
+    let reload = RwSignal::new(0_u64);
+    let actions = use_item_actions();
+    let visible = Memo::new(move |_| {
+        let action_state = actions.state.get();
+        let view = spec.get().filter.view;
+        items
+            .get()
+            .into_iter()
+            .filter_map(|mut item| {
+                let state = action_state.project(
+                    &item.id,
+                    ItemState {
+                        read: item.read_state.clone(),
+                        starred: item.starred,
+                    },
+                );
+                item.read_state = state.read;
+                item.starred = state.starred;
+                matches_view(&item, &view).then_some(item)
+            })
+            .collect::<Vec<_>>()
     });
-    use_action_handler("prev-item", move || {
-        move_cursor(items, cursor, CursorMove::Previous);
-    });
-    use_action_handler("next-unread-item", move || {
-        move_cursor_to_unread(items, cursor, CursorMove::Next);
-    });
-    use_action_handler("prev-unread-item", move || {
-        move_cursor_to_unread(items, cursor, CursorMove::Previous);
-    });
-    use_action_handler("top-of-list", move || {
-        cursor.set(0);
-    });
-    use_action_handler("end-of-list", move || {
-        let len = items.with_untracked(Vec::len);
-        if len > 0 {
-            cursor.set(len - 1);
+    let restore = RwSignal::new(Some(snapshot.unwrap_or_default()));
+    Effect::new(move |_| {
+        let rows = visible.get();
+        if !loaded.get() {
+            return;
+        }
+        if let Some(snapshot) = restore.get_untracked() {
+            let context = list_navigation
+                .get()
+                .filter(|context| context.return_path == spec.get_untracked().return_path);
+            let selected = context
+                .as_ref()
+                .map(|context| context.current_id.as_str())
+                .or(snapshot.selected_id.as_deref());
+            let original_ids = context
+                .as_ref()
+                .map(|context| context.item_ids.clone())
+                .unwrap_or_else(|| snapshot.items.iter().map(|item| item.id.clone()).collect());
+            cursor.set(restored_index(
+                &rows.iter().map(|row| row.id.clone()).collect::<Vec<_>>(),
+                selected,
+                snapshot.selected_index,
+                &original_ids,
+            ));
+            restore.set(None);
+            restore_list_scroll(spec.get_untracked().return_path, snapshot.scroll_y);
+        } else {
+            cursor.update(|index| *index = (*index).min(rows.len().saturating_sub(1)));
         }
     });
-
-    let open_navigate = navigate.clone();
-    use_action_handler("open-item", move || {
-        open_item_at(
-            items,
-            cursor,
-            list_navigation,
-            open_navigate.clone(),
-            spec,
-            cursor.get_untracked(),
+    use_keymap_layer(default::list_layer());
+    use_keymap_layer(default::item_action_layer());
+    for (name, forward, unread) in [
+        ("next-item", true, false),
+        ("prev-item", false, false),
+        ("next-unread-item", true, true),
+        ("prev-unread-item", false, true),
+    ] {
+        use_action_handler(name, move || {
+            let rows = visible.get_untracked();
+            let current = cursor.get_untracked();
+            let index = if unread {
+                if forward {
+                    rows.iter()
+                        .enumerate()
+                        .skip(current + 1)
+                        .find(|(_, row)| row.read_state == "unread")
+                        .map(|(index, _)| index)
+                } else {
+                    rows.iter()
+                        .enumerate()
+                        .take(current)
+                        .rev()
+                        .find(|(_, row)| row.read_state == "unread")
+                        .map(|(index, _)| index)
+                }
+            } else {
+                Some(if forward {
+                    (current + 1).min(rows.len().saturating_sub(1))
+                } else {
+                    current.saturating_sub(1)
+                })
+            };
+            if let Some(index) = index {
+                cursor.set(index);
+                ensure_list_cursor_visible(spec.get_untracked().return_path);
+            }
+        });
+    }
+    use_action_handler("top-of-list", move || {
+        cursor.set(0);
+        ensure_list_cursor_visible(spec.get_untracked().return_path);
+    });
+    use_action_handler("end-of-list", move || {
+        cursor.set(visible.get_untracked().len().saturating_sub(1));
+        ensure_list_cursor_visible(spec.get_untracked().return_path);
+    });
+    let navigate = use_navigate();
+    let open = UnsyncCallback::new(move |index: usize| {
+        let rows = visible.get_untracked();
+        let Some(item) = rows.get(index) else {
+            return;
+        };
+        let current = spec.get_untracked();
+        list_navigation.remember(
+            current.return_path.clone(),
+            ListSnapshot {
+                items: items.get_untracked(),
+                selected_id: Some(item.id.clone()),
+                selected_index: index,
+                scroll_y: list_scroll_y(),
+                ..Default::default()
+            },
         );
+        list_navigation.set(ListNavigation {
+            item_ids: rows.iter().map(|item| item.id.clone()).collect(),
+            current_id: item.id.clone(),
+            return_path: current.return_path,
+            return_label: current.title,
+        });
+        cursor.set(index);
+        navigate(&format!("/item/{}", item.id), NavigateOptions::default());
     });
-    let row_navigate = navigate.clone();
-    let open_row = UnsyncCallback::new(move |index| {
-        open_item_at(
-            items,
-            cursor,
-            list_navigation,
-            row_navigate.clone(),
-            spec,
-            index,
-        );
-    });
-
-    use_action_handler("mark-read", move || {
-        mark_selected_read(items, cursor, spec, error);
-    });
-    use_action_handler("mark-unread", move || {
-        mark_selected_unread(items, cursor, spec, error);
-    });
-    use_action_handler("toggle-star", move || {
-        toggle_selected_star(items, cursor, spec, error);
-    });
+    use_action_handler("open-item", move || open.run(cursor.get_untracked()));
+    for (name, action) in [
+        ("mark-read", ItemAction::Read(true)),
+        ("mark-unread", ItemAction::Read(false)),
+        ("toggle-star", ItemAction::Star),
+    ] {
+        use_action_handler(name, move || {
+            request_at(visible, cursor.get_untracked(), actions, action)
+        });
+    }
     use_action_handler("go-back", move || {});
+    let read = UnsyncCallback::new(move |index| {
+        if let Some(item) = visible.get_untracked().get(index) {
+            request_at(
+                visible,
+                index,
+                actions,
+                ItemAction::Read(item.read_state != "read"),
+            );
+        }
+    });
+    let star =
+        UnsyncCallback::new(move |index| request_at(visible, index, actions, ItemAction::Star));
 
     #[cfg(target_arch = "wasm32")]
     {
-        use wasm_bindgen_futures::spawn_local;
-
-        let feed_controller = use_feed_controller();
+        let controller = use_feed_controller();
+        let requests = Requests::default();
+        let cleanup = requests.clone();
+        on_cleanup(move || cleanup.invalidate());
+        let previous_path = RwSignal::new(spec.get_untracked().return_path);
         Effect::new(move |_| {
             let current = spec.get();
-            let _ = feed_controller.refresh_token().get();
-            loaded.set(false);
-            spawn_local(async move {
-                match api::list_items(current.filter).await {
-                    Ok(rows) => {
+            if previous_path.get_untracked() != current.return_path {
+                let snapshot = list_navigation.snapshot(&current.return_path);
+                items.set(
+                    snapshot
+                        .as_ref()
+                        .map(|snapshot| snapshot.items.clone())
+                        .unwrap_or_default(),
+                );
+                loaded.set(snapshot.is_some());
+                error.set(None);
+                cursor.set(0);
+                restore.set(Some(snapshot.unwrap_or_default()));
+                previous_path.set(current.return_path.clone());
+            }
+            let _ = controller.refresh_token().get();
+            let _ = reload.get();
+            let generation = requests.begin();
+            let guard = requests.clone();
+            let action_revision = actions.state.with_untracked(|state| state.revision());
+            wasm_bindgen_futures::spawn_local(async move {
+                let result = api::list_items(current.filter).await;
+                if !guard.accepts(generation) {
+                    return;
+                }
+                match result {
+                    Ok(mut rows) => {
+                        actions.state.update(|state| {
+                            state.rebase(
+                                action_revision,
+                                &rows.iter().map(|row| row.id.clone()).collect::<Vec<_>>(),
+                            )
+                        });
+                        // Retain pending rows so a failed filtered action can put them back.
+                        let pending = actions.state.get_untracked();
+                        for (index, row) in items.get_untracked().into_iter().enumerate() {
+                            if pending.is_pending(&row.id)
+                                && !rows.iter().any(|fetched| fetched.id == row.id)
+                            {
+                                rows.insert(index.min(rows.len()), row);
+                            }
+                        }
                         items.set(rows);
                         error.set(None);
                     }
-                    Err(err) => error.set(Some(err.message().to_string())),
+                    Err(err) => {
+                        error.set(Some(format!("Could not load articles: {}", err.message())))
+                    }
                 }
                 loaded.set(true);
             });
         });
     }
-
     #[cfg(not(target_arch = "wasm32"))]
-    {
-        loaded.set(true);
-    }
+    loaded.set(true);
 
     view! {
-        <section class="route-list">
+        <section class="route-list" data-list-path=move || spec.get().return_path>
             <header class="route-header route-list-header">
-                <div>
-                    <h1>{move || spec.get().title}</h1>
-                    {move || spec.get().subtitle.map(|subtitle| {
-                        view! { <p>{subtitle}</p> }
-                    })}
-                </div>
-                {move || spec.get().fetch_url.map(|url| {
-                    view! { <FeedFetchButton url=url/> }
-                })}
+                <div><h1>{move || spec.get().title}</h1>{move || spec.get().subtitle.map(|text| view! { <p>{text}</p> })}</div>
+                {move || spec.get().fetch_url.map(|url| view! { <FeedFetchButton url=url/> })}
             </header>
-            <Show
-                when=move || loaded.get()
-                fallback=|| view! { <div class="quiet-state" aria-hidden="true"></div> }
-            >
-                {move || match error.get() {
-                    Some(message) => view! {
-                        <p class="quiet-state">{message}</p>
-                    }.into_any(),
-                    None if items.get().is_empty() => view! {
-                        <p class="quiet-state">{spec.get().empty_message}</p>
-                    }.into_any(),
-                    None => view! {
-                        <ItemList
-                            items=items.get()
-                            selected_index=cursor.get()
-                            aria_label=spec.get().title
-                            on_open=open_row
-                        />
-                    }.into_any(),
-                }}
+            <Show when=move || matches!(spec.get().filter.view, ItemView::Library | ItemView::Unread | ItemView::Starred)>
+                <nav class="library-filters" aria-label="Library filter">
+                    <A href="/library" exact=true>"All"</A><A href="/unread" exact=true>"Unread"</A><A href="/starred" exact=true>"Starred"</A>
+                </nav>
+            </Show>
+            {move || error.get().map(|message| view! { <div class="quiet-state" role="status"><p>{message}</p><button type="button" on:click=move |_| reload.update(|token| *token += 1)>"Try again"</button></div> })}
+            <Show when=move || loaded.get()>
+                <Show when=move || !visible.get().is_empty() fallback=move || view! { <Show when=move || error.get().is_none()><div class="quiet-state"><p>{spec.get().empty_message}</p><EmptyListAddFeed/></div></Show> }>
+                    <ItemList items=visible selected_index=cursor aria_label=spec.get_untracked().title on_open=open on_read=read on_star=star on_select=UnsyncCallback::new(move |index| cursor.set(index))/>
+                </Show>
             </Show>
         </section>
+    }
+}
+
+#[component]
+fn EmptyListAddFeed() -> impl IntoView {
+    let controller = crate::feeds::use_feed_controller();
+    view! { <Show when=move || controller.feeds().get().is_empty()>
+        <button type="button" on:click=move |_| controller.add_open.set(true)>"Add a feed"</button>
+    </Show> }
+}
+
+fn matches_view(item: &ItemSummary, view: &ItemView) -> bool {
+    match view {
+        ItemView::Unread => item.read_state == "unread",
+        ItemView::Reading => item.read_state == "reading",
+        ItemView::Starred => item.starred,
+        _ => true,
+    }
+}
+
+fn request_at(
+    items: Memo<Vec<ItemSummary>>,
+    index: usize,
+    actions: ItemActions,
+    action: ItemAction,
+) {
+    if let Some(item) = items.get_untracked().get(index) {
+        actions.request(
+            item.id.clone(),
+            ItemState {
+                read: item.read_state.clone(),
+                starred: item.starred,
+            },
+            action,
+        );
     }
 }
 
@@ -243,275 +395,17 @@ fn FeedFetchButton(url: String) -> impl IntoView {
         let controller = use_feed_controller();
         let status = controller.status();
         let busy = RwSignal::new(false);
-
-        view! {
-            <button
-                type="button"
-                disabled=move || status.get().is_fetching || busy.get()
-                on:click=move |_| {
-                    busy.set(true);
-                    let controller = controller;
-                    let url = url.clone();
-                    spawn_feed_task(async move {
-                        if let Err(message) = feeds::fetch_one(controller, url).await {
-                            controller.error().set(Some(message));
-                        }
-                        busy.set(false);
-                    });
-                }
-            >
-                "Fetch"
-            </button>
-        }
-        .into_any()
+        view! { <button type="button" disabled=move || status.get().is_fetching || busy.get() on:click=move |_| {
+            busy.set(true); let url = url.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                if let Err(message) = feeds::fetch_one(controller, url).await { controller.error().try_set(Some(message)); }
+                busy.try_set(false);
+            });
+        }>"Fetch"</button> }.into_any()
     }
-
     #[cfg(not(target_arch = "wasm32"))]
     {
         let _ = url;
-        view! {
-            <button type="button" disabled=true>"Fetch"</button>
-        }
-        .into_any()
+        view! { <button type="button" disabled=true>"Fetch"</button> }.into_any()
     }
-}
-
-fn open_item_at(
-    items: RwSignal<Vec<ItemSummary>>,
-    cursor: RwSignal<usize>,
-    list_navigation: ListNavigationContext,
-    navigate: impl Fn(&str, NavigateOptions),
-    spec: Memo<ListSpec>,
-    index: usize,
-) {
-    let return_path = spec.get_untracked().return_path;
-    let list_context = items.with_untracked(|rows| {
-        let item = rows.get(index)?;
-        Some(ListNavigation {
-            item_ids: rows.iter().map(|row| row.id.clone()).collect(),
-            current_id: item.id.clone(),
-            return_path,
-        })
-    });
-    let Some(list_context) = list_context else {
-        return;
-    };
-
-    cursor.set(index);
-    let item_id = list_context.current_id.clone();
-    list_navigation.set(list_context);
-    navigate(&format!("/item/{item_id}"), NavigateOptions::default());
-}
-
-fn selected_item_id(items: RwSignal<Vec<ItemSummary>>, cursor: RwSignal<usize>) -> Option<String> {
-    items.with_untracked(|rows| rows.get(cursor.get_untracked()).map(|row| row.id.clone()))
-}
-
-fn mark_selected_read(
-    items: RwSignal<Vec<ItemSummary>>,
-    cursor: RwSignal<usize>,
-    spec: Memo<ListSpec>,
-    error: RwSignal<Option<String>>,
-) {
-    let Some(item_id) = selected_item_id(items, cursor) else {
-        return;
-    };
-    let view = spec.get_untracked().filter.view;
-    mutate_current_item(items, cursor, |row| {
-        row.read_state = "read".to_string();
-        !matches!(&view, ItemView::Unread | ItemView::Reading)
-    });
-
-    spawn_item_task(async move {
-        if let Err(err) = api_mark_item_read(item_id).await {
-            error.set(Some(err));
-        }
-    });
-}
-
-fn mark_selected_unread(
-    items: RwSignal<Vec<ItemSummary>>,
-    cursor: RwSignal<usize>,
-    spec: Memo<ListSpec>,
-    error: RwSignal<Option<String>>,
-) {
-    let Some(item_id) = selected_item_id(items, cursor) else {
-        return;
-    };
-    let view = spec.get_untracked().filter.view;
-    mutate_current_item(items, cursor, |row| {
-        row.read_state = "unread".to_string();
-        !matches!(&view, ItemView::Reading)
-    });
-
-    spawn_item_task(async move {
-        if let Err(err) = api_mark_item_unread(item_id).await {
-            error.set(Some(err));
-        }
-    });
-}
-
-fn toggle_selected_star(
-    items: RwSignal<Vec<ItemSummary>>,
-    cursor: RwSignal<usize>,
-    spec: Memo<ListSpec>,
-    error: RwSignal<Option<String>>,
-) {
-    let Some(item_id) = selected_item_id(items, cursor) else {
-        return;
-    };
-    let view = spec.get_untracked().filter.view;
-    let mut optimistic_starred = false;
-    mutate_current_item(items, cursor, |row| {
-        row.starred = !row.starred;
-        optimistic_starred = row.starred;
-        row.starred || !matches!(&view, ItemView::Starred)
-    });
-
-    spawn_item_task(async move {
-        match api_toggle_item_star(item_id.clone()).await {
-            Ok(starred) => reconcile_star(items, item_id, starred),
-            Err(err) => {
-                reconcile_star(items, item_id, !optimistic_starred);
-                error.set(Some(err));
-            }
-        }
-    });
-}
-
-fn mutate_current_item(
-    items: RwSignal<Vec<ItemSummary>>,
-    cursor: RwSignal<usize>,
-    mut update: impl FnMut(&mut ItemSummary) -> bool,
-) {
-    let index = cursor.get_untracked();
-    items.update(|rows| {
-        let Some(row) = rows.get_mut(index) else {
-            return;
-        };
-        if !update(row) {
-            rows.remove(index);
-        }
-    });
-    clamp_cursor(items, cursor);
-}
-
-fn reconcile_star(items: RwSignal<Vec<ItemSummary>>, item_id: String, starred: bool) {
-    items.update(|rows| {
-        if let Some(row) = rows.iter_mut().find(|row| row.id == item_id) {
-            row.starred = starred;
-        }
-    });
-}
-
-fn clamp_cursor(items: RwSignal<Vec<ItemSummary>>, cursor: RwSignal<usize>) {
-    let len = items.with_untracked(Vec::len);
-    cursor.update(|index| {
-        if len == 0 {
-            *index = 0;
-        } else if *index >= len {
-            *index = len - 1;
-        }
-    });
-}
-
-#[derive(Clone, Copy)]
-enum CursorMove {
-    Next,
-    Previous,
-}
-
-fn move_cursor(items: RwSignal<Vec<ItemSummary>>, cursor: RwSignal<usize>, direction: CursorMove) {
-    let len = items.with_untracked(Vec::len);
-    if len == 0 {
-        cursor.set(0);
-        return;
-    }
-
-    cursor.update(|index| match direction {
-        CursorMove::Next => *index = (*index + 1).min(len - 1),
-        CursorMove::Previous => *index = index.saturating_sub(1),
-    });
-}
-
-fn move_cursor_to_unread(
-    items: RwSignal<Vec<ItemSummary>>,
-    cursor: RwSignal<usize>,
-    direction: CursorMove,
-) {
-    let next_index = items.with_untracked(|rows| {
-        if rows.is_empty() {
-            return None;
-        }
-
-        let current = cursor.get_untracked().min(rows.len() - 1);
-        match direction {
-            CursorMove::Next => rows
-                .iter()
-                .enumerate()
-                .skip(current + 1)
-                .find(|(_, item)| item.read_state == "unread")
-                .map(|(index, _)| index),
-            CursorMove::Previous => rows
-                .iter()
-                .enumerate()
-                .take(current)
-                .rev()
-                .find(|(_, item)| item.read_state == "unread")
-                .map(|(index, _)| index),
-        }
-    });
-
-    if let Some(next_index) = next_index {
-        cursor.set(next_index);
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
-async fn api_mark_item_read(item_id: String) -> Result<(), String> {
-    api::mark_item_read(ItemStateRequest { item_id })
-        .await
-        .map_err(|err| err.message().to_string())
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-async fn api_mark_item_read(_item_id: String) -> Result<(), String> {
-    Ok(())
-}
-
-#[cfg(target_arch = "wasm32")]
-async fn api_mark_item_unread(item_id: String) -> Result<(), String> {
-    api::mark_item_unread(ItemStateRequest { item_id })
-        .await
-        .map_err(|err| err.message().to_string())
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-async fn api_mark_item_unread(_item_id: String) -> Result<(), String> {
-    Ok(())
-}
-
-#[cfg(target_arch = "wasm32")]
-async fn api_toggle_item_star(item_id: String) -> Result<bool, String> {
-    api::toggle_item_star(ItemStateRequest { item_id })
-        .await
-        .map_err(|err| err.message().to_string())
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-async fn api_toggle_item_star(_item_id: String) -> Result<bool, String> {
-    Ok(false)
-}
-
-#[cfg(target_arch = "wasm32")]
-fn spawn_item_task(task: impl Future<Output = ()> + 'static) {
-    wasm_bindgen_futures::spawn_local(task);
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn spawn_item_task(_task: impl Future<Output = ()> + 'static) {}
-
-#[cfg(target_arch = "wasm32")]
-fn spawn_feed_task(task: impl Future<Output = ()> + 'static) {
-    wasm_bindgen_futures::spawn_local(task);
 }

@@ -110,6 +110,11 @@ pub fn GlobalKeymapActions() -> impl IntoView {
         today("/today", NavigateOptions::default());
     });
 
+    let reading = navigate.clone();
+    use_action_handler("go-reading", move || {
+        reading("/reading", NavigateOptions::default());
+    });
+
     let friends = navigate.clone();
     use_action_handler("go-friends", move || {
         friends("/friends", NavigateOptions::default());
@@ -253,6 +258,23 @@ fn push_warning(context: KeymapContext, warning: String) {
 
 #[cfg(target_arch = "wasm32")]
 fn handle_keydown(context: KeymapContext, event: web_sys::KeyboardEvent) {
+    let native_control = web_sys::window()
+        .and_then(|window| window.document())
+        .and_then(|document| document.active_element())
+        .is_some_and(|element| matches!(element.tag_name().as_str(), "BUTTON" | "A" | "SUMMARY"));
+    if native_activation(
+        &event.key(),
+        native_control,
+        event.meta_key() || event.ctrl_key() || event.alt_key() || event.shift_key(),
+    ) {
+        if let Some(pending) = context.pending.get_untracked()
+            && let Some(timer) = pending.timer
+        {
+            timer.clear();
+        }
+        context.pending.set(None);
+        return;
+    }
     let Some(key) = event::key_from_event(&event) else {
         return;
     };
@@ -303,6 +325,11 @@ fn handle_keydown(context: KeymapContext, event: web_sys::KeyboardEvent) {
     }
 }
 
+#[cfg(any(test, target_arch = "wasm32"))]
+fn native_activation(key: &str, control_focused: bool, modified: bool) -> bool {
+    control_focused && !modified && matches!(key, "Enter" | " " | "Spacebar")
+}
+
 #[cfg(target_arch = "wasm32")]
 fn dispatch_action(context: KeymapContext, action: Action) {
     if context.help_open.get_untracked() && action.name() == "go-back" {
@@ -325,5 +352,22 @@ fn dispatch_action(context: KeymapContext, action: Action) {
 
     if let Some(handler) = handler {
         handler.handler.run(());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::native_activation;
+
+    #[test]
+    fn focused_controls_keep_their_native_activation_keys() {
+        for key in ["Enter", " ", "Spacebar"] {
+            assert!(native_activation(key, true, false));
+            assert!(!native_activation(key, false, false));
+            assert!(!native_activation(key, true, true));
+        }
+        for key in ["j", "n", "b", "Escape"] {
+            assert!(!native_activation(key, true, false));
+        }
     }
 }

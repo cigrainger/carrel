@@ -10,7 +10,13 @@ use leptos_router::hooks::use_navigate;
 use crate::api;
 use crate::api::HighlightListRow;
 use crate::keymap::{use_action_handler, use_keymap_layer};
-use crate::navigation::{ListNavigation, use_list_navigation_context};
+use crate::navigation::ensure_list_cursor_visible;
+use crate::navigation::{
+    ListNavigation, ListSnapshot, list_scroll_y, restore_list_scroll, restored_index,
+    use_list_navigation_context,
+};
+#[cfg(target_arch = "wasm32")]
+use crate::requests::Requests;
 use crate::status::{StatusController, use_status_controller};
 
 #[cfg(target_arch = "wasm32")]
@@ -20,17 +26,52 @@ const RETURN_PATH: &str = "/highlights";
 /// Browse local highlights.
 #[component]
 pub fn Highlights() -> impl IntoView {
-    let rows = RwSignal::new(Vec::<HighlightListRow>::new());
-    let cursor = RwSignal::new(0_usize);
-    let loaded = RwSignal::new(false);
-    let error = RwSignal::new(None::<String>);
-    let navigate = use_navigate();
     let list_navigation = use_list_navigation_context();
+    let snapshot = list_navigation.snapshot(RETURN_PATH);
+    let rows = RwSignal::new(
+        snapshot
+            .as_ref()
+            .map(|snapshot| snapshot.highlights.clone())
+            .unwrap_or_default(),
+    );
+    let cursor = RwSignal::new(
+        snapshot
+            .as_ref()
+            .map_or(0, |snapshot| snapshot.selected_index),
+    );
+    let loaded = RwSignal::new(snapshot.is_some());
+    let error = RwSignal::new(None::<String>);
+    let reload = RwSignal::new(0_u64);
+    let navigate = use_navigate();
     let status = use_status_controller();
 
     use_keymap_layer(default::list_layer());
 
     Effect::new(move |_| clamp_cursor(rows, cursor));
+    let restore = RwSignal::new(snapshot);
+    Effect::new(move |_| {
+        if !loaded.get() {
+            return;
+        }
+        let current = rows.get();
+        if let Some(snapshot) = restore.get_untracked() {
+            cursor.set(restored_index(
+                &current
+                    .iter()
+                    .map(|row| row.highlight.id.clone())
+                    .collect::<Vec<_>>(),
+                snapshot.selected_id.as_deref(),
+                snapshot.selected_index,
+                &snapshot
+                    .highlights
+                    .iter()
+                    .map(|row| row.highlight.id.clone())
+                    .collect::<Vec<_>>(),
+            ));
+            restore.set(None);
+            restore_list_scroll(RETURN_PATH.into(), snapshot.scroll_y);
+        }
+    });
 
     use_action_handler("next-item", move || {
         move_cursor(rows, cursor, CursorMove::Next);
@@ -46,11 +87,13 @@ pub fn Highlights() -> impl IntoView {
     });
     use_action_handler("top-of-list", move || {
         cursor.set(0);
+        ensure_list_cursor_visible(RETURN_PATH.into());
     });
     use_action_handler("end-of-list", move || {
         let len = rows.with_untracked(Vec::len);
         if len > 0 {
             cursor.set(len - 1);
+            ensure_list_cursor_visible(RETURN_PATH.into());
         }
     });
 
@@ -85,20 +128,33 @@ pub fn Highlights() -> impl IntoView {
     #[cfg(target_arch = "wasm32")]
     {
         use wasm_bindgen_futures::spawn_local;
-
-        spawn_local(async move {
-            match api::list_highlights(Some(HIGHLIGHTS_LIMIT)).await {
-                Ok(highlights) => {
-                    rows.set(highlights);
-                    error.set(None);
+        let requests = Requests::default();
+        let cleanup = requests.clone();
+        on_cleanup(move || cleanup.invalidate());
+        let feeds = crate::feeds::use_feed_controller();
+        Effect::new(move |_| {
+            let _ = reload.get();
+            let _ = feeds.refresh_token().get();
+            let generation = requests.begin();
+            let guard = requests.clone();
+            spawn_local(async move {
+                let result = api::list_highlights(Some(HIGHLIGHTS_LIMIT)).await;
+                if !guard.accepts(generation) {
+                    return;
                 }
-                Err(err) => {
-                    let message = err.message().to_string();
-                    status.warn(format!("Could not load highlights: {message}"));
-                    error.set(Some(message));
+                match result {
+                    Ok(highlights) => {
+                        rows.set(highlights);
+                        error.set(None);
+                    }
+                    Err(err) => {
+                        let message = err.message().to_string();
+                        status.warn(format!("Could not load highlights: {message}"));
+                        error.set(Some(message));
+                    }
                 }
-            }
-            loaded.set(true);
+                loaded.set(true);
+            });
         });
     }
 
@@ -108,32 +164,28 @@ pub fn Highlights() -> impl IntoView {
     }
 
     view! {
-        <section class="route-list highlights-route">
+        <section class="route-list highlights-route" data-list-path=RETURN_PATH>
             <header class="route-header route-list-header">
                 <div>
                     <h1>"Highlights"</h1>
                     <p>"Passages you marked for return."</p>
                 </div>
             </header>
+            {move || error.get().map(|message| view! { <div class="quiet-state" role="status"><p>{message}</p><button type="button" on:click=move |_| reload.update(|token| *token += 1)>"Try again"</button></div> })}
             <Show
                 when=move || loaded.get()
                 fallback=|| view! { <div class="quiet-state" aria-hidden="true"></div> }
             >
-                {move || match error.get() {
-                    Some(message) => view! {
-                        <p class="quiet-state">{message}</p>
-                    }.into_any(),
-                    None if rows.get().is_empty() => view! {
-                        <p class="quiet-state">"No highlights yet. Mark a passage in the reader and it will appear here."</p>
-                    }.into_any(),
-                    None => view! {
+                <Show when=move || !rows.get().is_empty() fallback=move || view! {
+                    <Show when=move || error.get().is_none()><p class="quiet-state">"No highlights yet. Mark a passage in the reader and it will appear here."</p></Show>
+                }>
                         <HighlightList
-                            rows=rows.get()
-                            selected_index=cursor.get()
+                            rows=rows
+                            selected_index=cursor
                             on_open=open_row
+                            on_select=UnsyncCallback::new(move |index| cursor.set(index))
                         />
-                    }.into_any(),
-                }}
+                </Show>
             </Show>
         </section>
     }
@@ -141,27 +193,28 @@ pub fn Highlights() -> impl IntoView {
 
 #[component]
 fn HighlightList(
-    rows: Vec<HighlightListRow>,
-    selected_index: usize,
+    #[prop(into)] rows: Signal<Vec<HighlightListRow>>,
+    #[prop(into)] selected_index: Signal<usize>,
     on_open: UnsyncCallback<usize>,
+    on_select: UnsyncCallback<usize>,
 ) -> impl IntoView {
-    let indexed_rows = rows.into_iter().enumerate().collect::<Vec<_>>();
-
     view! {
         <ul class="highlight-list" aria-label="Highlights">
             <For
-                each=move || indexed_rows.clone()
-                key=|(_, row)| row.highlight.id.clone()
+                each=move || { rows.get().into_iter().enumerate().collect::<Vec<_>>() }
+                key=|(index, row)| (*index, row.highlight.id.clone())
                 let:row
             >
                 {
                     let (index, row) = row;
+                    let row = highlight_row_data(rows, index, row);
                     view! {
                         <HighlightRow
                             index=index
                             row=row
-                            selected=index == selected_index
+                            selected=Signal::derive(move || index == selected_index.get())
                             on_open=on_open
+                            on_select=on_select
                         />
                     }
                 }
@@ -170,53 +223,42 @@ fn HighlightList(
     }
 }
 
+fn highlight_row_data(
+    rows: Signal<Vec<HighlightListRow>>,
+    index: usize,
+    fallback: HighlightListRow,
+) -> Memo<HighlightListRow> {
+    Memo::new(move |_| {
+        rows.with(|rows| {
+            rows.get(index)
+                .filter(|row| row.highlight.id == fallback.highlight.id)
+                .cloned()
+                .unwrap_or_else(|| fallback.clone())
+        })
+    })
+}
+
 #[component]
 fn HighlightRow(
     index: usize,
-    row: HighlightListRow,
-    selected: bool,
+    #[prop(into)] row: Signal<HighlightListRow>,
+    selected: Signal<bool>,
     on_open: UnsyncCallback<usize>,
+    on_select: UnsyncCallback<usize>,
 ) -> impl IntoView {
-    let class = if selected {
-        "highlight-row is-selected"
-    } else {
-        "highlight-row"
-    };
-    let date = created_date_label(&row.highlight.created_at);
-    let note = row.note_excerpt.clone();
-    let row_open = on_open;
-    let button_open = on_open;
-
     view! {
-        <li
-            class=class
-            aria-selected=selected.to_string()
-            on:click=move |_| {
-                if should_open_from_row_click() {
-                    row_open.run(index);
-                }
-            }
-        >
+        <li class="highlight-row" class:is-selected=move || selected.get() on:focusin=move |_| on_select.run(index)
+            on:click=move |_| { if should_open_from_row_click() { on_open.run(index); } }>
             <span class="highlight-row-mark" aria-hidden="true"></span>
             <div class="highlight-row-body">
-                <blockquote>{row.highlight.quoted_text.clone()}</blockquote>
-                {note.map(|note| view! { <p class="highlight-note">{note}</p> })}
+                <blockquote>{move || row.get().highlight.quoted_text}</blockquote>
+                {move || row.get().note_excerpt.map(|note| view! { <p class="highlight-note">{note}</p> })}
                 <div class="highlight-row-footer">
                     <p class="highlight-source">
-                        <span>{row.item_title.clone()}</span>
-                        <span>{row.item_source_name.clone()}</span>
-                        <span>{date}</span>
+                        <span>{move || row.get().item_title}</span><span>{move || row.get().item_source_name}</span>
+                        <span>{move || created_date_label(&row.get().highlight.created_at)}</span>
                     </p>
-                    <button
-                        type="button"
-                        class="highlight-open"
-                        on:click=move |event: ev::MouseEvent| {
-                            event.stop_propagation();
-                            button_open.run(index);
-                        }
-                    >
-                        "Open source"
-                    </button>
+                    <button type="button" class="highlight-open" on:click=move |event: ev::MouseEvent| { event.stop_propagation(); on_open.run(index); }>"Open source"</button>
                 </div>
             </div>
         </li>
@@ -240,6 +282,7 @@ fn open_highlight_at(
                 item_ids: unique_item_ids(rows),
                 current_id: row.highlight.item_id.clone(),
                 return_path: RETURN_PATH.to_string(),
+                return_label: "Highlights".to_string(),
             },
         ))
     });
@@ -249,6 +292,16 @@ fn open_highlight_at(
     };
 
     cursor.set(index);
+    list_navigation.remember(
+        RETURN_PATH.into(),
+        ListSnapshot {
+            highlights: rows.get_untracked(),
+            selected_id: Some(highlight_id.clone()),
+            selected_index: index,
+            scroll_y: list_scroll_y(),
+            ..Default::default()
+        },
+    );
     list_navigation.set(list_context);
     navigate(
         &format!("/item/{item_id}#highlight-{highlight_id}"),
@@ -307,6 +360,7 @@ fn move_cursor(
         CursorMove::Next => *index = (*index + 1).min(len - 1),
         CursorMove::Previous => *index = index.saturating_sub(1),
     });
+    ensure_list_cursor_visible(RETURN_PATH.into());
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -342,9 +396,10 @@ mod tests {
         let html = Owner::new().with(|| {
             view! {
                 <HighlightList
-                    rows=rows
-                    selected_index=0
+                    rows=Signal::stored(rows)
+                    selected_index=Signal::stored(0)
                     on_open=UnsyncCallback::new(|_: usize| {})
+                    on_select=UnsyncCallback::new(|_: usize| {})
                 />
             }
             .to_html()
@@ -365,15 +420,35 @@ mod tests {
         let html = Owner::new().with(|| {
             view! {
                 <HighlightList
-                    rows=rows
-                    selected_index=0
+                    rows=Signal::stored(rows)
+                    selected_index=Signal::stored(0)
                     on_open=UnsyncCallback::new(|_: usize| {})
+                    on_select=UnsyncCallback::new(|_: usize| {})
                 />
             }
             .to_html()
         });
 
         assert!(!html.contains("highlight-note"));
+    }
+
+    #[test]
+    fn a_refreshed_note_updates_an_existing_highlight_row() {
+        Owner::new().with(|| {
+            let initial = highlight_row(None);
+            let rows = RwSignal::new(vec![initial.clone()]);
+            let row = highlight_row_data(rows.into(), 0, initial);
+            assert!(row.get_untracked().note_excerpt.is_none());
+            rows.update(|rows| {
+                rows[0].note_excerpt = Some("Saved after returning".into());
+                rows[0].item_title = "Updated title".into();
+            });
+            assert_eq!(
+                row.get_untracked().note_excerpt.as_deref(),
+                Some("Saved after returning")
+            );
+            assert_eq!(row.get_untracked().item_title, "Updated title");
+        });
     }
 
     fn highlight_row(note_excerpt: Option<&str>) -> HighlightListRow {

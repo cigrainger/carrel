@@ -15,6 +15,7 @@ pub(crate) struct FeedController {
     feeds: RwSignal<Vec<FeedSummary>>,
     status: RwSignal<FeedStatusSummary>,
     error: RwSignal<Option<String>>,
+    pub(crate) add_open: RwSignal<bool>,
     #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
     refresh_token: RwSignal<u64>,
 }
@@ -38,9 +39,9 @@ impl FeedController {
     }
 
     #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
-    fn bump_refresh(&self) {
+    pub(crate) fn bump_refresh(&self) {
         self.refresh_token
-            .update(|revision| *revision = revision.saturating_add(1));
+            .try_update(|revision| *revision = revision.saturating_add(1));
     }
 }
 
@@ -50,6 +51,7 @@ pub(crate) fn provide_feed_controller() -> FeedController {
         feeds: RwSignal::new(Vec::new()),
         status: RwSignal::new(FeedStatusSummary::default()),
         error: RwSignal::new(None),
+        add_open: RwSignal::new(false),
         refresh_token: RwSignal::new(0),
     };
     provide_context(controller);
@@ -89,8 +91,30 @@ pub(crate) fn decode_feed_path(value: &str) -> Option<String> {
 #[cfg(target_arch = "wasm32")]
 pub(crate) async fn add_and_fetch(controller: FeedController, url: String) -> Result<(), String> {
     let feed = api::add_feed(url).await.map_err(message)?;
-    let _ = api::fetch_feed(feed.url).await.map_err(message)?;
-    refresh_after_mutation(controller).await
+    publish_subscription(controller, feed.clone());
+    wasm_bindgen_futures::spawn_local(async move {
+        let result = api::fetch_feed(feed.url).await;
+        refresh_after_mutation(controller).await.ok();
+        if let Err(error) = result {
+            controller.error.try_set(Some(format!(
+                "Subscription saved. First fetch failed: {}",
+                error.message()
+            )));
+        }
+    });
+    Ok(())
+}
+
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+fn publish_subscription(controller: FeedController, feed: FeedSummary) {
+    controller.feeds.try_update(|feeds| {
+        if let Some(existing) = feeds.iter_mut().find(|existing| existing.url == feed.url) {
+            *existing = feed;
+        } else {
+            feeds.push(feed);
+        }
+    });
+    controller.bump_refresh();
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -146,7 +170,6 @@ fn poll_status(controller: FeedController) {
                 let changed = status.revision != previous_revision;
                 let finished = !status.is_fetching;
                 controller.status.set(status);
-                controller.error.set(None);
                 if changed {
                     refresh(controller, finished).await;
                 }
@@ -267,5 +290,30 @@ mod tests {
     fn decode_feed_path_rejects_bad_escapes() {
         assert_eq!(decode_feed_path("https%3A%2"), None);
         assert_eq!(decode_feed_path("https%3X"), None);
+    }
+
+    #[test]
+    fn a_saved_subscription_is_visible_before_fetch_and_survives_fetch_failure() {
+        Owner::new().with(|| {
+            let controller = provide_feed_controller();
+            let feed = FeedSummary {
+                url: "https://example.com/feed".into(),
+                title: None,
+                description: None,
+                display_name: "Example".into(),
+                last_fetched_label: "Never".into(),
+                fetch_interval_seconds: 3600,
+                consecutive_failures: 0,
+                folder: None,
+                auto_mark_read: false,
+            };
+            publish_subscription(controller, feed.clone());
+            assert_eq!(controller.feeds.get_untracked(), vec![feed.clone()]);
+            assert_eq!(controller.refresh_token.get_untracked(), 1);
+            controller.error.set(Some("First fetch failed".into()));
+            assert_eq!(controller.feeds.get_untracked(), vec![feed.clone()]);
+            publish_subscription(controller, feed.clone());
+            assert_eq!(controller.feeds.get_untracked(), vec![feed]);
+        });
     }
 }

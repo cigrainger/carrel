@@ -11,12 +11,17 @@ use leptos_router::NavigateOptions;
 use leptos_router::hooks::{use_navigate, use_params_map};
 
 #[cfg(target_arch = "wasm32")]
-use crate::api::{self, CreateHighlightNoteRequest, ItemStateRequest, ReadProgressUpdate};
+use crate::api::{self, CreateHighlightNoteRequest, ReadProgressUpdate};
 use crate::api::{CreateHighlightRequest, HighlightDetail, ItemDetail};
+use crate::feeds::{FeedController, use_feed_controller};
 #[cfg(target_arch = "wasm32")]
 use crate::highlights;
+use crate::item_actions::{ItemAction, ItemActions, ItemState, use_item_actions};
 use crate::keymap::{use_action_handler, use_keymap_layer};
-use crate::navigation::{ListNavigation, use_list_navigation_context};
+use crate::navigation::{ListNavigation, use_list_navigation_context, use_reading_sidebar};
+use crate::progress::{ProgressWriter, use_progress_writer};
+#[cfg(target_arch = "wasm32")]
+use crate::requests::Requests;
 use crate::status::{StatusController, use_status_controller};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -35,6 +40,7 @@ pub fn ReadingView() -> impl IntoView {
     let highlights = RwSignal::new(Vec::<HighlightDetail>::new());
     let error = RwSignal::new(None::<String>);
     let loaded = RwSignal::new(false);
+    let reload = RwSignal::new(0_u64);
     let info_open = RwSignal::new(false);
     let pending_note = RwSignal::new(None::<PendingNoteDraft>);
     let restored_item = RwSignal::new(None::<String>);
@@ -43,6 +49,28 @@ pub fn ReadingView() -> impl IntoView {
     let navigate = use_navigate();
     let list_navigation = use_list_navigation_context();
     let status = use_status_controller();
+    let feeds = use_feed_controller();
+    let actions = use_item_actions();
+    let sidebar = use_reading_sidebar();
+    let progress_writer = use_progress_writer();
+    let cleanup_writer = progress_writer.clone();
+    on_cleanup(move || cleanup_writer.flush());
+    let progress_writer = StoredValue::new(progress_writer);
+    let projected = Memo::new(move |_| {
+        item.get().map(|mut detail| {
+            let state = actions.state.get().project(
+                &detail.id,
+                ItemState {
+                    read: detail.read_state.clone(),
+                    starred: detail.starred,
+                },
+            );
+            detail.read_state = state.read;
+            detail.starred = state.starred;
+            detail
+        })
+    });
+    use_action_handler("toggle-reading-sidebar", move || sidebar.toggle());
 
     use_keymap_layer(default::reading_layer());
     use_keymap_layer(default::item_action_layer());
@@ -80,35 +108,60 @@ pub fn ReadingView() -> impl IntoView {
     let next_navigate = navigate.clone();
     use_action_handler("next-item-mark-read", move || {
         navigate_adjacent(
-            item,
+            projected,
             list_navigation,
             next_navigate.clone(),
             Direction::Next,
-            status,
+            actions,
+            true,
         );
     });
 
     let previous_navigate = navigate.clone();
-    use_action_handler("prev-item-mark-read", move || {
+    use_action_handler("prev-item", move || {
         navigate_adjacent(
-            item,
+            projected,
             list_navigation,
             previous_navigate.clone(),
             Direction::Previous,
-            status,
+            actions,
+            false,
         );
     });
 
+    let legacy_previous = navigate.clone();
+    use_action_handler("prev-item-mark-read", move || {
+        navigate_adjacent(
+            projected,
+            list_navigation,
+            legacy_previous.clone(),
+            Direction::Previous,
+            actions,
+            true,
+        )
+    });
+    let plain_next = navigate.clone();
+    use_action_handler("next-item", move || {
+        navigate_adjacent(
+            projected,
+            list_navigation,
+            plain_next.clone(),
+            Direction::Next,
+            actions,
+            false,
+        )
+    });
+
     use_action_handler("mark-read", move || {
-        mark_current_read(item, status);
+        request_current(projected, actions, ItemAction::Read(true));
     });
 
     use_action_handler("mark-unread", move || {
-        mark_current_unread(item, status);
+        request_current(projected, actions, ItemAction::Read(false));
     });
 
     use_action_handler("toggle-star", move || {
-        toggle_current_star(item, status);
+        request_current(projected, actions, ItemAction::Star);
     });
 
     use_action_handler("show-item-info", move || {
@@ -117,7 +170,7 @@ pub fn ReadingView() -> impl IntoView {
 
     let highlight_body_ref = body_ref;
     use_action_handler("highlight-selection", move || {
-        create_highlight_from_selection(item, highlight_body_ref, highlights, status);
+        create_highlight_from_selection(item, highlight_body_ref, highlights, status, feeds);
     });
 
     let note_body_ref = body_ref;
@@ -145,9 +198,16 @@ pub fn ReadingView() -> impl IntoView {
     #[cfg(target_arch = "wasm32")]
     {
         use wasm_bindgen_futures::spawn_local;
-
+        let requests = Requests::default();
+        let cleanup = requests.clone();
+        on_cleanup(move || cleanup.invalidate());
         Effect::new(move |_| {
             let id = item_id.get();
+            let _ = reload.get();
+            progress_writer.get_value().flush();
+            let generation = requests.begin();
+            let guard = requests.clone();
+            let action_revision = actions.state.with_untracked(|state| state.revision());
             item.set(None);
             highlights.set(Vec::new());
             error.set(None);
@@ -157,26 +217,62 @@ pub fn ReadingView() -> impl IntoView {
             pending_note.set(None);
 
             spawn_local(async move {
-                match api::get_item(id.clone()).await {
-                    Ok(detail) => {
-                        if detail.is_some() {
+                let result = api::get_item(id.clone()).await;
+                if !guard.accepts(generation) {
+                    return;
+                }
+                match result {
+                    Ok(mut detail) => {
+                        if let Some(detail) = detail.as_ref() {
+                            actions.state.update(|state| {
+                                state.rebase(action_revision, std::slice::from_ref(&detail.id))
+                            });
+                        }
+                        let has_item = detail.is_some();
+                        if let Some(detail) = detail.as_mut() {
+                            let latest = progress_writer.get_value().latest(&detail.id);
+                            if let Some(latest) = latest {
+                                detail.last_scroll = Some(latest.scroll_y);
+                                detail.read_progress = Some(latest.progress);
+                            }
+                            progress_writer.get_value().record(ReadProgressUpdate {
+                                item_id: detail.id.clone(),
+                                progress: detail.read_progress.unwrap_or(0.0),
+                                scroll_y: detail.last_scroll.unwrap_or(0.0),
+                            });
+                        }
+                        item.set(detail);
+                        loaded.set(true);
+                        if has_item {
                             match api::list_item_highlights(id).await {
-                                Ok(rows) => highlights.set(rows),
+                                Ok(mut rows) if guard.accepts(generation) => {
+                                    // A newly saved highlight may have arrived while this query ran.
+                                    for saved in highlights.get_untracked() {
+                                        if !rows.iter().any(|row| row.id == saved.id) {
+                                            rows.push(saved);
+                                        }
+                                    }
+                                    highlights.set(rows);
+                                }
+                                Ok(_) => {}
                                 Err(err) => {
-                                    status.warn(format!(
-                                        "Could not load highlights: {}",
-                                        err.message()
-                                    ));
+                                    if guard.accepts(generation) {
+                                        status.warn(format!(
+                                            "Could not load highlights: {}",
+                                            err.message()
+                                        ));
+                                    }
                                 }
                             }
                         }
-                        item.set(detail);
                     }
                     Err(err) => {
                         error.set(Some(err.message().to_string()));
                     }
                 }
-                loaded.set(true);
+                if guard.accepts(generation) {
+                    loaded.set(true);
+                }
             });
         });
     }
@@ -186,6 +282,17 @@ pub fn ReadingView() -> impl IntoView {
         loaded.set(true);
     }
 
+    let complete_navigate = navigate.clone();
+    let complete = UnsyncCallback::new(move |()| {
+        navigate_adjacent(
+            projected,
+            list_navigation,
+            complete_navigate.clone(),
+            Direction::Next,
+            actions,
+            true,
+        )
+    });
     view! {
         <section
             class="reading-route"
@@ -200,11 +307,12 @@ pub fn ReadingView() -> impl IntoView {
                     let navigate = navigate.clone();
                     UnsyncCallback::new(move |()| {
                         navigate_adjacent(
-                            item,
+                             projected,
                             list_navigation,
                             navigate.clone(),
                             Direction::Previous,
-                            status,
+                             actions,
+                             false,
                         );
                     })
                 };
@@ -212,33 +320,38 @@ pub fn ReadingView() -> impl IntoView {
                     let navigate = navigate.clone();
                     UnsyncCallback::new(move |()| {
                         navigate_adjacent(
-                            item,
+                             projected,
                             list_navigation,
                             navigate.clone(),
                             Direction::Next,
-                            status,
+                             actions,
+                             false,
                         );
                     })
                 };
-                let star_click = UnsyncCallback::new(move |()| toggle_current_star(item, status));
-                let read_click = UnsyncCallback::new(move |()| toggle_current_read_state(item, status));
+                let star_click = UnsyncCallback::new(move |()| request_current(projected, actions, ItemAction::Star));
+                let read_click = UnsyncCallback::new(move |()| {
+                    let read = projected.get_untracked().is_some_and(|detail| detail.read_state != "read");
+                    request_current(projected, actions, ItemAction::Read(read));
+                });
                 let info_click = UnsyncCallback::new(move |()| info_open.update(|open| *open = !*open));
 
                 view! {
-                    {move || view! {
-                        <ReaderActions
-                            item=item.get()
-                            can_previous=can_navigate_adjacent(item.get(), list_navigation.get(), Direction::Previous)
-                            can_next=can_navigate_adjacent(item.get(), list_navigation.get(), Direction::Next)
-                            info_open=info_open.get()
+                    <ReaderActions
+                            item=projected
+                            can_previous=Signal::derive(move || can_navigate_adjacent(item.get(), list_navigation.get(), Direction::Previous))
+                            can_next=Signal::derive(move || can_navigate_adjacent(item.get(), list_navigation.get(), Direction::Next))
+                            info_open=info_open
                             on_back=back_click
                             on_previous=previous_click
                             on_next=next_click
                             on_toggle_star=star_click
                             on_toggle_read=read_click
                             on_toggle_info=info_click
+                            sidebar_visible=sidebar.0
+                            on_toggle_sidebar=UnsyncCallback::new(move |()| sidebar.toggle())
+                            back_label=list_navigation.get().map(|context| format!("Back to {}", context.return_label)).unwrap_or_else(|| "Back to Today".into())
                         />
-                    }}
                 }
             }
             {move || {
@@ -250,10 +363,12 @@ pub fn ReadingView() -> impl IntoView {
                         let confirm = UnsyncCallback::new(move |body: String| {
                             confirm_highlight_note(
                                 request.clone(),
+                                item,
                                 body,
                                 highlights,
                                 pending_note,
                                 status,
+                                feeds,
                             );
                         });
                         let cancel = UnsyncCallback::new(move |()| {
@@ -272,7 +387,7 @@ pub fn ReadingView() -> impl IntoView {
             <div
                 class="reader-scroll"
                 node_ref=scroll_ref
-                on:scroll=move |_| persist_progress(item, scroll_ref)
+                on:scroll=move |_| persist_progress(item, scroll_ref, &progress_writer.get_value())
             >
                 <Show
                     when=move || loaded.get()
@@ -280,12 +395,11 @@ pub fn ReadingView() -> impl IntoView {
                 >
                     {move || match error.get() {
                         Some(message) => view! {
-                            <p class="quiet-state reader-message">{message}</p>
+                            <div class="quiet-state reader-message" role="status"><p>{message}</p><button type="button" on:click=move |_| reload.update(|token| *token += 1)>"Try again"</button></div>
                         }.into_any(),
                         None => item.get()
                             .map(|detail| {
                                 let info_detail = detail.clone();
-                                let article_highlights = highlights.get();
                                 let close_info = UnsyncCallback::new(move |()| info_open.set(false));
                                 view! {
                                     <Show when=move || info_open.get()>
@@ -293,10 +407,16 @@ pub fn ReadingView() -> impl IntoView {
                                     </Show>
                                     <ArticleContent
                                         item=detail
-                                        highlights=article_highlights
+                                         highlights=highlights
                                         body_ref=body_ref
                                         status=status
-                                    />
+                                     />
+                                     <div class="reader-complete">
+                                         <span>"Finished reading?"</span>
+                                         <button type="button" on:click=move |_| complete.run(())>
+                                             {move || if can_navigate_adjacent(item.get(), list_navigation.get(), Direction::Next) { "Mark read & next" } else { "Mark read & return" }}
+                                         </button>
+                                     </div>
                                 }.into_any()
                             })
                             .unwrap_or_else(|| view! {
@@ -309,94 +429,53 @@ pub fn ReadingView() -> impl IntoView {
     }
 }
 
-/// Render persistent reader controls.
+/// Render persistent reader controls without replacing focused buttons on a state change.
 #[component]
 pub fn ReaderActions(
-    item: Option<ItemDetail>,
-    can_previous: bool,
-    can_next: bool,
-    info_open: bool,
+    #[prop(into)] item: Signal<Option<ItemDetail>>,
+    #[prop(into)] can_previous: Signal<bool>,
+    #[prop(into)] can_next: Signal<bool>,
+    #[prop(into)] info_open: Signal<bool>,
     on_back: UnsyncCallback<()>,
     on_previous: UnsyncCallback<()>,
     on_next: UnsyncCallback<()>,
     on_toggle_star: UnsyncCallback<()>,
     on_toggle_read: UnsyncCallback<()>,
     on_toggle_info: UnsyncCallback<()>,
+    #[prop(into, default = Signal::stored(false))] sidebar_visible: Signal<bool>,
+    #[prop(default = UnsyncCallback::new(|()| {}))] on_toggle_sidebar: UnsyncCallback<()>,
+    #[prop(default = String::from("Back"))] back_label: String,
 ) -> impl IntoView {
-    let loaded = item.is_some();
-    let original_url = item.as_ref().and_then(|detail| detail.primary_url.clone());
-    let star_label = item
-        .as_ref()
-        .map(|detail| star_action_label(detail.starred))
-        .unwrap_or("Star");
-    let read_label = item
-        .as_ref()
-        .map(|detail| read_action_label(&detail.read_state))
-        .unwrap_or("Mark read");
-    let info_label = if info_open { "Hide info" } else { "Item info" };
-
     view! {
         <nav class="reader-actions" aria-label="Reader controls">
             <div class="reader-action-group">
-                <button
-                    type="button"
-                    class="reader-action-primary"
-                    on:click=move |_| on_back.run(())
-                >
-                    "Back"
+                <button type="button" class="reader-action-primary" on:click=move |_| on_back.run(())>{back_label}</button>
+                <button type="button" aria-controls="reading-sidebar" aria-expanded=move || sidebar_visible.get().to_string()
+                    title="Toggle sidebar (⌘B)" on:click=move |_| on_toggle_sidebar.run(())>
+                    {move || if sidebar_visible.get() { "Hide sidebar" } else { "Show sidebar" }}
                 </button>
-                <button
-                    type="button"
-                    disabled=!can_previous
-                    aria-label="Previous item"
-                    on:click=move |_| on_previous.run(())
-                >
-                    "Previous"
+                <button type="button" disabled=move || !can_previous.get() aria-label="Previous item" on:click=move |_| on_previous.run(())>"Previous"</button>
+                <button type="button" disabled=move || !can_next.get() aria-label="Next item" on:click=move |_| on_next.run(())>"Next"</button>
+            </div>
+            <div class="reader-action-group">
+                <button type="button" disabled=move || item.with(Option::is_none)
+                    aria-pressed=move || item.with(|item| item.as_ref().is_some_and(|detail| detail.starred).to_string())
+                    on:click=move |_| on_toggle_star.run(())>
+                    {move || item.with(|item| star_action_label(item.as_ref().is_some_and(|detail| detail.starred)))}
                 </button>
-                <button
-                    type="button"
-                    disabled=!can_next
-                    aria-label="Next item"
-                    on:click=move |_| on_next.run(())
-                >
-                    "Next"
+                <button type="button" disabled=move || item.with(Option::is_none) on:click=move |_| on_toggle_read.run(())>
+                    {move || item.with(|item| read_action_label(item.as_ref().map_or("unread", |detail| detail.read_state.as_str())))}
+                </button>
+                <button type="button" disabled=move || item.with(Option::is_none)
+                    aria-pressed=move || info_open.get().to_string() on:click=move |_| on_toggle_info.run(())>
+                    {move || if info_open.get() { "Hide info" } else { "Item info" }}
                 </button>
             </div>
             <div class="reader-action-group">
-                <button
-                    type="button"
-                    disabled=!loaded
-                    aria-pressed=move || item.as_ref().is_some_and(|detail| detail.starred).to_string()
-                    on:click=move |_| on_toggle_star.run(())
-                >
-                    {star_label}
-                </button>
-                <button
-                    type="button"
-                    disabled=!loaded
-                    on:click=move |_| on_toggle_read.run(())
-                >
-                    {read_label}
-                </button>
-                <button
-                    type="button"
-                    disabled=!loaded
-                    aria-pressed=info_open.to_string()
-                    on:click=move |_| on_toggle_info.run(())
-                >
-                    {info_label}
-                </button>
-            </div>
-            <div class="reader-action-group">
-                {original_url
-                    .map(|url| view! {
-                        <a class="reader-action-link" href=url target="_blank" rel="noreferrer">
-                            "Open original"
-                        </a>
-                    }.into_any())
-                    .unwrap_or_else(|| view! {
-                        <button type="button" disabled=true>"Open original"</button>
-                    }.into_any())}
+                <Show when=move || item.with(|item| item.as_ref().is_some_and(|detail| detail.primary_url.is_some()))
+                    fallback=|| view! { <button type="button" disabled=true>"Open original"</button> }>
+                    <a class="reader-action-link" href=move || item.with(|item| item.as_ref().and_then(|detail| detail.primary_url.clone()).unwrap_or_default()) target="_blank" rel="noreferrer">"Open original"</a>
+                </Show>
             </div>
         </nav>
     }
@@ -556,7 +635,7 @@ pub fn HighlightNoteOverlay(
 #[component]
 pub fn ArticleContent(
     item: ItemDetail,
-    highlights: Vec<HighlightDetail>,
+    #[prop(into)] highlights: Signal<Vec<HighlightDetail>>,
     body_ref: NodeRef<html::Div>,
     status: StatusController,
 ) -> impl IntoView {
@@ -570,12 +649,6 @@ pub fn ArticleContent(
     let has_byline = byline.is_some();
     let byline_label = byline.unwrap_or_default();
     let date = item.published_at.clone().unwrap_or(item.time_label.clone());
-    let star_label = if item.starred { "Starred" } else { "" };
-    let read_label = if item.read_state == "read" {
-        "Read"
-    } else {
-        ""
-    };
     let has_original = item.primary_url.is_some();
     let content_html = item.content_html.clone();
 
@@ -585,7 +658,6 @@ pub fn ArticleContent(
     #[cfg(target_arch = "wasm32")]
     {
         let content_html = content_html.clone();
-        let highlights = highlights.clone();
         Effect::new(move |_| {
             let Some(body) = body_ref.get() else {
                 return;
@@ -594,7 +666,7 @@ pub fn ArticleContent(
             let failed = highlights::render_highlights(
                 &body,
                 &content_html,
-                &highlights,
+                &highlights.get(),
                 focus_id.as_deref(),
             );
             if let Some(focus_id) = focus_id
@@ -616,12 +688,6 @@ pub fn ArticleContent(
                     </Show>
                     <span>{item.length_label.clone()}</span>
                     <span>{date}</span>
-                    <Show when=move || !star_label.is_empty()>
-                        <span>{star_label}</span>
-                    </Show>
-                    <Show when=move || !read_label.is_empty()>
-                        <span>{read_label}</span>
-                    </Show>
                 </div>
             </header>
             <div class="reader-body" node_ref=body_ref inner_html=content_html></div>
@@ -668,11 +734,12 @@ fn create_highlight_from_selection(
     body_ref: NodeRef<html::Div>,
     highlights: RwSignal<Vec<HighlightDetail>>,
     status: StatusController,
+    feeds: FeedController,
 ) {
     let Some(request) = capture_highlight_request(item, body_ref, status) else {
         return;
     };
-    write_highlight(request, highlights, status);
+    write_highlight(request, item, highlights, status, feeds);
 }
 
 fn begin_highlight_note(
@@ -725,13 +792,27 @@ fn capture_highlight_request(
     }
 }
 
+#[cfg(any(test, target_arch = "wasm32"))]
+fn is_current_item(item: RwSignal<Option<ItemDetail>>, item_id: &str) -> bool {
+    item.try_with_untracked(|current| {
+        current
+            .as_ref()
+            .is_some_and(|current| current.id == item_id)
+    })
+    .unwrap_or(false)
+}
+
 fn write_highlight(
     #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))]
     request: CreateHighlightRequest,
+    #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))] item: RwSignal<
+        Option<ItemDetail>,
+    >,
     #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))] highlights: RwSignal<
         Vec<HighlightDetail>,
     >,
     #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))] status: StatusController,
+    #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))] feeds: FeedController,
 ) {
     #[cfg(target_arch = "wasm32")]
     {
@@ -740,9 +821,12 @@ fn write_highlight(
         spawn_local(async move {
             match api::create_highlight(request).await {
                 Ok(highlight) => {
-                    highlights.update(|rows| rows.push(highlight));
-                    highlights::clear_current_selection();
+                    if is_current_item(item, &highlight.item_id) {
+                        highlights.try_update(|rows| rows.push(highlight));
+                        highlights::clear_current_selection();
+                    }
                     status.info("Highlighted.");
+                    feeds.bump_refresh();
                 }
                 Err(error) => {
                     status.warn(format!("Could not save highlight: {}", error.message()));
@@ -755,12 +839,16 @@ fn write_highlight(
 fn confirm_highlight_note(
     #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))]
     request: CreateHighlightRequest,
+    #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))] item: RwSignal<
+        Option<ItemDetail>,
+    >,
     #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))] body: String,
     #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))] highlights: RwSignal<
         Vec<HighlightDetail>,
     >,
     pending_note: RwSignal<Option<PendingNoteDraft>>,
     #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))] status: StatusController,
+    #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))] feeds: FeedController,
 ) {
     if body.trim().is_empty() {
         status.info("Write a note before saving.");
@@ -782,17 +870,23 @@ fn confirm_highlight_note(
                     };
                     match api::create_highlight_note(note_request).await {
                         Ok(_) => {
-                            highlights.update(|rows| rows.push(highlight));
-                            highlights::clear_current_selection();
+                            if is_current_item(item, &highlight.item_id) {
+                                highlights.try_update(|rows| rows.push(highlight));
+                                highlights::clear_current_selection();
+                            }
                             status.info("Highlight note saved.");
+                            feeds.bump_refresh();
                         }
                         Err(error) => {
-                            highlights.update(|rows| rows.push(highlight));
-                            highlights::clear_current_selection();
+                            if is_current_item(item, &highlight.item_id) {
+                                highlights.try_update(|rows| rows.push(highlight));
+                                highlights::clear_current_selection();
+                            }
                             status.warn(format!(
                                 "Highlight saved, but note failed: {}",
                                 error.message()
                             ));
+                            feeds.bump_refresh();
                         }
                     }
                 }
@@ -892,23 +986,29 @@ fn navigate_back(
 }
 
 fn navigate_adjacent(
-    item: RwSignal<Option<ItemDetail>>,
+    item: Memo<Option<ItemDetail>>,
     list_navigation: crate::navigation::ListNavigationContext,
     navigate: impl Fn(&str, NavigateOptions) + Clone + 'static,
     direction: Direction,
-    status: StatusController,
+    actions: ItemActions,
+    complete: bool,
 ) {
     let Some(current_id) =
         item.with_untracked(|detail| detail.as_ref().map(|detail| detail.id.clone()))
     else {
         return;
     };
+    if complete {
+        request_current(item, actions, ItemAction::Read(true));
+    }
     let Some(next_navigation) = next_list_navigation(list_navigation.get(), &current_id, direction)
     else {
+        if complete {
+            navigate_back(list_navigation, navigate);
+        }
         return;
     };
 
-    mark_current_read(item, status);
     let next_id = next_navigation.current_id.clone();
     list_navigation.set(next_navigation);
     navigate(&format!("/item/{next_id}"), NavigateOptions::default());
@@ -944,134 +1044,26 @@ fn next_list_navigation(
     Some(context)
 }
 
-fn toggle_current_read_state(item: RwSignal<Option<ItemDetail>>, status: StatusController) {
-    let read_state = item.with_untracked(|detail| {
-        detail
-            .as_ref()
-            .map(|detail| detail.read_state.clone())
-            .unwrap_or_default()
-    });
-    if read_state == "read" {
-        mark_current_unread(item, status);
-    } else {
-        mark_current_read(item, status);
+fn request_current(item: Memo<Option<ItemDetail>>, actions: ItemActions, action: ItemAction) {
+    if let Some(detail) = item.get_untracked() {
+        actions.request(
+            detail.id,
+            ItemState {
+                read: detail.read_state,
+                starred: detail.starred,
+            },
+            action,
+        );
     }
 }
 
-fn mark_current_read(item: RwSignal<Option<ItemDetail>>, status: StatusController) {
-    set_current_read_state(item, "read", status);
-}
-
-fn mark_current_unread(item: RwSignal<Option<ItemDetail>>, status: StatusController) {
-    set_current_read_state(item, "unread", status);
-}
-
-fn set_current_read_state(
+fn persist_progress(
     item: RwSignal<Option<ItemDetail>>,
-    next_state: &'static str,
-    #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))] status: StatusController,
+    scroll_ref: NodeRef<html::Div>,
+    writer: &ProgressWriter,
 ) {
-    #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))]
-    let Some((item_id, previous_state)) = item.with_untracked(|detail| {
-        detail
-            .as_ref()
-            .map(|detail| (detail.id.clone(), detail.read_state.clone()))
-    }) else {
-        return;
-    };
-
-    item.update(|detail| {
-        if let Some(detail) = detail {
-            detail.read_state = next_state.to_string();
-        }
-    });
-
     #[cfg(target_arch = "wasm32")]
     {
-        use wasm_bindgen_futures::spawn_local;
-
-        spawn_local(async move {
-            let result = if next_state == "read" {
-                api::mark_item_read(ItemStateRequest {
-                    item_id: item_id.clone(),
-                })
-                .await
-            } else {
-                api::mark_item_unread(ItemStateRequest {
-                    item_id: item_id.clone(),
-                })
-                .await
-            };
-            if let Err(error) = result {
-                reconcile_read_state(item, &item_id, previous_state);
-                status.warn(format!("Could not update read state: {}", error.message()));
-            }
-        });
-    }
-}
-
-fn toggle_current_star(
-    item: RwSignal<Option<ItemDetail>>,
-    #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))] status: StatusController,
-) {
-    #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))]
-    let Some((item_id, previous_starred)) = item.with_untracked(|detail| {
-        detail
-            .as_ref()
-            .map(|detail| (detail.id.clone(), detail.starred))
-    }) else {
-        return;
-    };
-
-    item.update(|detail| {
-        if let Some(detail) = detail {
-            detail.starred = !detail.starred;
-        }
-    });
-
-    #[cfg(target_arch = "wasm32")]
-    {
-        use wasm_bindgen_futures::spawn_local;
-
-        spawn_local(async move {
-            match api::toggle_item_star(ItemStateRequest {
-                item_id: item_id.clone(),
-            })
-            .await
-            {
-                Ok(starred) => reconcile_star(item, &item_id, starred),
-                Err(error) => {
-                    reconcile_star(item, &item_id, previous_starred);
-                    status.warn(format!("Could not update star: {}", error.message()));
-                }
-            }
-        });
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
-fn reconcile_read_state(item: RwSignal<Option<ItemDetail>>, item_id: &str, read_state: String) {
-    item.update(|detail| {
-        if let Some(detail) = detail.as_mut().filter(|detail| detail.id == item_id) {
-            detail.read_state = read_state;
-        }
-    });
-}
-
-#[cfg(target_arch = "wasm32")]
-fn reconcile_star(item: RwSignal<Option<ItemDetail>>, item_id: &str, starred: bool) {
-    item.update(|detail| {
-        if let Some(detail) = detail.as_mut().filter(|detail| detail.id == item_id) {
-            detail.starred = starred;
-        }
-    });
-}
-
-fn persist_progress(item: RwSignal<Option<ItemDetail>>, scroll_ref: NodeRef<html::Div>) {
-    #[cfg(target_arch = "wasm32")]
-    {
-        use wasm_bindgen_futures::spawn_local;
-
         let Some(detail) = item.get_untracked() else {
             return;
         };
@@ -1085,21 +1077,14 @@ fn persist_progress(item: RwSignal<Option<ItemDetail>>, scroll_ref: NodeRef<html
         } else {
             (scroll_y / f64::from(max_scroll)).clamp(0.0, 1.0)
         };
-
-        spawn_local(async move {
-            let _ = api::update_read_progress(ReadProgressUpdate {
-                item_id: detail.id,
-                progress,
-                scroll_y,
-            })
-            .await;
+        writer.record(ReadProgressUpdate {
+            item_id: detail.id,
+            progress,
+            scroll_y,
         });
     }
-
     #[cfg(not(target_arch = "wasm32"))]
-    {
-        let _ = (item, scroll_ref);
-    }
+    let _ = (item, scroll_ref, writer);
 }
 
 fn scroll_by_pages(scroll_ref: NodeRef<html::Div>, pages: f64) {
@@ -1115,7 +1100,7 @@ fn scroll_by_pages(scroll_ref: NodeRef<html::Div>, pages: f64) {
 
 fn scroll_to(scroll_ref: NodeRef<html::Div>, scroll_y: f64) {
     #[cfg(target_arch = "wasm32")]
-    if let Some(element) = scroll_ref.get_untracked() {
+    if let Some(element) = scroll_ref.try_get_untracked().flatten() {
         let max_scroll = f64::from((element.scroll_height() - element.client_height()).max(0));
         element.set_scroll_top(scroll_y.clamp(0.0, max_scroll).round() as i32);
     }
@@ -1157,6 +1142,135 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_highlight_save_can_only_update_the_article_it_belongs_to() {
+        Owner::new().with(|| {
+            let item = RwSignal::new(Some(sample_item()));
+            assert!(is_current_item(item, "item-1"));
+            assert!(!is_current_item(item, "item-2"));
+            let mut different = sample_item();
+            different.id = "item-2".into();
+            item.set(Some(different));
+            assert!(!is_current_item(item, "item-1"));
+            item.set(None);
+            assert!(!is_current_item(item, "item-1"));
+        });
+    }
+
+    #[test]
+    fn a_highlight_result_after_route_cleanup_is_ignored() {
+        let owner = Owner::new();
+        let item = owner.with(|| RwSignal::new(Some(sample_item())));
+        owner.cleanup();
+        assert!(!is_current_item(item, "item-1"));
+    }
+
+    #[test]
+    fn final_completion_marks_read_and_returns_to_the_originating_filter() {
+        Owner::new().with(|| {
+            crate::status::provide_status_controller();
+            crate::feeds::provide_feed_controller();
+            crate::item_actions::provide_item_actions();
+            let actions = use_item_actions();
+            let navigation = crate::navigation::provide_list_navigation_context();
+            navigation.set(ListNavigation {
+                item_ids: vec!["item-1".into()],
+                current_id: "item-1".into(),
+                return_path: "/unread".into(),
+                return_label: "Library".into(),
+            });
+            let item = Memo::new(|_| Some(sample_item()));
+            let destinations = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+            let recorded = destinations.clone();
+            navigate_adjacent(
+                item,
+                navigation,
+                move |path, _| recorded.lock().unwrap().push(path.into()),
+                Direction::Next,
+                actions,
+                true,
+            );
+            assert_eq!(*destinations.lock().unwrap(), vec!["/unread"]);
+            assert_eq!(
+                actions
+                    .state
+                    .get_untracked()
+                    .project(
+                        "item-1",
+                        ItemState {
+                            read: "unread".into(),
+                            starred: true
+                        }
+                    )
+                    .read,
+                "read"
+            );
+        });
+    }
+
+    #[test]
+    fn browsing_next_and_previous_does_not_mark_either_article_read() {
+        for (current, direction, destination) in [
+            ("item-1", Direction::Next, "/item/item-2"),
+            ("item-2", Direction::Previous, "/item/item-1"),
+        ] {
+            Owner::new().with(|| {
+                crate::status::provide_status_controller();
+                crate::feeds::provide_feed_controller();
+                crate::item_actions::provide_item_actions();
+                let actions = use_item_actions();
+                let navigation = crate::navigation::provide_list_navigation_context();
+                navigation.set(ListNavigation {
+                    item_ids: vec!["item-1".into(), "item-2".into()],
+                    current_id: current.into(),
+                    return_path: "/library".into(),
+                    return_label: "Library".into(),
+                });
+                let item = Memo::new(move |_| {
+                    let mut detail = sample_item();
+                    detail.id = current.into();
+                    Some(detail)
+                });
+                let destinations = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+                let recorded = destinations.clone();
+                navigate_adjacent(
+                    item,
+                    navigation,
+                    move |path, _| recorded.lock().unwrap().push(path.into()),
+                    direction,
+                    actions,
+                    false,
+                );
+                assert_eq!(*destinations.lock().unwrap(), vec![destination]);
+                assert!(!actions.state.get_untracked().is_pending(current));
+            });
+        }
+    }
+
+    #[test]
+    fn completion_from_a_direct_article_link_returns_to_today() {
+        Owner::new().with(|| {
+            crate::status::provide_status_controller();
+            crate::feeds::provide_feed_controller();
+            crate::item_actions::provide_item_actions();
+            let actions = use_item_actions();
+            let navigation = crate::navigation::provide_list_navigation_context();
+            let item = Memo::new(|_| Some(sample_item()));
+            let destinations = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+            let recorded = destinations.clone();
+            navigate_adjacent(
+                item,
+                navigation,
+                move |path, _| recorded.lock().unwrap().push(path.into()),
+                Direction::Next,
+                actions,
+                true,
+            );
+            assert_eq!(*destinations.lock().unwrap(), vec!["/today"]);
+            assert!(actions.state.get_untracked().is_pending("item-1"));
+        });
+    }
+
+    #[test]
     fn article_content_renders_cached_html() {
         let item = sample_item();
 
@@ -1177,15 +1291,16 @@ mod tests {
         assert!(html.contains("<h1>A quiet page</h1>"));
         assert!(html.contains("<p>First paragraph.</p>"));
         assert!(html.contains("<pre><code>let x = 1;</code></pre>"));
-        assert!(html.contains("Starred"));
+        assert!(html.contains("Example"));
     }
 
     #[test]
     fn reader_actions_render_action_state_labels() {
         let html = Owner::new().with(|| {
-            view! {
+            let item = RwSignal::new(None::<ItemDetail>);
+            let controls = view! {
                 <ReaderActions
-                    item=Some(sample_item())
+                    item=item
                     can_previous=true
                     can_next=false
                     info_open=false
@@ -1196,8 +1311,9 @@ mod tests {
                     on_toggle_read=UnsyncCallback::new(|()| {})
                     on_toggle_info=UnsyncCallback::new(|()| {})
                 />
-            }
-            .to_html()
+            };
+            item.set(Some(sample_item()));
+            controls.to_html()
         });
 
         assert!(html.contains("Unstar"));
@@ -1253,6 +1369,7 @@ mod tests {
             readable_blob_id: Some("abc123".to_string()),
             shape_tags: vec!["long form".to_string(), "code".to_string()],
             last_scroll: Some(12.0),
+            read_progress: Some(0.5),
             discovered_at_micros: 1,
         }
     }

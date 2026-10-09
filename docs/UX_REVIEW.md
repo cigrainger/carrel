@@ -1,6 +1,15 @@
 # UX review and restart proposal
 
-9 October 2026 · Proposal for discussion; implementation remains governed by `DESIGN.md`.
+9 October 2026 · Initial assessment and proposals; accepted decisions are recorded in `DESIGN.md`.
+
+The first implementation now follows Editorial, with dense mode deferred. Primary
+navigation is Today, Reading, Library, and Highlights; Unread and Starred are
+Library filters. The reader is one layout with a collapsible navigation sidebar,
+controlled by Cmd+B or a visible button. The reading loop includes explicit
+completion, return-context restoration, serialized optimistic actions,
+coalesced progress writes, and stale-response guards. The findings below record
+the app at the start of the review; the two-direction prototype is exploratory,
+not the specification for the implemented reader.
 
 ## Recommendation
 
@@ -93,10 +102,11 @@ Keep the existing layers, typed errors, pure parsing/extraction boundaries, loca
 - Repository started clean at `8a71dd7`.
 - Baseline lint exposed two unused test imports. The dependency refresh removed them and updated one SSR expectation for Leptos's changed whitespace output.
 - After the dependency refresh, `just check` passed: formatting, native lint, all 130 tests, and the new separate WASM/CSR lint check.
+- After implementing the accepted reading loop, `just check` passed with 156 tests, native and CSR/WASM lint, and formatting. Regression coverage includes final-item completion, browse-only navigation, filtered-list restoration, failed and rapid optimistic actions, stale responses, late highlight results, progress persistence, reactive row metadata, and native button activation. A complete Trunk CSR build also passed. Metadata text contrast was checked numerically on base, elevated, and selected surfaces in all four themes.
 - The WASM target is now installed. A real Trunk CSR build also passed, including wasm-bindgen generation and copied frontend assets. The default frontend workspace feature is SSR; native checks alone still do not establish that the real webview compiles.
 - The interactive proposal's local navigation, plain next, explicit completion, filters, stars, highlights and notes, final-item return, saved-state restoration, and dialog controls were exercised with a DOM harness. This verifies those interactions, not rendered layout or the actual Tauri client.
 - Hands-on application/browser verification was unavailable. This review does not claim measured latency, visual QA of the running application, or an exhaustive security audit.
 
-Production acceptance should include the existing checks, a separate CSR/WASM build, targeted regression tests for the changed state transitions, and manual inspection of the real desktop reading loop. The proposal itself introduces no backend or schema changes.
+Manual desktop inspection remains outstanding: verify Cmd+B and the visible sidebar control mid-article, return scroll/selection, narrow-window wrapping, real article typography, keyboard focus, and offline failure recovery. Automated checks establish state handling and compilation, not rendered layout or measured responsiveness. The exploratory prototype introduces no backend changes; the implementation updates native item commands without changing the schema.
 
 The brief maintenance and successor audit is in [DEPENDENCY_REVIEW.md](DEPENDENCY_REVIEW.md). The two interactive layout proposals are in [carrel-reading-loop.html](../work/ux-review/carrel-reading-loop.html); these are inspectable design sketches, independent of the production frontend.

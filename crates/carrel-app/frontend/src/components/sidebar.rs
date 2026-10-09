@@ -5,6 +5,7 @@ use std::future::Future;
 use leptos::html;
 use leptos::prelude::*;
 use leptos_router::components::A;
+use leptos_router::hooks::use_location;
 
 use crate::api::FeedSummary;
 use crate::feeds::{self, use_feed_controller};
@@ -16,7 +17,8 @@ pub fn Sidebar() -> impl IntoView {
     let feeds = feed_controller.feeds();
     let status = feed_controller.status();
     let controller_error = feed_controller.error();
-    let add_open = RwSignal::new(false);
+    let add_open = feed_controller.add_open;
+    let location = use_location();
     let add_busy = RwSignal::new(false);
     let add_error = RwSignal::new(None::<String>);
     let add_input = NodeRef::<html::Input>::new();
@@ -25,21 +27,17 @@ pub fn Sidebar() -> impl IntoView {
     let fetch_busy = RwSignal::new(false);
 
     view! {
-        <aside class="sidebar" aria-label="Primary">
-            <div class="sidebar-brand">"Carrel"</div>
+        <aside class="sidebar" id="reading-sidebar" aria-label="Primary">
+            <div class="sidebar-brand">"carrel"<span>"."</span></div>
             <nav class="sidebar-nav">
-                <A href="/today">"Today"</A>
-                <A href="/unread">"Unread"</A>
+                <A href="/today" attr:class=move || if location.pathname.get() == "/" { "is-active" } else { "" }>"Today"</A>
                 <A href="/reading">"Reading"</A>
-                <A href="/starred">"Starred"</A>
-                <A href="/friends">"Friends"</A>
-                <A href="/library">"Library"</A>
+                <A href="/library" attr:class=move || if matches!(location.pathname.get().as_str(), "/unread" | "/starred") { "is-active" } else { "" }>"Library"</A>
                 <A href="/highlights">"Highlights"</A>
-                <A href="/lists">"Lists"</A>
             </nav>
             <div class="sidebar-section">
                 <div class="sidebar-section-header">
-                    <h2>"Feeds"</h2>
+                    <h2>"Subscriptions"</h2>
                     <div class="sidebar-section-actions">
                         <button
                             type="button"
@@ -109,6 +107,8 @@ pub fn Sidebar() -> impl IntoView {
                 <div class="feed-dialog-backdrop" role="presentation">
                     <form
                         class="feed-dialog"
+                        role="dialog"
+                        aria-modal="true"
                         aria-label="Add feed"
                         on:submit=move |event| {
                             event.prevent_default();
@@ -147,6 +147,7 @@ pub fn Sidebar() -> impl IntoView {
                             name="feed-url"
                             placeholder="https://example.com/feed.xml"
                             autocomplete="url"
+                            aria-label="Feed URL"
                             autofocus=true
                         />
                         {move || add_error.get().map(|message| {

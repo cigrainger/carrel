@@ -98,6 +98,7 @@ pub struct ItemDetail {
     pub readable_blob_id: Option<String>,
     pub shape_tags: Vec<String>,
     pub last_scroll: Option<f64>,
+    pub read_progress: Option<f64>,
     pub discovered_at_micros: i64,
 }
 
@@ -171,7 +172,7 @@ pub struct ItemStateRequest {
 }
 
 /// Reading-progress mutation request.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReadProgressUpdate {
     pub item_id: String,

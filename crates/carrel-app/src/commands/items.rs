@@ -37,24 +37,40 @@ pub fn get_item(state: State<'_, AppState>, id: String) -> Result<Option<ItemDet
 /// Persist reading progress for one item.
 #[tauri::command]
 pub fn update_read_progress(state: State<'_, AppState>, update: ReadProgressUpdate) -> Result<()> {
+    let _guard = state
+        .item_state_lock
+        .lock()
+        .expect("item state lock poisoned");
     update_read_progress_in_store(&state.store, update)
 }
 
 /// Mark one item as read.
 #[tauri::command]
 pub fn mark_item_read(state: State<'_, AppState>, request: ItemStateRequest) -> Result<()> {
+    let _guard = state
+        .item_state_lock
+        .lock()
+        .expect("item state lock poisoned");
     write_read_state(&state.store, &request.item_id, "read", Some(1.0), None)
 }
 
 /// Mark one item as unread.
 #[tauri::command]
 pub fn mark_item_unread(state: State<'_, AppState>, request: ItemStateRequest) -> Result<()> {
+    let _guard = state
+        .item_state_lock
+        .lock()
+        .expect("item state lock poisoned");
     write_read_state(&state.store, &request.item_id, "unread", None, None)
 }
 
 /// Toggle the starred state for one item and return the new value.
 #[tauri::command]
 pub fn toggle_item_star(state: State<'_, AppState>, request: ItemStateRequest) -> Result<bool> {
+    let _guard = state
+        .item_state_lock
+        .lock()
+        .expect("item state lock poisoned");
     toggle_star_in_store(&state.store, &request.item_id)
 }
 
@@ -194,6 +210,8 @@ pub struct ItemDetail {
     pub shape_tags: Vec<String>,
     /// Last scroll offset in CSS pixels, when known.
     pub last_scroll: Option<f64>,
+    /// Saved reading fraction, used when restoring without resetting progress.
+    pub read_progress: Option<f64>,
     /// Discovery timestamp in Unix microseconds.
     pub discovered_at_micros: i64,
 }
@@ -221,6 +239,7 @@ struct ArticleMetadata {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 struct ReadStateRecord {
+    exists: bool,
     state: String,
     progress: Option<f64>,
     last_scroll_y: Option<f64>,
@@ -335,6 +354,7 @@ pub(crate) fn get_item_from_parts(
         readable_blob_id,
         shape_tags,
         last_scroll: read_state.last_scroll_y,
+        read_progress: read_state.progress,
         discovered_at_micros: summary.discovered_at_micros,
     }))
 }
@@ -477,6 +497,7 @@ fn read_state(store: &carrel_store::Store, item_id: &str) -> Result<ReadStateRec
 
     let Some(row) = rows.rows.first() else {
         return Ok(ReadStateRecord {
+            exists: false,
             state: "unread".to_string(),
             progress: None,
             last_scroll_y: None,
@@ -484,6 +505,7 @@ fn read_state(store: &carrel_store::Store, item_id: &str) -> Result<ReadStateRec
     };
 
     Ok(ReadStateRecord {
+        exists: true,
         state: value_as_string(required(row, 0, "read_state.state")?)?,
         progress: optional_f64(required(row, 1, "read_state.progress")?)?,
         last_scroll_y: optional_scroll_y(required(row, 2, "read_state.last_position")?)?,
@@ -549,9 +571,15 @@ fn update_read_progress_in_store(
     store: &carrel_store::Store,
     update: ReadProgressUpdate,
 ) -> Result<()> {
+    if !update.progress.is_finite() || !update.scroll_y.is_finite() {
+        return Err(AppError::InvalidData {
+            context: "read_progress",
+            value: "progress and position must be finite".into(),
+        });
+    }
     let current = read_state(store, &update.item_id)?;
-    let state = if current.state == "read" {
-        "read"
+    let state = if current.exists {
+        current.state.as_str()
     } else {
         "reading"
     };
@@ -559,7 +587,11 @@ fn update_read_progress_in_store(
         store,
         &update.item_id,
         state,
-        Some(update.progress.clamp(0.0, 1.0)),
+        Some(if state == "read" {
+            1.0
+        } else {
+            update.progress.clamp(0.0, 1.0)
+        }),
         Some(update.scroll_y.max(0.0)),
     )
 }
@@ -571,6 +603,7 @@ fn write_read_state(
     progress: Option<f64>,
     scroll_y: Option<f64>,
 ) -> Result<()> {
+    let scroll_y = scroll_y.or(read_state(store, item_id)?.last_scroll_y);
     let progress_value = progress
         .map(|value| DataValue::Num(Num::Float(value)))
         .unwrap_or(DataValue::Null);
@@ -1366,6 +1399,100 @@ mod tests {
         assert!(starred_state(&store, "starred-item").unwrap());
         assert!(!toggle_star_in_store(&store, "starred-item").unwrap());
         assert!(!starred_state(&store, "starred-item").unwrap());
+    }
+
+    #[test]
+    fn late_progress_preserves_every_explicit_read_state() {
+        let store = carrel_store::Store::open_in_memory().unwrap();
+        store.migrate().unwrap();
+        for state in ["read", "unread", "reading", "abandoned", "skimmed"] {
+            write_read_state(&store, state, state, None, Some(640.0)).unwrap();
+            update_read_progress_in_store(
+                &store,
+                ReadProgressUpdate {
+                    item_id: state.into(),
+                    progress: 0.25,
+                    scroll_y: 800.0,
+                },
+            )
+            .unwrap();
+            let saved = read_state(&store, state).unwrap();
+            assert_eq!(saved.state, state);
+            assert_eq!(saved.last_scroll_y, Some(800.0));
+            assert_eq!(
+                saved.progress,
+                Some(if state == "read" { 1.0 } else { 0.25 })
+            );
+        }
+    }
+
+    #[test]
+    fn marking_read_or_unread_keeps_the_saved_position() {
+        let store = carrel_store::Store::open_in_memory().unwrap();
+        store.migrate().unwrap();
+        update_read_progress_in_store(
+            &store,
+            ReadProgressUpdate {
+                item_id: "one".into(),
+                progress: 0.5,
+                scroll_y: 640.0,
+            },
+        )
+        .unwrap();
+        write_read_state(&store, "one", "read", Some(1.0), None).unwrap();
+        assert_eq!(
+            read_state(&store, "one").unwrap().last_scroll_y,
+            Some(640.0)
+        );
+        write_read_state(&store, "one", "unread", None, None).unwrap();
+        assert_eq!(
+            read_state(&store, "one").unwrap().last_scroll_y,
+            Some(640.0)
+        );
+    }
+
+    #[test]
+    fn progress_clamps_bounds_and_rejects_nonfinite_values_without_writing() {
+        let store = carrel_store::Store::open_in_memory().unwrap();
+        store.migrate().unwrap();
+        for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            for (progress, scroll_y) in [(value, 0.0), (0.0, value)] {
+                assert!(
+                    update_read_progress_in_store(
+                        &store,
+                        ReadProgressUpdate {
+                            item_id: "invalid".into(),
+                            progress,
+                            scroll_y
+                        }
+                    )
+                    .is_err()
+                );
+                assert!(!read_state(&store, "invalid").unwrap().exists);
+            }
+        }
+        update_read_progress_in_store(
+            &store,
+            ReadProgressUpdate {
+                item_id: "bounded".into(),
+                progress: 1.5,
+                scroll_y: -4.0,
+            },
+        )
+        .unwrap();
+        let saved = read_state(&store, "bounded").unwrap();
+        assert_eq!(saved.progress, Some(1.0));
+        assert_eq!(saved.last_scroll_y, Some(0.0));
+        update_read_progress_in_store(
+            &store,
+            ReadProgressUpdate {
+                item_id: "bounded".into(),
+                progress: -0.5,
+                scroll_y: 4.0,
+            },
+        )
+        .unwrap();
+        assert_eq!(read_state(&store, "bounded").unwrap().progress, Some(0.0));
     }
 
     struct InsertItem<'a> {

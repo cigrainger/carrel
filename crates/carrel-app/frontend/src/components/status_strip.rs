@@ -39,6 +39,7 @@ pub fn StatusStrip() -> impl IntoView {
                         view! { <span class=class>{status.message}</span> }.into_any()
                     })
             }}
+            <details class="appearance-menu"><summary>"Appearance"</summary>
             <div class="theme-switcher" role="group" aria-label="Theme">
                 {Theme::ALL.into_iter().map(|option| {
                     let current = theme.current();
@@ -54,6 +55,7 @@ pub fn StatusStrip() -> impl IntoView {
                     }
                 }).collect_view()}
             </div>
+            </details>
         </footer>
     }
 }

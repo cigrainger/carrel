@@ -34,6 +34,21 @@ These commitments are non-negotiable for the v1 product. Subsequent sections ope
 
 ## Typography
 
+### Editorial direction
+
+The first complete reading loop uses an Editorial layout: warm paper, charcoal,
+a restrained rust accent, asymmetric alignment, generous row spacing, and serif
+article titles with short excerpts. Inter remains the navigation face and Source
+Serif 4 the reading face. Long titles wrap. Structural rules and typography carry
+the hierarchy; controls are square and lightly ruled. Dense mode is a later
+addition, not a second interface in this pass.
+
+The display heading is 3rem, the reader title 2.25rem, and list titles 1.5rem.
+The fixed sidebar is 216px wide. Control radius is zero. Default light surfaces
+are paper `#f5f2eb` and elevated paper `#faf8f3`, with ink `#252722`, secondary
+text `#62645d`, tertiary text `#65675f`, rules `#d2d0c5` / `#bdbbb0`, and accent
+`#9a462f`. Existing dark, sepia, and black themes remain available.
+
 Typography is the most important visual decision in a reading app. The user spends the majority of their time looking at body text; the body text deserves real care.
 
 ### Typefaces
@@ -66,6 +81,8 @@ For code blocks within articles we use **JetBrains Mono** (OFL), with programmin
   --text-xl: 1.25rem;      /* 20px */
   --text-2xl: 1.5rem;      /* 24px */
   --text-3xl: 1.875rem;    /* 30px */
+  --text-display: 3rem;   /* list page heading */
+  --text-reader-title: 2.25rem;
   
   /* Reading view - separate scale, user-configurable */
   --reading-size: 1.125rem;       /* default 18px, user can adjust */
@@ -160,19 +177,20 @@ Color is functional, not decorative. The accent color appears sparingly and only
 
 ```css
 :root {
-  --color-text: #1a1a1a;
-  --color-text-secondary: #5a5a5a;
-  --color-text-tertiary: #8a8a8a;
-  --color-bg: #fafaf7;          /* off-white, easier than pure white */
-  --color-bg-elevated: #ffffff;
-  --color-rule: #e5e5e0;
-  --color-accent: #b85c38;       /* one accent, used sparingly */
+  --color-text: #252722;
+  --color-text-secondary: #62645d;
+  --color-text-tertiary: #65675f;
+  --color-bg: #f5f2eb;
+  --color-bg-elevated: #faf8f3;
+  --color-rule: #d2d0c5;
+  --color-rule-strong: #bdbbb0;
+  --color-accent: #9a462f;
   --color-highlight: #fff3a8;    /* highlight yellow, low saturation */
   --color-highlight-friend: #b8d4e8;  /* friend's highlights - distinguishable */
 }
 ```
 
-The off-white background (`#fafaf7`) is intentional. Pure white is harsh for sustained reading; a slight warm tint reduces eye strain. The accent (`#b85c38`) is a warm rust — distinctive without being shouty.
+The paper background (`#f5f2eb`) and rust accent (`#9a462f`) establish the Editorial direction. Accent is reserved for active navigation, selection, and small action affordances.
 
 ### Dark theme
 
@@ -180,7 +198,7 @@ The off-white background (`#fafaf7`) is intentional. Pure white is harsh for sus
 [data-theme="dark"] {
   --color-text: #e8e6e0;
   --color-text-secondary: #a8a6a0;
-  --color-text-tertiary: #6a6864;
+  --color-text-tertiary: #929088;
   --color-bg: #1a1a18;
   --color-bg-elevated: #242422;
   --color-rule: #2a2a28;
@@ -198,7 +216,7 @@ Same warm bias as light mode — `#1a1a18` rather than pure neutral. Text is `#e
 [data-theme="sepia"] {
   --color-text: #3a2f24;
   --color-text-secondary: #6a5d4e;
-  --color-text-tertiary: #9a8e7e;
+  --color-text-tertiary: #685c4b;
   --color-bg: #f4ecd8;
   --color-bg-elevated: #ede4cd;
   --color-rule: #d8cdb3;
@@ -216,7 +234,7 @@ For users who like the e-reader feel.
 [data-theme="black"] {
   --color-text: #d4d2cc;
   --color-text-secondary: #948e84;
-  --color-text-tertiary: #5a564e;
+  --color-text-tertiary: #878278;
   --color-bg: #000000;            /* true black for OLED */
   --color-bg-elevated: #0e0e0c;
   --color-rule: #1a1a18;
@@ -230,7 +248,7 @@ For night reading on OLED screens. Pure black saves power and reduces light blee
 
 ### Theme switching
 
-The user's choice is stored in `:self` Cozo state and applied via a `data-theme` attribute on `<html>`. Theme switches are instant — no animation, no fade. The reading view should look the same; only the colors change.
+The current implementation stores the theme in webview local storage and applies `data-theme` to the application shell. The Appearance control in the status strip opens the theme choices. Moving preferences into `:self` Cozo state is future work. Theme switches are instant; only the colors change.
 
 We do not auto-switch based on system theme by default. Some users want their reading app to be different from their system. The user can opt in to system-following in settings.
 
@@ -238,30 +256,38 @@ We do not auto-switch based on system theme by default. Some users want their re
 
 ### Application chrome
 
-The desktop layout has three primary regions: a sidebar (subscriptions, lists, peers), a main content area (lists or reading view), and a status strip. The sidebar can collapse; in a reading view, the sidebar should be hidden by default to maximize reading focus.
+The desktop layout has three primary regions: a sidebar (destinations and subscriptions), a main content area (lists or reading view), and a status strip. The sidebar can collapse; in a reading view, the sidebar should be hidden by default to maximize reading focus.
 
 ```
-┌─ Sidebar ─┬─────── Main content ─────────┐
-│           │                                │
-│ Today     │                                │
-│ Unread    │                                │
-│ Reading   │                                │
-│ Starred   │                                │
-│ Friends   │     [list view or              │
-│ Library   │      reading view]             │
-│ Highlights│                                │
-│           │                                │
-│ ── Lists ─│                                │
-│           │                                │
-│ ── Feeds ─│                                │
-│           │                                │
-└───────────┴────────────────────────────────┘
+┌─ Sidebar ───────┬──── Main content ──────────┐
+│ carrel.         │                             │
+│                 │                             │
+│ Today           │                             │
+│ Reading         │     [list or article]       │
+│ Library         │                             │
+│ Highlights      │                             │
+│                 │                             │
+│ Subscriptions   │                             │
+│ …               │                             │
+└─────────────────┴─────────────────────────────┘
    ↑ status strip (sync, errors, system status, optional)
 ```
 
-The sidebar is the navigation root: local reading surfaces first, social/list placeholders next, and the feed list below. Local surfaces are plain filters over facts already in the store: Today, Unread, Reading, Starred, Library, and per-feed lists. They do not show counts or badges.
+The sidebar has four primary destinations: Today, Reading, Library, and
+Highlights. All, Unread, and Starred are filters inside Library, with their
+existing routes retained. Friends and Lists appear when their first useful flows
+work. Subscriptions sit below the primary destinations. There are no counts or
+badges. Today currently means recent arrivals in the past 24 hours; its subtitle
+states that window explicitly.
 
-The status strip is small, at the bottom, showing minor system state: last sync time, fetch progress, error count. It's the system-tray-style surface we use *instead of* OS notifications. Users who want to ignore it can hide it; it never demands attention.
+There is one reader layout with a collapsible navigation sidebar. It starts
+hidden. Cmd+B and a visible reader control show or hide it without remounting
+the article or losing its scroll position. The choice carries across articles
+for the session. Returning to a list restores its filter, selected item, and
+scroll position. When an item leaves a filter, select the nearest remaining
+neighbor.
+
+The status strip is small, at the bottom, showing quiet operation and error messages without counts. It's the system-tray-style surface we use *instead of* OS notifications. Users who want to ignore it can hide it; it never demands attention.
 
 ### The reading view
 
@@ -290,7 +316,14 @@ The reading view is the application's most important screen and the one that sho
 
 The header is small and quiet: title, byline, source/length/date in muted secondary text. No related-articles strip, no engagement bar, no recommended-for-you. Just the article.
 
-The reader has a slim persistent action rail above the scrolling article area. It is part of the page layout, not a floating overlay, so it never covers article text. It exposes Back, previous/next in the current list context, star/unstar, mark read/unread, open original, and item info. The same actions remain available from the keymap; mouse access mirrors keyboard semantics rather than creating a second behavior path.
+The reader has a slim persistent action rail above the scrolling article area.
+It exposes a named return destination, plain Previous/Next navigation, sidebar
+visibility, star/unstar, mark read/unread, open original, and item info. Previous
+and Next only navigate. A separately labeled “Mark read & next” action and `n`
+explicitly complete the current article. At the final item, completion returns
+to the originating list. `p` browses backward without marking read. Existing
+action identifiers remain valid for custom keymaps. The title and byline align
+with the left edge of the body measure.
 
 The item-info surface is user-initiated and appears in the article scroll area before the text, again without overlaying the article. It holds metadata that would clutter the article header: source/feed, canonical URL, cache state, discovery/publish dates, length facts, and content-shape tags. `Esc` closes item info before it navigates away from the reader.
 
@@ -300,7 +333,7 @@ When the user scrolls, the application chrome should fade — not literally anim
 
 ### Lists
 
-List views (Today, Library, Unread, Reading, Starred, and individual feeds) display items in chronological order by default unless the route is explicitly ordered by local action time: Reading uses the latest read-state update, and Starred uses the latest star update. Each item gets a row showing: title, source, time/length, an excerpt (one line truncated), read state, and quiet starred state.
+List views (Today, Library, Unread, Reading, Starred, and individual feeds) display items in chronological order by default unless the route is explicitly ordered by local action time: Reading uses the latest read-state update, and Starred uses the latest star update. Each item gets a row showing: title, source, time/length, a short excerpt (up to two lines), read state, and quiet star/read controls.
 
 ```
 ● Article Title                          Source · 5min   2h ago
@@ -310,9 +343,15 @@ List views (Today, Library, Unread, Reading, Starred, and individual feeds) disp
   Excerpt…
 ```
 
-`●` and `○` indicate read/unread state. Star is a small affordance, tags are small text labels. Clicking a row opens it; keyboard cursor navigation remains primary. No counts, no engagement signals.
+`●` indicates unread; `○` indicates another local read state. The title is a native button that opens the article. Quiet, separately labeled buttons star/unstar and mark read/unread without opening it. Keyboard cursor navigation remains primary. No counts or engagement signals.
 
 The list cursor is a subtle background highlight or a thin left border, signalling which item is selected for keyboard actions.
+
+Keyboard list movement keeps the selected row visible and focuses its open
+control. Focusing any row control also selects that row. Native buttons and
+links retain their Enter/Space activation; the keymap does not consume those
+keys while a control is focused. Rows and reader controls remain mounted during
+state changes so changing a label does not discard keyboard focus.
 
 ### The friends view
 
@@ -358,7 +397,7 @@ g e           end of list
 Space         page down
 S-Space       page up
 n             next item, mark current as read (Reader's killer move)
-p             previous item, mark current as read
+p             previous item without changing read state
 ,             scroll to top of article
 .             scroll to bottom of article
 ```
@@ -381,10 +420,10 @@ a             archive (mark read and hide from main lists)
 **Modes / global:**
 ```
 1             Today
-2             Friends
+2             Reading
 3             Library
 4             Highlights
-5             Lists
+cmd-B         show / hide sidebar while reading
 ?             keymap reference (overlay)
 cmd-k         command palette
 cmd-,         settings
@@ -483,7 +522,17 @@ Small lowercase labels with a subtle background tint, separated from titles. Cli
 
 The sidebar Feeds section lists subscribed feed titles, falling back to host or URL when the feed has not been fetched yet. Feed rows are plain navigation rows with a small explicit remove affordance. Selecting a feed opens a normal item list filtered to that feed. No unread counts, badges, or freshness counters appear beside feeds.
 
-Adding a feed uses a compact user-initiated overlay with one URL input. Confirming subscribes and immediately fetches the feed once. Removing a feed uses the same compact overlay style and makes clear that saved items remain in Carrel; removal only stops future fetches.
+Adding a feed uses a compact user-initiated overlay with one URL input. Saving
+the subscription closes the dialog and exposes the subscribed feed immediately.
+Its first fetch runs independently; a fetch failure does not undo or disguise a
+successful subscription. Removing a feed makes clear that saved items remain in
+Carrel; removal only stops future fetches.
+
+Progress writes are coalesced and serialized, with the latest position flushed
+when leaving an article. Progress updates preserve explicit read/unread choices.
+Async list/article/highlight results apply only to the request and item that
+started them. A failed optimistic action restores the affected state and reports
+the failure quietly, preserving the working list or article.
 
 Feed fetch progress and non-fatal errors surface in the status strip. The sidebar may expose a small explicit "Fetch" command, but it never animates or prompts for attention.
 

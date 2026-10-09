@@ -42,10 +42,9 @@ pub fn global_layer() -> Layer {
         "Global",
         vec![
             bind("1", "go-today", "Today"),
-            bind("2", "go-friends", "Friends"),
+            bind("2", "go-reading", "Reading"),
             bind("3", "go-library", "Library"),
             bind("4", "go-highlights", "Highlights"),
-            bind("5", "go-lists", "Lists"),
             bind("?", "show-keymap-help", "Keymap reference"),
             bind("cmd-k", "open-command-palette", "Command palette").allow_in_input(),
             bind("cmd-,", "open-settings", "Settings").allow_in_input(),
@@ -84,7 +83,8 @@ pub fn reading_layer() -> Layer {
             bind("Space", "page-down", "Page down"),
             bind("S-Space", "page-up", "Page up"),
             bind("n", "next-item-mark-read", "Next item and mark read"),
-            bind("p", "prev-item-mark-read", "Previous item and mark read"),
+            bind("p", "prev-item", "Previous item"),
+            bind("cmd-b", "toggle-reading-sidebar", "Show or hide sidebar"),
             bind(",", "article-top", "Top of article"),
             bind(".", "article-bottom", "Bottom of article"),
             bind("Esc", "go-back", "Back").allow_in_input(),
@@ -136,6 +136,8 @@ pub fn is_known_action(action: &str) -> bool {
 pub fn known_action_names() -> &'static [&'static str] {
     &[
         "go-today",
+        "go-reading",
+        "toggle-reading-sidebar",
         "go-friends",
         "go-library",
         "go-highlights",
@@ -252,6 +254,33 @@ mod tests {
                 assert!(is_known_action(binding.action.name()));
             }
         }
+    }
+
+    #[test]
+    fn reading_bindings_separate_browsing_completion_and_sidebar_visibility() {
+        let reading = reading_layer();
+        for (key, action) in [
+            ("p", "prev-item"),
+            ("n", "next-item-mark-read"),
+            ("cmd-b", "toggle-reading-sidebar"),
+        ] {
+            let sequence = Sequence::parse(key).unwrap();
+            let binding = reading
+                .bindings()
+                .iter()
+                .find(|binding| binding.sequence == sequence)
+                .unwrap();
+            assert_eq!(binding.action.name(), action);
+            assert!(!binding.allow_in_input);
+        }
+        let global = global_layer();
+        assert!(
+            global
+                .bindings()
+                .iter()
+                .any(|binding| binding.sequence == Sequence::parse("2").unwrap()
+                    && binding.action.name() == "go-reading")
+        );
     }
 
     #[test]

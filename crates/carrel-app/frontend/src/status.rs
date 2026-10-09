@@ -17,7 +17,7 @@ impl StatusController {
     /// Replace the current message with a warning.
     #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
     pub(crate) fn warn(&self, text: impl Into<String>) {
-        self.message.set(Some(StatusMessage {
+        self.message.try_set(Some(StatusMessage {
             text: text.into(),
             warning: true,
         }));
@@ -25,7 +25,7 @@ impl StatusController {
 
     /// Replace the current message with neutral status text.
     pub(crate) fn info(&self, text: impl Into<String>) {
-        self.message.set(Some(StatusMessage {
+        self.message.try_set(Some(StatusMessage {
             text: text.into(),
             warning: false,
         }));

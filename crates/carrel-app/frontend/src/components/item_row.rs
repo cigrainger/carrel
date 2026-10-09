@@ -1,78 +1,79 @@
-//! Item-list row rendering.
-
-use leptos::prelude::*;
+//! Item-list rendering with native, keyboard-accessible controls.
 
 use crate::api::ItemSummary;
+use leptos::prelude::*;
 
-/// Render a list of items.
 #[component]
 pub fn ItemList(
-    items: Vec<ItemSummary>,
-    selected_index: usize,
+    #[prop(into)] items: Signal<Vec<ItemSummary>>,
+    #[prop(into)] selected_index: Signal<usize>,
     aria_label: String,
     on_open: UnsyncCallback<usize>,
+    on_read: UnsyncCallback<usize>,
+    on_star: UnsyncCallback<usize>,
+    on_select: UnsyncCallback<usize>,
 ) -> impl IntoView {
-    let indexed_items = items.into_iter().enumerate().collect::<Vec<_>>();
-
     view! {
         <ul class="item-list" aria-label=aria_label>
             <For
-                each=move || indexed_items.clone()
-                key=|(_, item)| item.id.clone()
+                each=move || { items.get().into_iter().enumerate().collect::<Vec<_>>() }
+                key=|(index, item)| (*index, item.id.clone())
                 let:row
             >
                 {
                     let (index, item) = row;
-                    view! { <ItemRow index=index item=item selected=index == selected_index on_open=on_open/> }
+                    let selected = Signal::derive(move || selected_index.get() == index);
+                    let item = row_data(items, index, item);
+                    view! { <ItemRow index=index item=item selected=selected on_open=on_open on_read=on_read on_star=on_star on_select=on_select/> }
                 }
             </For>
         </ul>
     }
 }
 
-/// One item row in a list route.
+fn row_data(
+    items: Signal<Vec<ItemSummary>>,
+    index: usize,
+    fallback: ItemSummary,
+) -> Memo<ItemSummary> {
+    Memo::new(move |_| {
+        items.with(|items| {
+            items
+                .get(index)
+                .filter(|item| item.id == fallback.id)
+                .cloned()
+                .unwrap_or_else(|| fallback.clone())
+        })
+    })
+}
+
 #[component]
 pub fn ItemRow(
     index: usize,
-    item: ItemSummary,
-    selected: bool,
+    #[prop(into)] item: Signal<ItemSummary>,
+    #[prop(into)] selected: Signal<bool>,
     on_open: UnsyncCallback<usize>,
+    on_read: UnsyncCallback<usize>,
+    on_star: UnsyncCallback<usize>,
+    on_select: UnsyncCallback<usize>,
 ) -> impl IntoView {
-    let indicator = if item.read_state == "unread" {
-        "●"
-    } else {
-        "○"
-    };
-    let excerpt = item.summary.unwrap_or_default();
-    let starred = item.starred;
-    let class = if selected {
-        "item-row is-selected"
-    } else {
-        "item-row"
-    };
-
     view! {
-        <li
-            class=class
-            aria-selected=selected.to_string()
-            on:click=move |_| on_open.run(index)
-        >
-            <span class="read-indicator" aria-hidden="true">{indicator}</span>
+        <li class="item-row" class:is-selected=move || selected.get() data-item-id=move || item.get().id on:focusin=move |_| on_select.run(index)>
+            <span class="read-indicator" aria-hidden="true">{move || if item.get().read_state == "unread" { "●" } else { "○" }}</span>
             <div class="item-row-body">
-                <div class="item-row-topline">
-                    <div class="item-row-title">
-                        <h2>{item.title}</h2>
-                        <Show when=move || starred>
-                            <span class="star-indicator" aria-label="Starred">"★"</span>
-                        </Show>
-                    </div>
-                    <p class="item-meta">
-                        <span>{item.source_name}</span>
-                        <span>{item.length_label}</span>
-                        <span>{item.time_label}</span>
-                    </p>
+                <h2><button class="item-open" type="button" on:click=move |_| on_open.run(index)>{move || item.get().title}</button></h2>
+                <p class="item-meta">
+                    <span>{move || item.get().source_name}</span><span>{move || item.get().length_label}</span><span>{move || item.get().time_label}</span>
+                </p>
+                <p class="item-excerpt">{move || item.get().summary.unwrap_or_default()}</p>
+                <div class="item-row-actions">
+                    <button class="item-state-action" type="button" on:click=move |_| on_read.run(index)>
+                        {move || if item.get().read_state == "read" { "Mark unread" } else { "Mark read" }}
+                    </button>
+                    <button class="item-star-action" type="button" aria-pressed=move || item.get().starred.to_string() on:click=move |_| on_star.run(index)>
+                        {move || if item.get().starred { "Unstar" } else { "Star" }}
+                    </button>
                 </div>
-                <p class="item-excerpt">{excerpt}</p>
             </div>
         </li>
     }
@@ -83,33 +84,59 @@ mod tests {
     use super::*;
 
     #[test]
-    fn item_list_renders_item_rows() {
-        let items = vec![ItemSummary {
-            id: "item-1".to_string(),
-            title: "The shape of a small reader".to_string(),
-            source_name: "Example".to_string(),
-            length_label: "5 min".to_string(),
-            time_label: "2h ago".to_string(),
-            read_state: "unread".to_string(),
-            starred: true,
-            primary_url: Some("https://example.com/item".to_string()),
-            summary: Some("A compact summary.".to_string()),
-            discovered_at_micros: 1,
-        }];
-
-        let html = Owner::new().with(|| {
-            view! {
-                <ItemList
-                    items=items
-                    selected_index=0
-                    aria_label="Today".to_string()
-                    on_open=UnsyncCallback::new(|_: usize| {})
-                />
-            }
-            .to_html()
+    fn an_existing_row_tracks_metadata_and_state_updates_without_changing_identity() {
+        Owner::new().with(|| {
+            let initial = ItemSummary {
+                id: "one".into(),
+                title: "Before".into(),
+                source_name: "Example".into(),
+                length_label: "5 min".into(),
+                time_label: "Now".into(),
+                read_state: "unread".into(),
+                starred: false,
+                primary_url: None,
+                summary: None,
+                discovered_at_micros: 1,
+            };
+            let items = RwSignal::new(vec![initial.clone()]);
+            let row = row_data(items.into(), 0, initial);
+            assert_eq!(row.get_untracked().title, "Before");
+            items.update(|items| {
+                items[0].title = "After".into();
+                items[0].summary = Some("Updated excerpt".into());
+                items[0].starred = true;
+                items[0].read_state = "read".into();
+            });
+            let updated = row.get_untracked();
+            assert_eq!(updated.title, "After");
+            assert_eq!(updated.summary.as_deref(), Some("Updated excerpt"));
+            assert!(updated.starred);
+            assert_eq!(updated.read_state, "read");
+            assert_eq!(updated.id, "one");
         });
-        let expected = r#"<ul aria-label="Today" class="item-list"><li aria-selected="true" class="item-row is-selected"><span aria-hidden="true" class="read-indicator">●</span><div class="item-row-body"><div class="item-row-topline"><div class="item-row-title"><h2>The shape of a small reader</h2><span aria-label="Starred" class="star-indicator">★</span></div><p class="item-meta"><span>Example</span><span>5 min</span><span>2h ago</span></p></div><p class="item-excerpt">A compact summary.</p></div></li><!></ul>"#;
+    }
 
-        assert_eq!(html, expected);
+    #[test]
+    fn item_list_exposes_open_read_and_star_as_native_buttons() {
+        let html = Owner::new().with(|| view! {
+            <ItemList
+                items=Signal::stored(vec![ItemSummary {
+                    id: "item-1".into(), title: "The shape of a small reader".into(), source_name: "Example".into(),
+                    length_label: "5 min".into(), time_label: "2h ago".into(), read_state: "unread".into(), starred: true,
+                    primary_url: None, summary: Some("A compact summary.".into()), discovered_at_micros: 1,
+                }])
+                selected_index=Signal::stored(0)
+                aria_label=String::from("Today")
+                on_open=UnsyncCallback::new(|_: usize| {})
+                on_read=UnsyncCallback::new(|_: usize| {})
+                on_star=UnsyncCallback::new(|_: usize| {})
+                on_select=UnsyncCallback::new(|_: usize| {})
+            />
+        }.to_html());
+        assert!(html.contains("The shape of a small reader</button>"));
+        assert!(html.contains("Mark read</button>"));
+        assert!(html.contains("Unstar</button>"));
+        assert!(html.contains("aria-pressed=\"true\""));
+        assert!(html.contains("A compact summary."));
     }
 }

@@ -14,6 +14,8 @@ use crate::config::InstallPaths;
 pub struct AppState {
     pub(crate) blobs: BlobStore,
     pub(crate) feed_fetch_lock: Arc<AsyncMutex<()>>,
+    // Read/modify/write commands must not race a delayed progress snapshot.
+    pub(crate) item_state_lock: Arc<Mutex<()>>,
     pub(crate) feed_status: FeedStatusHandle,
     pub(crate) store: Store,
     pub(crate) paths: InstallPaths,
@@ -24,6 +26,7 @@ impl AppState {
         Self {
             blobs,
             feed_fetch_lock: Arc::new(AsyncMutex::new(())),
+            item_state_lock: Arc::new(Mutex::new(())),
             feed_status: FeedStatusHandle::new(),
             store,
             paths,

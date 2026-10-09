@@ -265,6 +265,35 @@ The frontend has three layers:
 
 Leptos signals are the reactive primitive. Server-side state (Cozo facts) is reflected into client-side resources via `use_query`. Local UI state (cursor, selection, expanded panes) lives in component-scoped signals.
 
+The current reading loop uses command-backed route signals while the general
+`use_query` abstraction remains planned. Request generations reject responses
+after a newer request or route cleanup. Session-level list snapshots retain the
+return path, rows, selected identity/index, and scroll offset. The reader sidebar
+is one session signal; toggling it changes the shell grid without replacing the
+article. These are presentation caches; Cozo remains authoritative.
+
+Optimistic star/read intents are queued in the application context. Commands run
+serially, confirmed fields reconcile with the native result, and a failed intent
+is removed while subsequent intents are replayed. Source rows remain available
+so rollback can restore a row hidden by a filter. Only fields changed by an
+explicit intent override fresh command results.
+
+After writes finish, the shared view revision triggers a fresh command query.
+Queries begun after the last mutation can replace the optimistic base; queries
+that overlap a mutation cannot erase its confirmed intent. Highlight/note and
+progress writes also invalidate lists, so returning before a save finishes does
+not strand the list on an earlier result. The revision currently comes from the
+shell's feed controller; a general query layer can own it when that layer exists.
+
+The application also owns a progress writer shared across reader routes. It
+coalesces scroll snapshots over 500ms, serializes native writes, and flushes
+pending positions on article navigation and route cleanup. Its latest session
+snapshot can restore an article reopened before a pending write finishes.
+Native item-state commands share a mutex around read/modify/write operations.
+Progress starts an untouched item as Reading, preserves every existing explicit
+state, and keeps completed items at progress 1. Mark read/unread retains the
+saved position. No schema changes are needed.
+
 The frontend never does business logic. It composes commands and renders results. This is enforced by code review, not by the type system, and is the most important UI architectural rule we have.
 
 ## Mobile
