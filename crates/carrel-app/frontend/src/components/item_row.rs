@@ -80,8 +80,6 @@ pub fn ItemRow(
 
 #[cfg(test)]
 mod tests {
-    use leptos::prelude::*;
-
     use super::*;
 
     #[test]
@@ -110,7 +108,7 @@ mod tests {
             }
             .to_html()
         });
-        let expected = r#"<ul aria-label="Today" class="item-list"> <li aria-selected="true" class="item-row is-selected"><span aria-hidden="true" class="read-indicator">●</span><div class="item-row-body"><div class="item-row-topline"><div class="item-row-title"><h2>The shape of a small reader</h2><span aria-label="Starred" class="star-indicator">★</span></div><p class="item-meta"><span>Example</span><span>5 min</span><span>2h ago</span></p></div><p class="item-excerpt">A compact summary.</p></div></li><!></ul>"#;
+        let expected = r#"<ul aria-label="Today" class="item-list"><li aria-selected="true" class="item-row is-selected"><span aria-hidden="true" class="read-indicator">●</span><div class="item-row-body"><div class="item-row-topline"><div class="item-row-title"><h2>The shape of a small reader</h2><span aria-label="Starred" class="star-indicator">★</span></div><p class="item-meta"><span>Example</span><span>5 min</span><span>2h ago</span></p></div><p class="item-excerpt">A compact summary.</p></div></li><!></ul>"#;
 
         assert_eq!(html, expected);
     }

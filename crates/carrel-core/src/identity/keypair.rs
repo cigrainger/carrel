@@ -3,7 +3,6 @@
 use std::fmt;
 
 use ed25519_dalek::{Signature as DalekSignature, Signer as _, SigningKey, VerifyingKey};
-use rand_core::{OsRng, RngCore};
 use serde::de::{SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use zeroize::Zeroizing;
@@ -135,9 +134,13 @@ pub struct Keypair {
 
 impl Keypair {
     /// Generate a new keypair from operating-system randomness.
+    ///
+    /// # Panics
+    ///
+    /// Panics if operating-system randomness is unavailable.
     pub fn generate() -> Self {
         let mut seed = Zeroizing::new([0_u8; SECRET_KEY_LENGTH]);
-        OsRng.fill_bytes(seed.as_mut());
+        getrandom::fill(seed.as_mut()).expect("operating-system randomness is unavailable");
         Self::from_seed(&seed)
     }
 

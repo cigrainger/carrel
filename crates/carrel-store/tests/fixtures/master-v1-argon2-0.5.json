@@ -1,0 +1,9 @@
+{
+  "cipher": "xchacha20poly1305",
+  "ciphertext": "9a0dca22d159d6cd30a3f869fa33f1cf14b673f32b2814c154bd1a36b9acf2773ea80def87c4f814829fa06c7eb8797c",
+  "kdf": "argon2id-default",
+  "nonce": "020202020202020202020202020202020202020202020202",
+  "public_key": "66be7e332c7a453332bd9d0a7f7db055f5c5ef1a06ada66d98b39fb6810c473a",
+  "salt": "01010101010101010101010101010101",
+  "version": 1
+}

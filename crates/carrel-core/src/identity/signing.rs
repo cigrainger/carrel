@@ -146,6 +146,37 @@ mod tests {
         verify_canonical(keypair.public(), &fact, &signature).unwrap();
     }
 
+    #[test]
+    fn canonical_fact_signature_matches_previous_dalek_version() {
+        // Captured with ed25519-dalek 2.2.0 before the stack update.
+        #[derive(Serialize)]
+        struct Fact<'a> {
+            item_id: &'a str,
+            shared_at_micros: i64,
+        }
+
+        let fact = Fact {
+            item_id: "item-1",
+            shared_at_micros: 42,
+        };
+        let keypair = Keypair::from_seed(&[9_u8; 32]);
+        let previous = crate::identity::Signature::from_hex(
+            "11c30ad859285d93743c453b736a593bed3cfacefc1ca9fefe46170f7841aac0b63530932dd334be0d220d3d085a6edbb88f2046795e8e3934350ad49f5c060c",
+        )
+        .unwrap();
+
+        assert_eq!(
+            hex::encode(canonical_bytes(&fact).unwrap()),
+            "a2676974656d5f6964666974656d2d31707368617265645f61745f6d6963726f73182a"
+        );
+        assert_eq!(
+            keypair.public().to_hex(),
+            "fd1724385aa0c75b64fb78cd602fa1d991fdebf76b13c58ed702eac835e9f618"
+        );
+        verify_canonical(keypair.public(), &fact, &previous).unwrap();
+        assert_eq!(sign_canonical(&keypair, &fact).unwrap(), previous);
+    }
+
     proptest! {
         #[test]
         fn equivalent_string_maps_have_equal_canonical_bytes(entries in prop::collection::btree_map("\\PC{0,16}", any::<i64>(), 0..32)) {

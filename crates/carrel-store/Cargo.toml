@@ -13,7 +13,7 @@ carrel-core = { workspace = true }
 chacha20poly1305 = { workspace = true }
 cozo = { workspace = true }
 hex = { workspace = true }
-rand_core = { workspace = true }
+getrandom = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

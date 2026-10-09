@@ -4,11 +4,10 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use argon2::Argon2;
+use argon2::{Algorithm, Argon2, Params, Version};
 use carrel_core::identity::{Keypair, SECRET_KEY_LENGTH};
 use chacha20poly1305::aead::{Aead, KeyInit};
 use chacha20poly1305::{XChaCha20Poly1305, XNonce};
-use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
@@ -45,15 +44,15 @@ impl Keystore {
 
         let mut salt = [0_u8; SALT_LENGTH];
         let mut nonce = [0_u8; XCHACHA_NONCE_LENGTH];
-        OsRng.fill_bytes(&mut salt);
-        OsRng.fill_bytes(&mut nonce);
+        getrandom::fill(&mut salt).map_err(KeystoreError::Randomness)?;
+        getrandom::fill(&mut nonce).map_err(KeystoreError::Randomness)?;
 
         let key = derive_key(passphrase, &salt)?;
         let cipher = XChaCha20Poly1305::new_from_slice(key.as_ref())
             .expect("derived key is always 32 bytes");
         let seed = Zeroizing::new(keypair.to_seed_bytes());
         let ciphertext = cipher
-            .encrypt(XNonce::from_slice(&nonce), seed.as_ref())
+            .encrypt(&XNonce::from(nonce), seed.as_ref())
             .map_err(|_| KeystoreError::EncryptMaster)?;
 
         let file = EncryptedMasterKeyFile {
@@ -88,7 +87,7 @@ impl Keystore {
         let cipher = XChaCha20Poly1305::new_from_slice(key.as_ref())
             .expect("derived key is always 32 bytes");
         let seed = cipher
-            .decrypt(XNonce::from_slice(&nonce), ciphertext.as_ref())
+            .decrypt(&XNonce::from(nonce), ciphertext.as_ref())
             .map_err(|_| KeystoreError::WrongPassphrase)?;
         let seed = copy_fixed::<SECRET_KEY_LENGTH>("master seed", &seed)?;
         let keypair = Keypair::from_seed(&seed);
@@ -231,7 +230,11 @@ impl PlainDeviceKeyFile {
 
 fn derive_key(passphrase: &str, salt: &[u8; SALT_LENGTH]) -> Result<Zeroizing<[u8; 32]>> {
     let mut key = Zeroizing::new([0_u8; DERIVED_KEY_LENGTH]);
-    Argon2::default()
+    // Format v1 used the argon2 0.5.3 defaults. Freeze them so library updates
+    // cannot change the derived key for an existing encrypted identity.
+    let params = Params::new(19_456, 2, 1, Some(DERIVED_KEY_LENGTH))
+        .expect("format v1 Argon2 parameters are valid");
+    Argon2::new(Algorithm::Argon2id, Version::V0x13, params)
         .hash_password_into(passphrase.as_bytes(), salt, key.as_mut())
         .map_err(|source| KeystoreError::DeriveKey(source.to_string()))?;
     Ok(key)
@@ -255,6 +258,10 @@ fn copy_fixed<const N: usize>(field: &'static str, bytes: &[u8]) -> Result<[u8; 
 /// Errors raised while saving or loading identity keys.
 #[derive(Debug, thiserror::Error)]
 pub enum KeystoreError {
+    /// Operating-system randomness could not be read for a salt or nonce.
+    #[error("operating-system randomness is unavailable")]
+    Randomness(#[source] getrandom::Error),
+
     /// The keystore directory could not be created.
     #[error("failed to create keystore directory {path}")]
     CreateKeystoreDir {

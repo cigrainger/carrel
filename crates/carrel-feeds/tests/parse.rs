@@ -1,6 +1,33 @@
 use carrel_feeds::parse_feed;
 
 #[test]
+fn optional_and_blank_entry_author_names_fall_back_to_feed_authors() {
+    for authors in [
+        r#"[{"url":"https://example.com/author"}]"#,
+        r#"[{"name":" \t "}]"#,
+        "[]",
+    ] {
+        let feed = format!(
+            r#"{{"version":"https://jsonfeed.org/version/1.1","title":"Example",
+                "authors":[{{"name":" Élodie "}}],
+                "items":[{{"id":"one","content_text":"Text","authors":{authors}}}]}}"#
+        );
+        let parsed = parse_feed(feed.as_bytes(), "https://example.com/feed.json").unwrap();
+        assert_eq!(parsed.entries[0].authors, vec!["Élodie"]);
+    }
+}
+
+#[test]
+fn named_entry_authors_take_precedence_and_unnamed_authors_are_omitted() {
+    let feed = br#"{"version":"https://jsonfeed.org/version/1.1","title":"Example",
+        "authors":[{"name":"Feed author"}],
+        "items":[{"id":"one","content_text":"Text",
+            "authors":[{"url":"https://example.com/author"},{"name":" Ada "},{"name":" "}]}]}"#;
+    let parsed = parse_feed(feed, "https://example.com/feed.json").unwrap();
+    assert_eq!(parsed.entries[0].authors, vec!["Ada"]);
+}
+
+#[test]
 fn parses_rss_atom_and_json_feed() {
     let rss = parse_feed(
         include_bytes!("parse_fixtures/rss.xml"),

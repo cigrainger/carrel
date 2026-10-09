@@ -21,6 +21,8 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
 
       - name: Install Tauri Linux dependencies
         if: runner.os == 'Linux'
@@ -42,6 +44,9 @@ jobs:
 
       - name: Lint
         run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Compile and lint webview
+        run: cargo clippy -p carrel-app-frontend --target wasm32-unknown-unknown --no-default-features --features csr -- -D warnings
 
       - name: Test
         run: cargo test --workspace

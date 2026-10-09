@@ -21,15 +21,23 @@ If you're trying to understand the project, read VISION first.
 
 ## Development
 
-Carrel is a Rust workspace. The common development commands are:
+Carrel is a Rust workspace requiring Rust 1.95 or later. The desktop frontend uses Leptos 0.8 and Tauri 2, with stable dependency versions recorded in `Cargo.lock`. Install `just`, `trunk`, and `cargo-tauri` for the development commands, and add the WASM standard library to your Rust toolchain:
 
 ```bash
-just check   # format check, clippy, tests
+rustup target add wasm32-unknown-unknown
+```
+
+The common development commands are:
+
+```bash
+just check   # format check, native + WASM clippy, tests
 just test    # run all tests
 just dev     # run the Tauri desktop app in dev mode
 just build   # build the desktop app bundle
 just cli     # run CLI commands
 ```
+
+The native frontend tests use Leptos's SSR feature. `just frontend-check` separately compiles and lints the CSR/WASM code used by the real desktop webview, and is included in `just check` and CI.
 
 The desktop app currently boots a Tauri 2 shell with a Leptos webview, bundled reading fonts, design tokens, sidebar chrome, a status strip, feed management, reading view, and local library surfaces for Today, Library, Unread, Reading, Starred, and per-feed item lists. The CLI can initialize a local data directory, print install info, run schema migrations, execute raw Cozo queries, subscribe to feeds, manually fetch RSS/Atom/JSON Feed subscriptions, cache readable article HTML and images, inspect content-shape facts, recompute derived shape facts, and show a text preview of cached items; it remains a dogfooding and development surface while the desktop reader comes online.
 

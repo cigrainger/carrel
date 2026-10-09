@@ -198,7 +198,7 @@ Identity in Carrel is a single ed25519 keypair. The public key is the user's sta
 
 Each device the user owns generates a sub-key derived from a master keypair (or shares the same keypair, depending on backup choices the user makes). All sub-keys count as "you" for the purposes of self-sync. The user can revoke a device by removing its sub-key from their authorized list.
 
-The master key is persisted as a passphrase-encrypted key file: Argon2id derives a local encryption key and XChaCha20-Poly1305 encrypts the Ed25519 seed. Device keys are persisted in plain local JSON in v1 because they are used continuously and the device filesystem is the trust boundary. The master key is the recovery secret; the device key is an operational sub-key.
+The master key is persisted as a passphrase-encrypted key file: Argon2id derives a local encryption key and XChaCha20-Poly1305 encrypts the Ed25519 seed. Key-file format v1 fixes Argon2id version 0x13 with 19,456 KiB of memory, two iterations, one lane, and a 32-byte output; these were the argon2 0.5.3 defaults and must remain stable across dependency updates. Compatibility fixtures check that older encrypted keys and canonical Ed25519 signatures still work. Device keys are persisted in plain local JSON in v1 because they are used continuously and the device filesystem is the trust boundary. The master key is the recovery secret; the device key is an operational sub-key.
 
 When user A follows user B:
 1. A obtains B's "card": a signed JSON object containing B's pubkey, NodeId(s), display name, the doc IDs they publish to, and B's signature over the contents.

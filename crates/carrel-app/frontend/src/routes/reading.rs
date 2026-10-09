@@ -1154,8 +1154,6 @@ fn restore_scroll(scroll_ref: NodeRef<html::Div>, scroll_y: Option<f64>) {
 
 #[cfg(test)]
 mod tests {
-    use leptos::prelude::*;
-
     use super::*;
 
     #[test]

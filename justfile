@@ -1,7 +1,7 @@
 default: check
 
-# Run all checks: format, clippy, tests
-check: fmt-check clippy test
+# Run all checks: format, native and webview lint, tests
+check: fmt-check clippy test frontend-check
 
 # Run all tests
 test:
@@ -10,6 +10,10 @@ test:
 # Lint
 clippy:
     cargo clippy --workspace --all-targets -- -D warnings
+
+# Compile and lint the actual client-side webview (native checks use SSR)
+frontend-check:
+    cargo clippy -p carrel-app-frontend --target wasm32-unknown-unknown --no-default-features --features csr -- -D warnings
 
 # Format check
 fmt-check:

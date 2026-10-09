@@ -3,7 +3,7 @@
 use std::io::Cursor;
 
 use carrel_core::feed::{ParsedEntry, ParsedFeed};
-use feed_rs::model::{Entry, Feed, Link, Text};
+use feed_rs::model::{Entry, Feed, Link, Person, Text};
 use html_escape::decode_html_entities;
 use url::Url;
 
@@ -36,19 +36,11 @@ fn normalize_entry(feed: &Feed, entry: &Entry, feed_base: &Url) -> ParsedEntry {
         .and_then(|raw| Url::parse(raw).or_else(|_| feed_base.join(raw)).ok())
         .unwrap_or_else(|| feed_base.clone());
     let url = best_link(&entry.links).and_then(|link| resolve_url(&link.href, &entry_base));
-    let authors = if entry.authors.is_empty() {
-        feed.authors
-            .iter()
-            .map(|author| author.name.trim().to_string())
-            .filter(|name| !name.is_empty())
-            .collect()
+    let entry_authors = author_names(&entry.authors);
+    let authors = if entry_authors.is_empty() {
+        author_names(&feed.authors)
     } else {
-        entry
-            .authors
-            .iter()
-            .map(|author| author.name.trim().to_string())
-            .filter(|name| !name.is_empty())
-            .collect()
+        entry_authors
     };
     let published_at_micros = entry
         .published
@@ -69,6 +61,16 @@ fn normalize_entry(feed: &Feed, entry: &Entry, feed_base: &Url) -> ParsedEntry {
             .and_then(|content| content.body.as_ref())
             .map(|body| decode_html_entities(body.trim()).to_string()),
     }
+}
+
+fn author_names(authors: &[Person]) -> Vec<String> {
+    authors
+        .iter()
+        .filter_map(|author| author.name.as_deref())
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(ToString::to_string)
+        .collect()
 }
 
 fn stable_guid(entry: &Entry, url: Option<&str>) -> String {

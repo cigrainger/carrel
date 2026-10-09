@@ -12,7 +12,7 @@ carrel-store = { workspace = true }
 carrel-sync = { workspace = true }
 clap = { workspace = true }
 cozo = { workspace = true }
-dialoguer = "0.11"
+dialoguer = "0.12.0"
 hex = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

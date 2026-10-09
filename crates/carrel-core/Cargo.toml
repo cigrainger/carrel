@@ -11,7 +11,7 @@ identity = [
     "dep:ciborium",
     "dep:ed25519-dalek",
     "dep:hex",
-    "dep:rand_core",
+    "dep:getrandom",
     "dep:time",
     "dep:zeroize",
 ]
@@ -20,7 +20,7 @@ identity = [
 ciborium = { workspace = true, optional = true }
 ed25519-dalek = { workspace = true, optional = true }
 hex = { workspace = true, optional = true }
-rand_core = { workspace = true, optional = true }
+getrandom = { workspace = true, optional = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 time = { workspace = true, optional = true }
