@@ -16,6 +16,7 @@ pub(crate) struct FeedController {
     status: RwSignal<FeedStatusSummary>,
     error: RwSignal<Option<String>>,
     pub(crate) add_open: RwSignal<bool>,
+    pub(crate) file_busy: RwSignal<bool>,
     #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
     writes: StoredValue<crate::writes::PendingWrites>,
     #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
@@ -54,6 +55,7 @@ pub(crate) fn provide_feed_controller() -> FeedController {
         status: RwSignal::new(FeedStatusSummary::default()),
         error: RwSignal::new(None),
         add_open: RwSignal::new(false),
+        file_busy: RwSignal::new(false),
         writes: StoredValue::new(crate::writes::use_pending_writes()),
         refresh_token: RwSignal::new(0),
     };
@@ -79,6 +81,33 @@ pub(crate) fn provide_feed_controller() -> FeedController {
 /// Read the feed controller.
 pub(crate) fn use_feed_controller() -> FeedController {
     use_context::<FeedController>().expect("FeedController should be mounted")
+}
+
+/// Compose native file commands and refresh the subscription presentation.
+#[cfg(target_arch = "wasm32")]
+pub(crate) async fn subscription_file(
+    controller: FeedController,
+    import: bool,
+) -> Result<(), String> {
+    let guard = controller.writes.get_value().begin();
+    let result = if import {
+        api::import_subscriptions().await
+    } else {
+        api::export_subscriptions().await
+    };
+    drop(guard);
+    if result.map_err(message)? {
+        refresh(controller, import).await;
+    }
+    Ok(())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) async fn subscription_file(
+    _controller: FeedController,
+    _import: bool,
+) -> Result<(), String> {
+    Ok(())
 }
 
 /// Route path for a feed URL.

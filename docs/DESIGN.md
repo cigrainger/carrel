@@ -373,6 +373,12 @@ links retain their Enter/Space activation; the keymap does not consume those
 keys while a control is focused. Rows and reader controls remain mounted during
 state changes so changing a label does not discard keyboard focus.
 
+Lists initially show a bounded page. **Load older** extends the same list on
+demand, retaining its selection and scroll position. The button disappears at
+the end of the archive. Filtering applies to all saved articles before any
+limit; an old unread or starred article remains reachable. Returning from
+reading and refreshing after a local write preserve the loaded older boundary.
+
 ### The friends view
 
 Shares from followed peers, in chronological order. Each share displays: the sharer's pet name, the share note (prominently — this is what they thought you should know), the item title, and small affordances to read, save, or react.
@@ -551,6 +557,14 @@ the subscription closes the dialog and exposes the subscribed feed immediately.
 Its first fetch runs independently; a fetch failure does not undo or disguise a
 successful subscription. Removing a feed makes clear that saved items remain in
 Carrel; removal only stops future fetches.
+
+Subscription import and export use native file dialogs, reachable from the
+sidebar and the empty library. OPML import adds new subscriptions atomically
+and preserves existing settings when a URL appears again. Nested folders are
+retained as readable paths in the existing folder-label field and exported as
+named groups. Imported subscriptions become visible immediately; fetching runs
+separately. Export contains URLs, titles, and folders, with no personal reading
+state or HTTP cache metadata. Cancellation leaves the current view untouched.
 
 Progress writes are coalesced and serialized, with the latest position flushed
 when leaving an article. Progress updates preserve explicit read/unread choices.

@@ -1,6 +1,6 @@
 //! Shared route-local navigation context.
 
-use crate::api::{HighlightListRow, ItemSummary};
+use crate::api::{HighlightListRow, ItemCursor, ItemSummary};
 use leptos::prelude::*;
 use std::collections::BTreeMap;
 
@@ -11,6 +11,8 @@ pub(crate) struct ListSnapshot {
     pub(crate) selected_id: Option<String>,
     pub(crate) selected_index: usize,
     pub(crate) scroll_y: i32,
+    pub(crate) item_cursor: Option<ItemCursor>,
+    pub(crate) items_complete: bool,
 }
 
 /// Keep the same selection, or its nearest remaining neighbour after a filter change.

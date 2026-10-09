@@ -6,7 +6,8 @@ In spirit: a successor to Google Reader's social layer. In practice: a desktop a
 
 ## Status
 
-Early. Pre-alpha. Not yet a usable reader.
+Early. Pre-alpha. The local reading loop works; search and peer-to-peer sync
+are still being built.
 
 This repository is the home of the project's design documents, code, and (eventually) releases. The design documents are stable enough to guide implementation, and the foundation crates are now taking shape: the Cargo workspace, Cozo schema, identity primitives, keystore, CLI, feed ingestion, readable article extraction, content-shape detection, and the first Tauri + Leptos desktop reader surfaces are implemented. The CLI remains a development surface rather than end-user software.
 
@@ -44,7 +45,20 @@ code, omit dependency debug symbols, and disable incremental caches to keep
 disk use manageable. For full debugger inspection, use `cargo build --profile
 debugging` or `cargo test --profile debugging`. Release builds are unaffected.
 
-The desktop app currently boots a Tauri 2 shell with a Leptos webview, bundled reading fonts, design tokens, sidebar chrome, a status strip, feed management, reading view, and local library surfaces for Today, Library, Unread, Reading, Starred, and per-feed item lists. The CLI can initialize a local data directory, print install info, run schema migrations, execute raw Cozo queries, subscribe to feeds, manually fetch RSS/Atom/JSON Feed subscriptions, cache readable article HTML and images, inspect content-shape facts, recompute derived shape facts, and show a text preview of cached items; it remains a dogfooding and development surface while the desktop reader comes online.
+The desktop app has an editorial reading layout, bundled fonts, a collapsible
+reader sidebar (Cmd+B), explicit reading completion, saved position restoration,
+highlights and notes, and local lists for Today, Reading, Library, Unread,
+Starred, and individual feeds. **Load older** extends lists through the archive.
+**Import OPML** and **Export OPML** use native file dialogs; importing keeps
+existing subscription settings. Nested OPML folders become readable folder
+paths, exported as named groups. Local search and two-device self-sync are the
+next milestones in [`docs/SELF_SYNC_PLAN.md`](docs/SELF_SYNC_PLAN.md).
+
+The CLI can initialize a local data directory, print install info, run schema
+migrations, execute raw Cozo queries, subscribe to feeds, fetch RSS/Atom/JSON
+Feed subscriptions, cache readable article HTML and images, inspect and
+recompute content-shape facts, and show a text preview of cached items. It
+remains a development surface.
 
 ## License
 

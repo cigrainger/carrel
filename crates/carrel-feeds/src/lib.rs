@@ -8,6 +8,7 @@
 
 mod error;
 mod fetch;
+pub mod opml;
 mod parse;
 mod politeness;
 pub mod readability;

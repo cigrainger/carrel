@@ -149,3 +149,32 @@ and separate CSR/WASM lint), a full Trunk CSR build, and a native build without
 the inspection driver. No schema migration is required.
 
 The brief maintenance and successor audit is in [DEPENDENCY_REVIEW.md](DEPENDENCY_REVIEW.md). The two interactive layout proposals are in [carrel-reading-loop.html](../work/ux-review/carrel-reading-loop.html); these are inspectable design sketches, independent of the production frontend.
+
+## Complete-library pass
+
+Library lists now paginate with **Load older** rather than stopping at 100
+articles. Filters query the whole archive before selecting a page; Unread no
+longer scans only the newest 500 items. Store queries join metadata and personal
+state for the selected page. Timestamp ties use stable article IDs, including
+when feeds deliver many articles together.
+
+Native macOS checks used an isolated 250-article archive. Loading the second
+page retained the exact 15,271 px scroll offset and original selection; loading
+the final page removed the continuation control. Opening article 171 and
+returning restored all 250 rows, the selected article, keyboard focus, and the
+26,545 px offset. Starring it refreshed the list without changing that context.
+Unread found the oldest unread article. The maintainer's library was untouched.
+
+OPML actions are quiet sidebar controls and are available from the empty
+library. Import preserves existing subscriptions and stores nested folders as
+readable paths. Export groups these labels in standard OPML. The native import
+picker opened, but macOS denied assistive access for automated file selection;
+picker completion remains a manual check. Parser, atomic store import,
+filesystem import/export, and failure paths have regression tests, including
+Unicode, invalid XML/entities/URLs, size limits, and repeated imports.
+
+Verification passed `just check` (188 tests, formatting, native lint, and CSR/WASM
+lint), a full Trunk CSR build, and a clean native build. The temporary inspection
+driver and servers were removed/stopped. Smaller development profiles retain
+useful backtraces without the dependency debug symbols and incremental caches
+that exhausted disk space during the initial verification attempt.

@@ -28,6 +28,10 @@ pub enum AppError {
     #[error("{0}")]
     Feed(String),
 
+    /// Subscription interchange could not read, validate, or save a file.
+    #[error("{0}")]
+    SubscriptionFile(String),
+
     /// Tauri failed while building or running the shell.
     #[error(transparent)]
     Tauri(#[from] tauri::Error),
@@ -63,6 +67,7 @@ impl Serialize for AppError {
             Self::Blob(_) => "blob",
             Self::Keystore(_) => "keystore",
             Self::Feed(_) => "feed",
+            Self::SubscriptionFile(_) => "subscription_file",
             Self::Tauri(_) => "tauri",
             Self::OpenLink(_) => "open_link",
             Self::InvalidData { .. } => "invalid_data",

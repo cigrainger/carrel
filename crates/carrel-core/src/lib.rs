@@ -19,5 +19,11 @@ pub mod identity;
 /// Keyboard shortcut parsing and dispatch.
 pub mod keymap;
 
+/// Library filters and stable archive pagination contracts.
+pub mod library;
+
 /// Rule-based structural content-shape facts.
 pub mod shape;
+
+/// Portable subscription metadata used by import and export.
+pub mod subscription;

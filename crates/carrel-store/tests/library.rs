@@ -1,0 +1,307 @@
+use std::collections::{BTreeMap, BTreeSet};
+
+use carrel_core::library::{ItemCursor, ItemFilter, ItemView};
+use carrel_store::{Store, StoreError};
+use cozo::{DataValue, Validity};
+
+fn archive(count: usize, tied: bool) -> Store {
+    let store = Store::open_in_memory().unwrap();
+    store.migrate().unwrap();
+    let rows = (0..count)
+        .map(|index| {
+            DataValue::List(vec![
+                DataValue::from(format!("item-{index:04}")),
+                DataValue::from("article"),
+                DataValue::from(format!("文章 {index}")),
+                DataValue::List(Vec::new()),
+                DataValue::Null,
+                DataValue::Null,
+                DataValue::Null,
+                DataValue::Null,
+                validity(if tied {
+                    100
+                } else {
+                    i64::try_from(index).unwrap()
+                }),
+            ])
+        })
+        .collect();
+    store.query_with_params(r#"
+        ?[id, kind, title, creators, primary_url, published_at, language, summary, discovered_at] <- $rows
+        :put item {id => kind, title, creators, primary_url, published_at, language, summary, discovered_at}
+    "#, BTreeMap::from([("rows".into(), DataValue::List(rows))])).unwrap();
+    store
+}
+
+fn validity(time: i64) -> DataValue {
+    DataValue::Validity(Validity::from((time, true)))
+}
+
+fn state(store: &Store, id: &str, state: &str, time: i64) {
+    store.query_with_params(r#"
+        ?[item_id, state, progress, progress_label, last_position, updated_at] <- [[$id, $state, null, null, null, $time]]
+        :put read_state {item_id => state, progress, progress_label, last_position, updated_at}
+    "#, BTreeMap::from([("id".into(), DataValue::from(id)), ("state".into(), DataValue::from(state)), ("time".into(), validity(time))])).unwrap();
+}
+
+fn star(store: &Store, id: &str, starred: bool, time: i64) {
+    store
+        .query_with_params(
+            r#"
+        ?[item_id, starred, updated_at] <- [[$id, $starred, $time]]
+        :put item_star {item_id => starred, updated_at}
+    "#,
+            BTreeMap::from([
+                ("id".into(), DataValue::from(id)),
+                ("starred".into(), DataValue::Bool(starred)),
+                ("time".into(), validity(time)),
+            ]),
+        )
+        .unwrap();
+}
+
+fn article(store: &Store, id: &str, feed: &str) {
+    store.query_with_params(r#"
+        ?[item_id, feed_url, word_count, estimated_read_minutes, site_name, byline] <- [[$id, $feed, 900, 4, 'A source', null]]
+        :put item_article {item_id => feed_url, word_count, estimated_read_minutes, site_name, byline}
+    "#, BTreeMap::from([("id".into(), DataValue::from(id)), ("feed".into(), DataValue::from(feed))])).unwrap();
+}
+
+fn all_ids(store: &Store, mut filter: ItemFilter) -> Vec<String> {
+    let mut ids = Vec::new();
+    loop {
+        let page = store.list_item_page(&filter, 0).unwrap();
+        ids.extend(page.items.into_iter().map(|item| item.id));
+        let Some(cursor) = page.next_cursor else {
+            break;
+        };
+        assert_ne!(filter.after.as_ref(), Some(&cursor));
+        filter.after = Some(cursor);
+    }
+    ids
+}
+
+#[test]
+fn older_unread_items_are_filtered_before_limiting_the_archive() {
+    let store = archive(650, false);
+    store
+        .query(
+            r#"
+        ?[item_id, state, progress, progress_label, last_position, updated_at] :=
+            *item{id: item_id, discovered_at}, item_id != 'item-0000',
+            state = 'read', progress = null, progress_label = null,
+            last_position = null, updated_at = discovered_at
+        :put read_state {item_id => state, progress, progress_label, last_position, updated_at}
+    "#,
+        )
+        .unwrap();
+    let page = store.list_item_page(&ItemFilter::unread(), 0).unwrap();
+    assert_eq!(page.items.len(), 1);
+    assert_eq!(page.items[0].id, "item-0000");
+    assert_eq!(page.items[0].read_state, "unread");
+    assert!(!page.items[0].starred);
+    assert!(page.next_cursor.is_none());
+}
+
+#[test]
+fn tied_timestamps_paginate_every_item_exactly_once() {
+    let store = archive(1001, true);
+    let filter = ItemFilter {
+        limit: Some(31),
+        ..ItemFilter::library()
+    };
+    let ids = all_ids(&store, filter);
+    assert_eq!(
+        ids,
+        (0..1001)
+            .map(|i| format!("item-{i:04}"))
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(ids.iter().collect::<BTreeSet<_>>().len(), 1001);
+}
+
+#[test]
+fn all_views_join_personal_state_and_use_their_documented_order() {
+    let store = archive(7, false);
+    for (id, value, time) in [
+        ("item-0000", "reading", 100),
+        ("item-0001", "reading", 90),
+        ("item-0002", "read", 80),
+        ("item-0003", "unread", 70),
+        ("item-0004", "abandoned", 60),
+        ("item-0005", "skimmed", 50),
+    ] {
+        state(&store, id, value, time);
+    }
+    star(&store, "item-0000", true, 80);
+    star(&store, "item-0001", true, 100);
+    star(&store, "item-0002", false, 200);
+    article(&store, "item-0000", "https://example.com/feed");
+    article(&store, "item-0003", "https://example.com/feed");
+    for (filter, expected) in [
+        (ItemFilter::unread(), vec!["item-0006", "item-0003"]),
+        (ItemFilter::reading(), vec!["item-0000", "item-0001"]),
+        (ItemFilter::starred(), vec!["item-0001", "item-0000"]),
+        (
+            ItemFilter::feed("https://example.com/feed".into()),
+            vec!["item-0003", "item-0000"],
+        ),
+    ] {
+        assert_eq!(
+            all_ids(
+                &store,
+                ItemFilter {
+                    limit: Some(1),
+                    ..filter
+                }
+            ),
+            expected
+        );
+    }
+    let page = store.list_item_page(&ItemFilter::reading(), 0).unwrap();
+    assert_eq!(page.items[0].site_name.as_deref(), Some("A source"));
+    assert_eq!(page.items[0].estimated_read_minutes, Some(4));
+    assert_eq!(page.items[0].word_count, Some(900));
+    assert!(page.items[0].starred);
+    assert_eq!(page.items[0].discovered_at_micros, 0);
+}
+
+#[test]
+fn today_preserves_its_time_window_between_pages() {
+    let store = archive(6, false);
+    let mut filter = ItemFilter {
+        limit: Some(2),
+        ..ItemFilter::today()
+    };
+    let page = store.list_item_page(&filter, 2).unwrap();
+    assert_eq!(
+        page.items
+            .iter()
+            .map(|item| item.id.as_str())
+            .collect::<Vec<_>>(),
+        ["item-0005", "item-0004"]
+    );
+    filter.after = page.next_cursor;
+    let page = store.list_item_page(&filter, 4).unwrap();
+    assert_eq!(
+        page.items
+            .iter()
+            .map(|item| item.id.as_str())
+            .collect::<Vec<_>>(),
+        ["item-0003", "item-0002"]
+    );
+    assert!(page.next_cursor.is_none());
+}
+
+#[test]
+fn new_arrivals_do_not_shift_the_exclusive_cursor_or_duplicate_rows() {
+    let store = archive(5, false);
+    let mut filter = ItemFilter {
+        limit: Some(2),
+        ..ItemFilter::library()
+    };
+    let first = store.list_item_page(&filter, 0).unwrap();
+    state(&store, "item-0004", "read", 500);
+    store.query(r#"
+        ?[id, kind, title, creators, primary_url, published_at, language, summary, discovered_at] <-
+            [['new', 'article', 'new', [], null, null, null, null, validity(99)]]
+        :put item {id => kind, title, creators, primary_url, published_at, language, summary, discovered_at}
+    "#).unwrap();
+    filter.after = first.next_cursor;
+    assert_eq!(
+        all_ids(&store, filter),
+        ["item-0002", "item-0001", "item-0000"]
+    );
+}
+
+#[test]
+fn tombstones_hide_saved_items_in_every_list() {
+    let store = archive(1, false);
+    state(&store, "item-0000", "reading", 100);
+    star(&store, "item-0000", true, 100);
+    article(&store, "item-0000", "https://example.com/feed");
+    store.query("?[id, tombstoned_at, reason] <- [['item-0000', validity(200), null]] :put entity_tombstone {id, tombstoned_at => reason}").unwrap();
+    for filter in [
+        ItemFilter::library(),
+        ItemFilter::today(),
+        ItemFilter::unread(),
+        ItemFilter::reading(),
+        ItemFilter::starred(),
+        ItemFilter::feed("https://example.com/feed".into()),
+    ] {
+        assert!(store.list_item_page(&filter, 0).unwrap().items.is_empty());
+    }
+}
+
+#[test]
+fn limits_empty_archives_and_invalid_cursors_have_defined_behavior() {
+    let empty = archive(0, false);
+    assert!(
+        empty
+            .list_item_page(&ItemFilter::library(), 0)
+            .unwrap()
+            .items
+            .is_empty()
+    );
+    let store = archive(102, false);
+    assert_eq!(
+        store
+            .list_item_page(
+                &ItemFilter {
+                    limit: Some(0),
+                    ..ItemFilter::library()
+                },
+                0
+            )
+            .unwrap()
+            .items
+            .len(),
+        1
+    );
+    assert_eq!(
+        store
+            .list_item_page(
+                &ItemFilter {
+                    limit: Some(usize::MAX),
+                    ..ItemFilter::library()
+                },
+                0
+            )
+            .unwrap()
+            .items
+            .len(),
+        100
+    );
+    let cursor = ItemCursor {
+        view: ItemView::Unread,
+        sort_at_micros: 0,
+        id: "x".into(),
+        since_micros: None,
+    };
+    assert!(matches!(
+        store.list_item_page(
+            &ItemFilter {
+                after: Some(cursor),
+                ..ItemFilter::library()
+            },
+            0
+        ),
+        Err(StoreError::InvalidInput { .. })
+    ));
+    let cursor = ItemCursor {
+        view: ItemView::Library,
+        sort_at_micros: 0,
+        id: String::new(),
+        since_micros: None,
+    };
+    assert!(matches!(
+        store.list_item_page(
+            &ItemFilter {
+                after: Some(cursor),
+                ..ItemFilter::library()
+            },
+            0
+        ),
+        Err(StoreError::InvalidInput { .. })
+    ));
+}

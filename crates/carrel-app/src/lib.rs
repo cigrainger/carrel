@@ -32,6 +32,7 @@ pub fn run() -> Result<()> {
     let background_state = app_state.clone();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(
             tauri_plugin_opener::Builder::new()
                 .open_js_links_on_click(false)
@@ -58,6 +59,8 @@ pub fn run() -> Result<()> {
             commands::feeds::fetch_feed,
             commands::feeds::list_feeds,
             commands::feeds::remove_feed,
+            commands::subscriptions::import_subscriptions,
+            commands::subscriptions::export_subscriptions,
             commands::highlights::create_highlight,
             commands::highlights::create_highlight_note,
             commands::highlights::list_highlights,

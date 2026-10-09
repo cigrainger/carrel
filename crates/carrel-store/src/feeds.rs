@@ -6,6 +6,7 @@ use carrel_core::feed::{
     DEFAULT_FETCH_INTERVAL_SECONDS, ExtractedEntryContent, MAX_FETCH_INTERVAL_SECONDS, ParsedEntry,
     ParsedFeed, SUSPENDED_FAILURE_THRESHOLD, feed_guid_identifier,
 };
+use carrel_core::subscription::FeedSubscription;
 use cozo::{DataValue, Num, Validity};
 use time::OffsetDateTime;
 
@@ -72,20 +73,62 @@ impl Store {
     /// Subscribe to a feed URL using default local subscription settings.
     pub fn add_feed(&self, url: &str) -> Result<FeedRecord> {
         let url = canonical_feed_url(url)?;
-        let record = FeedRecord {
-            url,
+        self.import_feed_subscriptions(&[FeedSubscription {
+            url: url.clone(),
             title: None,
-            description: None,
-            last_fetched_micros: None,
-            last_modified_header: None,
-            etag_header: None,
-            fetch_interval_seconds: DEFAULT_FETCH_INTERVAL_SECONDS,
-            consecutive_failures: 0,
             folder: None,
-            auto_mark_read: false,
-        };
-        self.put_feed(&record)?;
-        Ok(record)
+        }])?;
+        self.get_feed(&url)?
+            .ok_or_else(|| StoreError::InvalidInput {
+                context: "subscription",
+                message: "subscription was removed while being added".into(),
+            })
+    }
+
+    /// Add portable subscriptions atomically, preserving existing settings.
+    ///
+    /// Validate the entire batch before any writes. Canonical URL duplicates
+    /// keep their first imported outline. HTTP cache state and personal reading
+    /// facts are untouched; new subscriptions start with default fetch settings.
+    pub fn import_feed_subscriptions(&self, subscriptions: &[FeedSubscription]) -> Result<()> {
+        let mut unique = BTreeMap::new();
+        for subscription in subscriptions {
+            let url = canonical_feed_url(&subscription.url)?;
+            unique.entry(url).or_insert(subscription);
+        }
+        let rows = unique
+            .into_iter()
+            .map(|(url, subscription)| {
+                DataValue::List(vec![
+                    DataValue::from(url),
+                    option_string(&subscription.title),
+                    option_string(&subscription.folder),
+                ])
+            })
+            .collect();
+        self.query_with_params(r#"
+            imported[url, title, folder] <- $rows
+            ?[url, title, description, last_fetched, last_modified_header, etag_header, fetch_interval_seconds, consecutive_failures, folder, auto_mark_read] :=
+                imported[url, title, folder], not *feed{url},
+                description = null, last_fetched = null, last_modified_header = null,
+                etag_header = null, fetch_interval_seconds = $interval,
+                consecutive_failures = 0, auto_mark_read = false
+            :put feed {url => title, description, last_fetched, last_modified_header, etag_header, fetch_interval_seconds, consecutive_failures, folder, auto_mark_read}
+        "#, BTreeMap::from([("rows".into(), DataValue::List(rows)), ("interval".into(), DataValue::from(DEFAULT_FETCH_INTERVAL_SECONDS))]))?;
+        Ok(())
+    }
+
+    /// Export subscription organization without device-local HTTP state.
+    pub fn feed_subscriptions(&self) -> Result<Vec<FeedSubscription>> {
+        Ok(self
+            .list_feeds()?
+            .into_iter()
+            .map(|feed| FeedSubscription {
+                url: feed.url,
+                title: feed.title,
+                folder: feed.folder,
+            })
+            .collect())
     }
 
     /// Remove a feed subscription by URL.

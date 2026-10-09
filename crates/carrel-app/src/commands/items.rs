@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::str::FromStr;
 
+use carrel_core::library::{ItemFilter, ItemPage};
 use carrel_core::shape::Shape;
 use carrel_store::blobs::{BlobId, BlobStore};
 use cozo::{DataValue, JsonData, Num};
@@ -16,16 +17,14 @@ use crate::Result;
 use crate::error::AppError;
 use crate::state::AppState;
 
-const DEFAULT_ITEM_LIMIT: usize = 100;
-const MAX_ITEM_LIMIT: usize = 100;
 const TODAY_LOOKBACK: Duration = Duration::hours(24);
 const LEGACY_BLOB_URI_PREFIX: &str = "blob://";
 const WEBVIEW_BLOB_URI_PREFIX: &str = "carrel-blob://";
 
 /// List items from the local store.
 #[tauri::command]
-pub fn list_items(state: State<'_, AppState>, filter: ItemFilter) -> Result<Vec<ItemSummary>> {
-    list_items_from_store(&state.store, filter)
+pub fn list_items(state: State<'_, AppState>, filter: ItemFilter) -> Result<ItemPage<ItemSummary>> {
+    list_item_page_from_store(&state.store, filter)
 }
 
 /// Return one item by id, if it exists.
@@ -74,18 +73,6 @@ pub fn toggle_item_star(state: State<'_, AppState>, request: ItemStateRequest) -
     toggle_star_in_store(&state.store, &request.item_id)
 }
 
-/// Item-list filter accepted by the webview.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct ItemFilter {
-    /// Which list view to query.
-    #[serde(default)]
-    pub view: ItemView,
-    /// Optional row limit. Values above the app maximum are clamped.
-    #[serde(default)]
-    pub limit: Option<usize>,
-}
-
 /// Generic item-state mutation request.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -104,38 +91,6 @@ pub struct ReadProgressUpdate {
     pub progress: f64,
     /// Scroll offset in CSS pixels for HTML content.
     pub scroll_y: f64,
-}
-
-impl Default for ItemFilter {
-    fn default() -> Self {
-        Self {
-            view: ItemView::Today,
-            limit: Some(DEFAULT_ITEM_LIMIT),
-        }
-    }
-}
-
-/// Supported item-list views.
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum ItemView {
-    /// Items discovered in the last day.
-    #[default]
-    Today,
-    /// All saved items, newest first.
-    #[serde(alias = "all")]
-    Library,
-    /// Items with no read state, or an explicit unread state.
-    Unread,
-    /// Items currently in progress, newest local reading update first.
-    Reading,
-    /// Starred items, newest local star update first.
-    Starred,
-    /// Items sourced from one feed.
-    Feed {
-        /// Canonical feed URL.
-        url: String,
-    },
 }
 
 /// Item row rendered by list views.
@@ -245,55 +200,35 @@ struct ReadStateRecord {
     last_scroll_y: Option<f64>,
 }
 
-pub(crate) fn list_items_from_store(
+pub(crate) fn list_item_page_from_store(
     store: &carrel_store::Store,
     filter: ItemFilter,
-) -> Result<Vec<ItemSummary>> {
-    let limit = filter
-        .limit
-        .unwrap_or(DEFAULT_ITEM_LIMIT)
-        .clamp(1, MAX_ITEM_LIMIT);
-    let query_limit = match &filter.view {
-        ItemView::Today | ItemView::Unread => DEFAULT_ITEM_LIMIT.saturating_mul(5),
-        ItemView::Library | ItemView::Reading | ItemView::Starred | ItemView::Feed { .. } => limit,
-    };
+) -> Result<ItemPage<ItemSummary>> {
     let now = OffsetDateTime::now_utc();
-    let since = now - TODAY_LOOKBACK;
-    let records = match &filter.view {
-        ItemView::Today | ItemView::Library | ItemView::Unread => {
-            query_item_records(store, query_limit)?
-        }
-        ItemView::Reading => query_reading_item_records(store, query_limit)?,
-        ItemView::Starred => query_starred_item_records(store, query_limit)?,
-        ItemView::Feed { url } => query_feed_item_records(store, url, query_limit)?,
-    };
-
-    let mut rows = Vec::new();
-    for item in records {
-        let read_state = read_state(store, &item.id)?;
-        let starred = starred_state(store, &item.id)?;
-        if filter.view == ItemView::Today && item.discovered_at_micros < unix_micros(since) {
-            continue;
-        }
-        if filter.view == ItemView::Unread && read_state.state != "unread" {
-            continue;
-        }
-
-        let article = article_metadata(store, &item.id)?;
-        rows.push(summary_from_parts(
-            &item,
-            &article,
-            read_state.state,
-            starred,
-            now,
-        ));
-
-        if rows.len() == limit {
-            break;
-        }
-    }
-
-    Ok(rows)
+    let page = store.list_item_page(&filter, unix_micros(now - TODAY_LOOKBACK))?;
+    Ok(ItemPage {
+        items: page
+            .items
+            .into_iter()
+            .map(|item| ItemSummary {
+                source_name: source_name(item.primary_url.as_deref(), item.site_name.as_deref()),
+                length_label: length_label(&ArticleMetadata {
+                    estimated_read_minutes: item.estimated_read_minutes,
+                    word_count: item.word_count,
+                    ..Default::default()
+                }),
+                time_label: time_label(item.discovered_at_micros, now),
+                summary: item.summary.as_deref().map(plain_text_summary),
+                id: item.id,
+                title: item.title,
+                read_state: item.read_state,
+                starred: item.starred,
+                primary_url: item.primary_url,
+                discovered_at_micros: item.discovered_at_micros,
+            })
+            .collect(),
+        next_cursor: page.next_cursor,
+    })
 }
 
 pub(crate) fn get_item_from_parts(
@@ -357,86 +292,6 @@ pub(crate) fn get_item_from_parts(
         read_progress: read_state.progress,
         discovered_at_micros: summary.discovered_at_micros,
     }))
-}
-
-fn query_item_records(store: &carrel_store::Store, limit: usize) -> Result<Vec<ItemRecord>> {
-    let rows = store.query(&format!(
-        r#"
-        ?[id, title, creators, primary_url, published_at, language, summary, discovered_at] :=
-            *item{{id, title, creators, primary_url, published_at, language, summary, discovered_at}}
-        :sort discovered_at
-        :limit {limit}
-        "#
-    ))?;
-
-    rows.rows.iter().map(|row| decode_item_row(row)).collect()
-}
-
-fn query_feed_item_records(
-    store: &carrel_store::Store,
-    feed_url: &str,
-    limit: usize,
-) -> Result<Vec<ItemRecord>> {
-    let rows = store.query_with_params(
-        &format!(
-            r#"
-        ?[id, title, creators, primary_url, published_at, language, summary, discovered_at] :=
-            *item{{id, title, creators, primary_url, published_at, language, summary, discovered_at}},
-            *item_article{{item_id, feed_url}},
-            item_id = id,
-            feed_url = $feed_url
-        :sort discovered_at
-        :limit {limit}
-        "#
-        ),
-        BTreeMap::from([("feed_url".to_string(), DataValue::from(feed_url))]),
-    )?;
-
-    rows.rows.iter().map(|row| decode_item_row(row)).collect()
-}
-
-fn query_reading_item_records(
-    store: &carrel_store::Store,
-    limit: usize,
-) -> Result<Vec<ItemRecord>> {
-    let rows = store.query(&format!(
-        r#"
-        ?[updated_at, id, title, creators, primary_url, published_at, language, summary, discovered_at] :=
-            *read_state{{item_id, state, updated_at}},
-            state = 'reading',
-            *item{{id, title, creators, primary_url, published_at, language, summary, discovered_at}},
-            id = item_id
-        :sort updated_at
-        :limit {limit}
-        "#
-    ))?;
-
-    rows.rows
-        .iter()
-        .map(|row| decode_item_row_from_offset(row, 1))
-        .collect()
-}
-
-fn query_starred_item_records(
-    store: &carrel_store::Store,
-    limit: usize,
-) -> Result<Vec<ItemRecord>> {
-    let rows = store.query(&format!(
-        r#"
-        ?[updated_at, id, title, creators, primary_url, published_at, language, summary, discovered_at] :=
-            *item_star{{item_id, starred, updated_at}},
-            starred = true,
-            *item{{id, title, creators, primary_url, published_at, language, summary, discovered_at}},
-            id = item_id
-        :sort updated_at
-        :limit {limit}
-        "#
-    ))?;
-
-    rows.rows
-        .iter()
-        .map(|row| decode_item_row_from_offset(row, 1))
-        .collect()
 }
 
 fn query_item_record(store: &carrel_store::Store, id: &str) -> Result<Option<ItemRecord>> {
@@ -996,9 +851,17 @@ fn unix_micros(value: OffsetDateTime) -> i64 {
 
 #[cfg(test)]
 mod tests {
+    use carrel_core::library::ItemView;
     use cozo::Validity;
 
     use super::*;
+
+    fn list_items_from_store(
+        store: &carrel_store::Store,
+        filter: ItemFilter,
+    ) -> Result<Vec<ItemSummary>> {
+        Ok(list_item_page_from_store(store, filter)?.items)
+    }
 
     #[test]
     fn today_filter_returns_recent_items_as_dtos() {
@@ -1141,6 +1004,7 @@ mod tests {
             ItemFilter {
                 view: ItemView::Library,
                 limit: Some(3),
+                after: None,
             },
         )
         .unwrap();
@@ -1154,6 +1018,7 @@ mod tests {
             ItemFilter {
                 view: ItemView::Unread,
                 limit: Some(10),
+                after: None,
             },
         )
         .unwrap();
@@ -1172,6 +1037,7 @@ mod tests {
             ItemFilter {
                 view: ItemView::Reading,
                 limit: Some(10),
+                after: None,
             },
         )
         .unwrap();
@@ -1182,6 +1048,7 @@ mod tests {
             ItemFilter {
                 view: ItemView::Starred,
                 limit: Some(10),
+                after: None,
             },
         )
         .unwrap();
@@ -1195,6 +1062,7 @@ mod tests {
                     url: feed_a.to_string(),
                 },
                 limit: Some(10),
+                after: None,
             },
         )
         .unwrap();

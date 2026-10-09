@@ -14,6 +14,7 @@ html-escape = { workspace = true }
 httpdate = { workspace = true }
 katex = { workspace = true }
 kuchiki = { workspace = true }
+quick-xml = { workspace = true }
 readable-readability = { workspace = true }
 reqwest = { workspace = true }
 texting_robots = { workspace = true }

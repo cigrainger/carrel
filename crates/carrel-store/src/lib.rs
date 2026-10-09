@@ -13,6 +13,7 @@ pub mod highlights;
 pub mod ids;
 pub mod items;
 pub mod keystore;
+pub mod library;
 mod migrations;
 pub mod schema;
 

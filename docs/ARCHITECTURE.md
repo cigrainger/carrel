@@ -272,6 +272,21 @@ return path, rows, selected identity/index, and scroll offset. The reader sideba
 is one session signal; toggling it changes the shell grid without replacing the
 article. These are presentation caches; Cozo remains authoritative.
 
+Archive filters and pagination contracts live in `carrel-core::library`.
+`carrel-store::library` filters before limiting and joins article metadata,
+read state, and stars in one query per page. Cursors use descending discovery
+or action time with an ascending item-ID tie breaker. Today's time window is
+fixed for subsequent pages. List snapshots also retain the continuation and
+whether the archive end was reached; refreshes query through that older
+boundary. Async generations guard the entire multi-page refresh.
+
+OPML parsing/writing lives in `carrel-feeds`; portable subscription metadata is
+in `carrel-core`. The store validates the entire batch and inserts missing
+canonical URLs in one transaction. Existing subscriptions, saved items, and
+HTTP cache metadata remain intact. Native commands own file dialogs, bounded
+reads, and atomic export replacement; the webview cannot request arbitrary
+file access. The regular feed worker fetches newly imported subscriptions.
+
 Optimistic star/read intents are queued in the application context. Commands run
 serially, confirmed fields reconcile with the native result, and a failed intent
 is removed while subsequent intents are replayed. Source rows remain available

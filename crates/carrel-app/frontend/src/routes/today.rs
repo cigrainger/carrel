@@ -118,7 +118,20 @@ pub(crate) fn list_route_view(
             .map_or(0, |snapshot| snapshot.selected_index),
     );
     let loaded = RwSignal::new(snapshot.is_some());
+    let next_cursor = RwSignal::new(
+        snapshot
+            .as_ref()
+            .and_then(|snapshot| snapshot.item_cursor.clone()),
+    );
+    let complete = RwSignal::new(
+        snapshot
+            .as_ref()
+            .is_some_and(|snapshot| snapshot.items_complete),
+    );
+    let paging = RwSignal::new(false);
+    let older = RwSignal::new(0_u64);
     let error = RwSignal::new(None::<String>);
+    let retry_older = RwSignal::new(false);
     let reload = RwSignal::new(0_u64);
     let actions = use_item_actions();
     let visible = Memo::new(move |_| {
@@ -246,6 +259,8 @@ pub(crate) fn list_route_view(
                 selected_id: Some(item.id.clone()),
                 selected_index: index,
                 scroll_y: list_scroll_y(),
+                item_cursor: next_cursor.get_untracked(),
+                items_complete: complete.get_untracked(),
                 ..Default::default()
             },
         );
@@ -289,8 +304,13 @@ pub(crate) fn list_route_view(
         let cleanup = requests.clone();
         on_cleanup(move || cleanup.invalidate());
         let previous_path = RwSignal::new(spec.get_untracked().return_path);
+        let previous_older = RwSignal::new(0_u64);
         Effect::new(move |_| {
             let current = spec.get();
+            let older_request = older.get();
+            let append = older_request != previous_older.get_untracked()
+                && previous_path.get_untracked() == current.return_path;
+            previous_older.set(older_request);
             if previous_path.get_untracked() != current.return_path {
                 let snapshot = list_navigation.snapshot(&current.return_path);
                 items.set(
@@ -300,6 +320,16 @@ pub(crate) fn list_route_view(
                         .unwrap_or_default(),
                 );
                 loaded.set(snapshot.is_some());
+                next_cursor.set(
+                    snapshot
+                        .as_ref()
+                        .and_then(|snapshot| snapshot.item_cursor.clone()),
+                );
+                complete.set(
+                    snapshot
+                        .as_ref()
+                        .is_some_and(|snapshot| snapshot.items_complete),
+                );
                 error.set(None);
                 cursor.set(0);
                 restore.set(Some(snapshot.unwrap_or_default()));
@@ -310,13 +340,43 @@ pub(crate) fn list_route_view(
             let generation = requests.begin();
             let guard = requests.clone();
             let action_revision = actions.state.with_untracked(|state| state.revision());
+            let boundary = next_cursor.get_untracked();
+            let to_end = complete.get_untracked();
+            let mut filter = current.filter.clone();
+            if append {
+                filter.after = boundary.clone();
+            }
+            paging.set(true);
             wasm_bindgen_futures::spawn_local(async move {
-                let result = api::list_items(current.filter).await;
+                let result = fetch_archive(
+                    filter,
+                    if append { None } else { boundary },
+                    !append && to_end,
+                    &guard,
+                    generation,
+                )
+                .await;
                 if !guard.accepts(generation) {
                     return;
                 }
                 match result {
-                    Ok(mut rows) => {
+                    Ok(Some(page)) => {
+                        next_cursor.set(page.next_cursor.clone());
+                        complete.set(page.next_cursor.is_none());
+                        let mut rows = if append {
+                            items.get_untracked()
+                        } else {
+                            Vec::new()
+                        };
+                        for row in page.items {
+                            if let Some(existing) =
+                                rows.iter_mut().find(|existing| existing.id == row.id)
+                            {
+                                *existing = row;
+                            } else {
+                                rows.push(row);
+                            }
+                        }
                         actions.state.update(|state| {
                             state.rebase(
                                 action_revision,
@@ -335,15 +395,19 @@ pub(crate) fn list_route_view(
                         let focus = crate::navigation::list_has_focus();
                         let scroll_y = list_scroll_y();
                         items.set(rows);
-                        if focus {
+                        if focus && !append {
                             restore_list_scroll(current.return_path, scroll_y, true);
                         }
                         error.set(None);
+                        retry_older.set(false);
                     }
                     Err(err) => {
+                        retry_older.set(append);
                         error.set(Some(format!("Could not load articles: {}", err.message())))
                     }
+                    Ok(None) => return,
                 }
+                paging.set(false);
                 loaded.set(true);
             });
         });
@@ -362,13 +426,57 @@ pub(crate) fn list_route_view(
                     <A href="/library" exact=true>"All"</A><A href="/unread" exact=true>"Unread"</A><A href="/starred" exact=true>"Starred"</A>
                 </nav>
             </Show>
-            {move || error.get().map(|message| view! { <div class="quiet-state" role="status"><p>{message}</p><button type="button" on:click=move |_| reload.update(|token| *token += 1)>"Try again"</button></div> })}
+            {move || error.get().map(|message| view! { <div class="quiet-state" role="status"><p>{message}</p><button type="button" on:click=move |_| {
+                if retry_older.get_untracked() { older.update(|token| *token += 1); } else { reload.update(|token| *token += 1); }
+            }>"Try again"</button></div> })}
             <Show when=move || loaded.get()>
                 <Show when=move || !visible.get().is_empty() fallback=move || view! { <Show when=move || error.get().is_none()><div class="quiet-state"><p>{spec.get().empty_message}</p><EmptyListAddFeed/></div></Show> }>
                     <ItemList items=visible selected_index=cursor aria_label=spec.get_untracked().title on_open=open on_read=read on_star=star on_select=UnsyncCallback::new(move |index| cursor.set(index))/>
                 </Show>
+                <Show when=move || next_cursor.get().is_some()>
+                    <div class="archive-footer"><button type="button" disabled=move || paging.get() on:click=move |_| older.update(|token| *token += 1)>"Load older"</button></div>
+                </Show>
             </Show>
         </section>
+    }
+}
+
+/// Refresh through the loaded boundary, preserving the older end of the list.
+#[cfg(target_arch = "wasm32")]
+async fn fetch_archive(
+    mut filter: ItemFilter,
+    boundary: Option<crate::api::ItemCursor>,
+    to_end: bool,
+    requests: &Requests,
+    generation: u64,
+) -> Result<Option<crate::api::ItemPage<ItemSummary>>, crate::api::ApiError> {
+    let mut items = Vec::new();
+    loop {
+        let page = api::list_items(filter.clone()).await?;
+        if !requests.accepts(generation) {
+            return Ok(None);
+        }
+        for row in page.items {
+            if !items
+                .iter()
+                .any(|existing: &ItemSummary| existing.id == row.id)
+            {
+                items.push(row);
+            }
+        }
+        let continue_refresh = page.next_cursor.as_ref().is_some_and(|next| {
+            to_end
+                || boundary
+                    .as_ref()
+                    .is_some_and(|boundary| !boundary.reached_by(next))
+        });
+        if !continue_refresh {
+            return Ok(Some(crate::api::ItemPage {
+                items,
+                next_cursor: page.next_cursor,
+            }));
+        }
+        filter.after = page.next_cursor;
     }
 }
 
@@ -377,6 +485,7 @@ fn EmptyListAddFeed() -> impl IntoView {
     let controller = crate::feeds::use_feed_controller();
     view! { <Show when=move || controller.feeds().get().is_empty()>
         <button type="button" on:click=move |_| controller.add_open.set(true)>"Add a feed"</button>
+        <crate::components::SubscriptionFiles export=false/>
     </Show> }
 }
 

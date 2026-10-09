@@ -6,3 +6,4 @@ pub(crate) mod items;
 pub(crate) mod keymap;
 pub(crate) mod links;
 pub(crate) mod status;
+pub(crate) mod subscriptions;

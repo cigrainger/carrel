@@ -3,58 +3,26 @@
 use carrel_core::annotation::HighlightLocation;
 use serde::{Deserialize, Serialize};
 
-/// Item-list filter passed to the app shell.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ItemFilter {
-    pub view: ItemView,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub limit: Option<usize>,
+pub use carrel_core::library::{ItemCursor, ItemFilter, ItemPage, ItemView};
+
+/// Choose an OPML file and import subscriptions. False means cancellation.
+#[cfg(target_arch = "wasm32")]
+pub async fn import_subscriptions() -> Result<bool, ApiError> {
+    subscription_file_command("import_subscriptions").await
 }
 
-impl ItemFilter {
-    pub fn today() -> Self {
-        Self::new(ItemView::Today)
-    }
-
-    pub fn library() -> Self {
-        Self::new(ItemView::Library)
-    }
-
-    pub fn unread() -> Self {
-        Self::new(ItemView::Unread)
-    }
-
-    pub fn reading() -> Self {
-        Self::new(ItemView::Reading)
-    }
-
-    pub fn starred() -> Self {
-        Self::new(ItemView::Starred)
-    }
-
-    pub fn feed(url: String) -> Self {
-        Self::new(ItemView::Feed { url })
-    }
-
-    fn new(view: ItemView) -> Self {
-        Self {
-            view,
-            limit: Some(100),
-        }
-    }
+/// Choose an OPML destination. False means cancellation.
+#[cfg(target_arch = "wasm32")]
+pub async fn export_subscriptions() -> Result<bool, ApiError> {
+    subscription_file_command("export_subscriptions").await
 }
 
-/// Supported item-list views.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ItemView {
-    Today,
-    Library,
-    Unread,
-    Reading,
-    Starred,
-    Feed { url: String },
+#[cfg(target_arch = "wasm32")]
+async fn subscription_file_command(command: &str) -> Result<bool, ApiError> {
+    let result = tauri_invoke(command, wasm_bindgen::JsValue::UNDEFINED)
+        .await
+        .map_err(api_error_from_js)?;
+    serde_wasm_bindgen::from_value(result).map_err(|error| ApiError::new(error.to_string()))
 }
 
 /// Item row returned by the native shell.
@@ -277,7 +245,7 @@ impl ApiError {
 
 /// Load items for a list route.
 #[cfg(target_arch = "wasm32")]
-pub async fn list_items(filter: ItemFilter) -> Result<Vec<ItemSummary>, ApiError> {
+pub async fn list_items(filter: ItemFilter) -> Result<ItemPage<ItemSummary>, ApiError> {
     #[derive(Serialize)]
     struct Args {
         filter: ItemFilter,
@@ -294,8 +262,11 @@ pub async fn list_items(filter: ItemFilter) -> Result<Vec<ItemSummary>, ApiError
 
 /// Load items for SSR tests and non-wasm builds.
 #[cfg(not(target_arch = "wasm32"))]
-pub async fn list_items(_filter: ItemFilter) -> Result<Vec<ItemSummary>, ApiError> {
-    Ok(Vec::new())
+pub async fn list_items(_filter: ItemFilter) -> Result<ItemPage<ItemSummary>, ApiError> {
+    Ok(ItemPage {
+        items: Vec::new(),
+        next_cursor: None,
+    })
 }
 
 /// Load one item for the reading route.

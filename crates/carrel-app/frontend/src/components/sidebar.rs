@@ -105,6 +105,7 @@ pub fn Sidebar() -> impl IntoView {
                     </ul>
                 </Show>
             </div>
+            <SubscriptionFiles/>
             <Show when=move || add_open.get()>
                 <Modal label="Add feed" class="feed-dialog" on_cancel=UnsyncCallback::new(move |()| {
                     add_error.set(None);
@@ -210,6 +211,26 @@ pub fn Sidebar() -> impl IntoView {
             </Show>
         </aside>
     }
+}
+
+/// Quiet native OPML actions, also available in the empty library.
+#[component]
+pub(crate) fn SubscriptionFiles(#[prop(default = true)] export: bool) -> impl IntoView {
+    let controller = use_feed_controller();
+    let run = move |import| {
+        controller.file_busy.set(true);
+        controller.error().set(None);
+        spawn_feed_task(async move {
+            if let Err(message) = feeds::subscription_file(controller, import).await {
+                controller.error().try_set(Some(message));
+            }
+            controller.file_busy.try_set(false);
+        });
+    };
+    view! { <div class="subscription-files">
+        <button type="button" disabled=move || controller.file_busy.get() on:click=move |_| run(true)>"Import OPML"</button>
+        <Show when=move || export><button type="button" disabled=move || controller.file_busy.get() on:click=move |_| run(false)>"Export OPML"</button></Show>
+    </div> }
 }
 
 #[cfg(target_arch = "wasm32")]
