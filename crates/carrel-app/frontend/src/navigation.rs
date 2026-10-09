@@ -112,7 +112,15 @@ pub(crate) fn list_scroll_y() -> i32 {
     0
 }
 
-pub(crate) fn restore_list_scroll(path: String, y: i32) {
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn list_has_focus() -> bool {
+    web_sys::window()
+        .and_then(|window| window.document())
+        .and_then(|document| document.active_element())
+        .is_some_and(|element| element.closest("[data-list-path]").ok().flatten().is_some())
+}
+
+pub(crate) fn restore_list_scroll(path: String, y: i32, restore_focus: bool) {
     #[cfg(target_arch = "wasm32")]
     {
         use wasm_bindgen::{JsCast, closure::Closure};
@@ -131,6 +139,15 @@ pub(crate) fn restore_list_scroll(path: String, y: i32) {
                 .and_then(|window| window.document())
                 .and_then(|document| document.get_element_by_id("main-content"))
             {
+                if restore_focus
+                    && let Ok(Some(button)) = element
+                        .query_selector(".is-selected .item-open, .is-selected .highlight-open")
+                    && let Ok(button) = button.dyn_into::<web_sys::HtmlElement>()
+                {
+                    let options = web_sys::FocusOptions::new();
+                    options.set_prevent_scroll(true);
+                    let _ = button.focus_with_options(&options);
+                }
                 element.set_scroll_top(y);
             }
         });
@@ -140,7 +157,7 @@ pub(crate) fn restore_list_scroll(path: String, y: i32) {
         }
     }
     #[cfg(not(target_arch = "wasm32"))]
-    let _ = (path, y);
+    let _ = (path, y, restore_focus);
 }
 
 pub(crate) fn ensure_list_cursor_visible(path: String) {
@@ -199,6 +216,20 @@ mod tests {
             ),
             1
         );
+    }
+
+    #[test]
+    fn live_refresh_inserts_new_articles_without_moving_the_selected_identity() {
+        let old = ["essay".into(), "post".into()];
+        let refreshed = [
+            "new-a".into(),
+            "new-b".into(),
+            "essay".into(),
+            "post".into(),
+        ];
+        let selected = restored_index(&refreshed, old.first().map(String::as_str), 0, &old);
+        assert_eq!(selected, 2);
+        assert_eq!(refreshed[selected], "essay");
     }
 
     #[test]

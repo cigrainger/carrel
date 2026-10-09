@@ -44,7 +44,11 @@ pub(crate) fn selector_from_text_parts(
     }
 
     let normalized_body = normalize_readable_text(body_text);
-    let start = normalized_prefix_len(before_selection_text);
+    let leading_space = selected_text.find(|char: char| !char.is_whitespace())?;
+    let start = normalized_prefix_len(&format!(
+        "{before_selection_text}{}",
+        &selected_text[..leading_space]
+    ));
     let end = start.checked_add(exact.chars().count())?;
     if normalized_slice(&normalized_body, start, end).as_deref() != Some(exact.as_str()) {
         return None;
@@ -352,53 +356,61 @@ fn wrap_raw_range(
     let document = body.owner_document().ok_or_else(|| {
         wasm_bindgen::JsValue::from_str("reader body did not have an owner document")
     })?;
-    let root = body.clone().into();
-    let (start_node, start_offset) = text_boundary_for_raw_offset(&root, raw_start)
-        .ok_or_else(|| wasm_bindgen::JsValue::from_str("missing highlight start boundary"))?;
-    let (end_node, end_offset) = text_boundary_for_raw_offset(&root, raw_end)
-        .ok_or_else(|| wasm_bindgen::JsValue::from_str("missing highlight end boundary"))?;
-
-    let range = document.create_range()?;
-    range.set_start(&start_node, start_offset)?;
-    range.set_end(&end_node, end_offset)?;
-
-    let span = document.create_element("span")?;
-    span.set_class_name("carrel-highlight");
-    span.set_attribute("data-carrel-highlight-id", id)?;
-    span.set_attribute("tabindex", "-1")?;
-
-    let fragment = range.extract_contents()?;
-    span.append_child(&fragment)?;
-    range.insert_node(&span)?;
-
+    let mut nodes = Vec::new();
+    collect_text_nodes(&body.clone().into(), &mut nodes);
+    let lengths = nodes
+        .iter()
+        .map(|node| node.node_value().unwrap_or_default().chars().count())
+        .collect::<Vec<_>>();
+    let segments = text_segments(&lengths, raw_start, raw_end)
+        .ok_or_else(|| wasm_bindgen::JsValue::from_str("missing highlight boundaries"))?;
+    // Wrap text within each existing element: extracting a cross-paragraph range
+    // splits paragraphs and can move links, lists, or code into an invalid span.
+    for (index, start, end) in segments.into_iter().rev() {
+        let node = &nodes[index];
+        let text = node.node_value().unwrap_or_default();
+        let range = document.create_range()?;
+        range.set_start(
+            node,
+            utf16_offset_for_char(&text, start)
+                .ok_or_else(|| wasm_bindgen::JsValue::from_str("highlight offset overflow"))?,
+        )?;
+        range.set_end(
+            node,
+            utf16_offset_for_char(&text, end)
+                .ok_or_else(|| wasm_bindgen::JsValue::from_str("highlight offset overflow"))?,
+        )?;
+        let span = document.create_element("span")?;
+        span.set_class_name("carrel-highlight");
+        span.set_attribute("data-carrel-highlight-id", id)?;
+        span.set_attribute("tabindex", "-1")?;
+        let fragment = range.extract_contents()?;
+        span.append_child(&fragment)?;
+        range.insert_node(&span)?;
+    }
     Ok(())
 }
 
-#[cfg(target_arch = "wasm32")]
-fn text_boundary_for_raw_offset(
-    root: &web_sys::Node,
-    raw_offset: usize,
-) -> Option<(web_sys::Node, u32)> {
-    let mut text_nodes = Vec::new();
-    collect_text_nodes(root, &mut text_nodes);
-
-    let mut remaining = raw_offset;
-    let mut last_node = None;
-    for node in text_nodes {
-        let text = node.node_value().unwrap_or_default();
-        let char_len = text.chars().count();
-        if remaining <= char_len {
-            return Some((node, utf16_offset_for_char(&text, remaining)?));
-        }
-        remaining = remaining.saturating_sub(char_len);
-        last_node = Some((node, char_len));
+#[cfg(any(test, target_arch = "wasm32"))]
+fn text_segments(
+    lengths: &[usize],
+    start: usize,
+    end: usize,
+) -> Option<Vec<(usize, usize, usize)>> {
+    if start >= end || end > lengths.iter().sum() {
+        return None;
     }
-
-    let (node, char_len) = last_node?;
-    Some((
-        node.clone(),
-        utf16_offset_for_char(&node.node_value().unwrap_or_default(), char_len)?,
-    ))
+    let mut offset = 0;
+    let mut segments = Vec::new();
+    for (index, &length) in lengths.iter().enumerate() {
+        let local_start = start.saturating_sub(offset);
+        let local_end = end.saturating_sub(offset).min(length);
+        if local_start < local_end {
+            segments.push((index, local_start, local_end));
+        }
+        offset += length;
+    }
+    Some(segments)
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -416,7 +428,7 @@ fn collect_text_nodes(root: &web_sys::Node, out: &mut Vec<web_sys::Node>) {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(any(test, target_arch = "wasm32"))]
 fn utf16_offset_for_char(value: &str, char_offset: usize) -> Option<u32> {
     let offset = value
         .chars()
@@ -495,9 +507,40 @@ mod tests {
     }
 
     #[test]
+    fn selections_starting_with_whitespace_keep_the_correct_offset() {
+        for (body, before, selection, expected) in [
+            ("The quiet web", "The", " quiet", 4),
+            ("The  quiet web", "The ", " quiet ", 4),
+            ("The\nquiet web", "The", "\nquiet", 4),
+            ("  quiet web", "", "  quiet", 0),
+            ("éclair\u{2003}静かな", "éclair", "\u{2003}静かな", 7),
+        ] {
+            let selector = selector_from_text_parts(None, body, before, selection).unwrap();
+            assert_eq!(selector.start, expected);
+            assert_eq!(selector.exact, selection.trim());
+        }
+    }
+
+    #[test]
     fn selector_capture_rejects_empty_or_mismatched_selection() {
         assert!(selector_from_text_parts(None, "The quiet web", "The ", " ").is_none());
         assert!(selector_from_text_parts(None, "The quiet web", "The ", "different").is_none());
+    }
+
+    #[test]
+    fn reattachment_keeps_paragraphs_and_inline_elements_in_place() {
+        // Three text nodes in separate elements, with an empty node between.
+        assert_eq!(
+            text_segments(&[3, 0, 7, 5], 3, 12),
+            Some(vec![(2, 0, 7), (3, 0, 2)])
+        );
+        assert_eq!(
+            text_segments(&[3, 7, 5], 2, 10),
+            Some(vec![(0, 2, 3), (1, 0, 7)])
+        );
+        assert_eq!(text_segments(&[3], 0, 4), None);
+        assert_eq!(text_segments(&[], 0, 0), None);
+        assert_eq!(utf16_offset_for_char("a🙂é", 2), Some(3));
     }
 
     #[test]

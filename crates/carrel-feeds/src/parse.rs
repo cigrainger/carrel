@@ -54,12 +54,17 @@ fn normalize_entry(feed: &Feed, entry: &Entry, feed_base: &Url) -> ParsedEntry {
         url,
         published_at_micros,
         language: entry.language.clone().or_else(|| feed.language.clone()),
-        summary_html: entry.summary.as_ref().map(text_content),
+        summary_html: entry
+            .summary
+            .as_ref()
+            .map(|summary| summary.content.trim().to_string()),
         content_html: entry
             .content
             .as_ref()
             .and_then(|content| content.body.as_ref())
-            .map(|body| decode_html_entities(body.trim()).to_string()),
+            // The feed parser already unwraps XML/JSON encoding. HTML entities
+            // belong to the HTML parser; decoding them here turns code into tags.
+            .map(|body| body.trim().to_string()),
     }
 }
 

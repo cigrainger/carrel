@@ -20,6 +20,7 @@ kuchiki = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tauri = { workspace = true }
+tauri-plugin-opener = "2.7.0"
 thiserror = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true }

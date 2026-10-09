@@ -182,6 +182,7 @@ Color is functional, not decorative. The accent color appears sparingly and only
   --color-text-tertiary: #65675f;
   --color-bg: #f5f2eb;
   --color-bg-elevated: #faf8f3;
+  --color-media-bg: #faf8f3;    /* paper backing for source images in every theme */
   --color-rule: #d2d0c5;
   --color-rule-strong: #bdbbb0;
   --color-accent: #9a462f;
@@ -287,6 +288,10 @@ for the session. Returning to a list restores its filter, selected item, and
 scroll position. When an item leaves a filter, select the nearest remaining
 neighbor.
 
+Selection follows article identity when a refresh inserts or reorders rows.
+Returning from the reader restores keyboard focus to the selected article
+without changing the restored list scroll offset.
+
 The status strip is small, at the bottom, showing quiet operation and error messages without counts. It's the system-tray-style surface we use *instead of* OS notifications. Users who want to ignore it can hide it; it never demands attention.
 
 ### The reading view
@@ -328,6 +333,21 @@ with the left edge of the body measure.
 The item-info surface is user-initiated and appears in the article scroll area before the text, again without overlaying the article. It holds metadata that would clutter the article header: source/feed, canonical URL, cache state, discovery/publish dates, length facts, and content-shape tags. `Esc` closes item info before it navigates away from the reader.
 
 The footer is similarly minimal. It marks the end of the article and may repeat a link to the original so the user can verify the source or grab the URL. Send-to-ereader waits until that flow is real. That's it.
+
+Publication dates in the reading header use a short calendar date; item info
+retains the precise source timestamp. The reading measure uses the body font
+and body size. Long URLs wrap, while wide code, tables, and display math scroll
+within their own region. A missing readable cache is stated beside the available
+summary and original link, rather than presented as a complete article.
+Source images retain their colors on a light paper backing in every theme.
+This keeps transparent ink diagrams and image-based equations readable in dark
+themes without inverting photographs or illustrations.
+
+Article links and Open original open in the system browser, preserving the
+reader. Fragment links to targets in the cached article stay in the reader.
+Selecting article text deliberately reveals a small Highlight / Add note
+popover. These controls use the same selection and saved selectors as `h` / `H`.
+The popover is dismissed when the selection clears or the reader scrolls.
 
 When the user scrolls, the application chrome should fade — not literally animated, but the focus shifts to the text. The sidebar can remain visible but should not have any motion or attention-pulling elements.
 
@@ -501,6 +521,10 @@ Reduced-motion preference: if the user has `prefers-reduced-motion: reduce` set,
 Tab order follows visual order. Focus rings are visible but restrained — a 2px outline in the accent color, on focusable elements only when focus arrives via keyboard. (We use `:focus-visible`, not `:focus`, so mouse clicks don't show focus rings.)
 
 Modal-like elements (the share dialog, the tag input) trap focus and restore it on close. Esc closes them. Enter confirms them.
+
+Feed and note dialogs use the native modal dialog behavior: background content
+is inert, Escape cancels, and closing restores the initiating control. Feed
+titles update in place when fetching discovers the publisher's name.
 
 Screen-reader users can drive the entire app. Every interactive element has appropriate ARIA. We do not use `<div>` for buttons; we use `<button>`. We do not implement custom dropdowns where `<select>` works.
 

@@ -17,6 +17,8 @@ pub(crate) struct FeedController {
     error: RwSignal<Option<String>>,
     pub(crate) add_open: RwSignal<bool>,
     #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+    writes: StoredValue<crate::writes::PendingWrites>,
+    #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
     refresh_token: RwSignal<u64>,
 }
 
@@ -52,6 +54,7 @@ pub(crate) fn provide_feed_controller() -> FeedController {
         status: RwSignal::new(FeedStatusSummary::default()),
         error: RwSignal::new(None),
         add_open: RwSignal::new(false),
+        writes: StoredValue::new(crate::writes::use_pending_writes()),
         refresh_token: RwSignal::new(0),
     };
     provide_context(controller);
@@ -90,8 +93,10 @@ pub(crate) fn decode_feed_path(value: &str) -> Option<String> {
 
 #[cfg(target_arch = "wasm32")]
 pub(crate) async fn add_and_fetch(controller: FeedController, url: String) -> Result<(), String> {
+    let guard = controller.writes.get_value().begin();
     let feed = api::add_feed(url).await.map_err(message)?;
     publish_subscription(controller, feed.clone());
+    drop(guard);
     wasm_bindgen_futures::spawn_local(async move {
         let result = api::fetch_feed(feed.url).await;
         refresh_after_mutation(controller).await.ok();
@@ -124,7 +129,9 @@ pub(crate) async fn add_and_fetch(_controller: FeedController, _url: String) -> 
 
 #[cfg(target_arch = "wasm32")]
 pub(crate) async fn remove(controller: FeedController, url: String) -> Result<(), String> {
+    let guard = controller.writes.get_value().begin();
     let _ = api::remove_feed(url).await.map_err(message)?;
+    drop(guard);
     refresh_after_mutation(controller).await
 }
 

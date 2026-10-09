@@ -142,6 +142,7 @@ pub(crate) fn list_route_view(
             .collect::<Vec<_>>()
     });
     let restore = RwSignal::new(Some(snapshot.unwrap_or_default()));
+    let previous_ids = RwSignal::new(Vec::<String>::new());
     Effect::new(move |_| {
         let rows = visible.get();
         if !loaded.get() {
@@ -166,10 +167,23 @@ pub(crate) fn list_route_view(
                 &original_ids,
             ));
             restore.set(None);
-            restore_list_scroll(spec.get_untracked().return_path, snapshot.scroll_y);
+            restore_list_scroll(
+                spec.get_untracked().return_path,
+                snapshot.scroll_y,
+                context.is_some(),
+            );
         } else {
-            cursor.update(|index| *index = (*index).min(rows.len().saturating_sub(1)));
+            let original = previous_ids.get_untracked();
+            cursor.update(|index| {
+                *index = restored_index(
+                    &rows.iter().map(|row| row.id.clone()).collect::<Vec<_>>(),
+                    original.get(*index).map(String::as_str),
+                    *index,
+                    &original,
+                );
+            });
         }
+        previous_ids.set(rows.iter().map(|row| row.id.clone()).collect());
     });
     use_keymap_layer(default::list_layer());
     use_keymap_layer(default::item_action_layer());
@@ -318,7 +332,12 @@ pub(crate) fn list_route_view(
                                 rows.insert(index.min(rows.len()), row);
                             }
                         }
+                        let focus = crate::navigation::list_has_focus();
+                        let scroll_y = list_scroll_y();
                         items.set(rows);
+                        if focus {
+                            restore_list_scroll(current.return_path, scroll_y, true);
+                        }
                         error.set(None);
                     }
                     Err(err) => {

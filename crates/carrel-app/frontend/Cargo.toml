@@ -28,6 +28,7 @@ carrel-core = { path = "../../carrel-core", default-features = false }
 leptos = { workspace = true }
 leptos_router = { workspace = true }
 serde = { workspace = true }
+time = { workspace = true, features = ["parsing"] }
 serde-wasm-bindgen = { workspace = true, optional = true }
 wasm-bindgen = { workspace = true, optional = true }
 wasm-bindgen-futures = { workspace = true, optional = true }

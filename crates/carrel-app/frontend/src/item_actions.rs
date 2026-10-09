@@ -136,6 +136,7 @@ pub(crate) struct ItemActions {
     pub(crate) state: RwSignal<ItemActionState>,
     status: StatusController,
     feeds: FeedController,
+    writes: StoredValue<crate::writes::PendingWrites>,
 }
 
 impl ItemActions {
@@ -148,7 +149,9 @@ impl ItemActions {
             return;
         }
         let status = self.status;
+        let guard = self.writes.get_value().begin();
         spawn_action_task(async move {
+            let _guard = guard;
             while let Some(pending) = self
                 .state
                 .try_with_untracked(|state| state.pending.front().cloned())
@@ -178,6 +181,7 @@ pub(crate) fn provide_item_actions() {
         state: RwSignal::new(ItemActionState::default()),
         status: use_status_controller(),
         feeds: use_feed_controller(),
+        writes: StoredValue::new(crate::writes::use_pending_writes()),
     });
 }
 

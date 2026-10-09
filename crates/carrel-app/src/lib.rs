@@ -3,6 +3,7 @@
 #![deny(unsafe_code)]
 
 mod background;
+mod close;
 mod commands;
 mod config;
 mod error;
@@ -31,6 +32,13 @@ pub fn run() -> Result<()> {
     let background_state = app_state.clone();
 
     tauri::Builder::default()
+        .plugin(
+            tauri_plugin_opener::Builder::new()
+                .open_js_links_on_click(false)
+                .build(),
+        )
+        .manage(close::CloseState::default())
+        .on_window_event(close::on_window_event)
         .register_uri_scheme_protocol(BLOB_URI_SCHEME, move |_ctx, request| {
             blob_protocol_response(&protocol_blobs, request.uri())
         })
@@ -40,6 +48,10 @@ pub fn run() -> Result<()> {
         })
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![
+            close::frontend_ready,
+            close::finish_app_close,
+            close::cancel_app_close,
+            commands::links::open_external_url,
             commands::feeds::add_feed,
             commands::feeds::feed_status,
             commands::feeds::fetch_all_feeds,
@@ -59,8 +71,9 @@ pub fn run() -> Result<()> {
             commands::items::update_read_progress,
             commands::status::version,
         ])
-        .run(tauri::generate_context!())
-        .map_err(AppError::from)
+        .build(tauri::generate_context!())?
+        .run(close::on_run_event);
+    Ok(())
 }
 
 fn init_tracing() {

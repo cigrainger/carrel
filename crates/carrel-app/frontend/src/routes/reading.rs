@@ -13,6 +13,7 @@ use leptos_router::hooks::{use_navigate, use_params_map};
 #[cfg(target_arch = "wasm32")]
 use crate::api::{self, CreateHighlightNoteRequest, ReadProgressUpdate};
 use crate::api::{CreateHighlightRequest, HighlightDetail, ItemDetail};
+use crate::components::Modal;
 use crate::feeds::{FeedController, use_feed_controller};
 #[cfg(target_arch = "wasm32")]
 use crate::highlights;
@@ -53,6 +54,7 @@ pub fn ReadingView() -> impl IntoView {
     let actions = use_item_actions();
     let sidebar = use_reading_sidebar();
     let progress_writer = use_progress_writer();
+    let writes = StoredValue::new(crate::writes::use_pending_writes());
     let cleanup_writer = progress_writer.clone();
     on_cleanup(move || cleanup_writer.flush());
     let progress_writer = StoredValue::new(progress_writer);
@@ -170,7 +172,14 @@ pub fn ReadingView() -> impl IntoView {
 
     let highlight_body_ref = body_ref;
     use_action_handler("highlight-selection", move || {
-        create_highlight_from_selection(item, highlight_body_ref, highlights, status, feeds);
+        create_highlight_from_selection(
+            item,
+            highlight_body_ref,
+            highlights,
+            status,
+            feeds,
+            writes,
+        );
     });
 
     let note_body_ref = body_ref;
@@ -348,6 +357,7 @@ pub fn ReadingView() -> impl IntoView {
                             on_toggle_star=star_click
                             on_toggle_read=read_click
                             on_toggle_info=info_click
+                            on_open_original=UnsyncCallback::new(move |url| crate::links::open_original(url, status))
                             sidebar_visible=sidebar.0
                             on_toggle_sidebar=UnsyncCallback::new(move |()| sidebar.toggle())
                             back_label=list_navigation.get().map(|context| format!("Back to {}", context.return_label)).unwrap_or_else(|| "Back to Today".into())
@@ -361,14 +371,19 @@ pub fn ReadingView() -> impl IntoView {
                         let request = draft.request.clone();
                         let exact = draft.exact;
                         let confirm = UnsyncCallback::new(move |body: String| {
+                            if body.trim().is_empty() {
+                                status.info("Write a note before saving.");
+                                return;
+                            }
+                            pending_note.set(None);
                             confirm_highlight_note(
                                 request.clone(),
                                 item,
                                 body,
                                 highlights,
-                                pending_note,
                                 status,
                                 feeds,
+                                writes,
                             );
                         });
                         let cancel = UnsyncCallback::new(move |()| {
@@ -384,6 +399,13 @@ pub fn ReadingView() -> impl IntoView {
                         }.into_any()
                     })
             }}
+            <crate::selection::SelectionActions item=item body_ref=body_ref
+                on_highlight=UnsyncCallback::new(move |request| write_highlight(request, item, highlights, status, feeds, writes))
+                on_note=UnsyncCallback::new(move |request: CreateHighlightRequest| {
+                    let carrel_core::annotation::HighlightLocation::HtmlText(selector) = &request.location;
+                    pending_note.set(Some(PendingNoteDraft { exact: selector.exact.clone(), request }));
+                })
+            />
             <div
                 class="reader-scroll"
                 node_ref=scroll_ref
@@ -445,6 +467,7 @@ pub fn ReaderActions(
     #[prop(into, default = Signal::stored(false))] sidebar_visible: Signal<bool>,
     #[prop(default = UnsyncCallback::new(|()| {}))] on_toggle_sidebar: UnsyncCallback<()>,
     #[prop(default = String::from("Back"))] back_label: String,
+    #[prop(default = UnsyncCallback::new(|_: String| {}))] on_open_original: UnsyncCallback<String>,
 ) -> impl IntoView {
     view! {
         <nav class="reader-actions" aria-label="Reader controls">
@@ -474,7 +497,10 @@ pub fn ReaderActions(
             <div class="reader-action-group">
                 <Show when=move || item.with(|item| item.as_ref().is_some_and(|detail| detail.primary_url.is_some()))
                     fallback=|| view! { <button type="button" disabled=true>"Open original"</button> }>
-                    <a class="reader-action-link" href=move || item.with(|item| item.as_ref().and_then(|detail| detail.primary_url.clone()).unwrap_or_default()) target="_blank" rel="noreferrer">"Open original"</a>
+                    <a class="reader-action-link" href=move || item.with(|item| item.as_ref().and_then(|detail| detail.primary_url.clone()).unwrap_or_default()) target="_blank" rel="noreferrer"
+                        on:click=move |event| { event.prevent_default(); if let Some(url) = item.with_untracked(|item| item.as_ref().and_then(|detail| detail.primary_url.clone())) { on_open_original.run(url); } }
+                        on:auxclick=move |event| { if event.button() == 1 { event.prevent_default(); if let Some(url) = item.with_untracked(|item| item.as_ref().and_then(|detail| detail.primary_url.clone())) { on_open_original.run(url); } } }
+                    >"Open original"</a>
                 </Show>
             </div>
         </nav>
@@ -574,8 +600,6 @@ pub fn HighlightNoteOverlay(
 ) -> impl IntoView {
     let note = RwSignal::new(String::new());
     let note_ref = NodeRef::<html::Textarea>::new();
-    let cancel_ref = NodeRef::<html::Button>::new();
-    let save_ref = NodeRef::<html::Button>::new();
 
     #[cfg(target_arch = "wasm32")]
     Effect::new(move |_| {
@@ -592,13 +616,9 @@ pub fn HighlightNoteOverlay(
     };
 
     view! {
-        <div class="note-dialog-backdrop">
+        <Modal label="Highlight note" class="note-dialog" on_cancel=on_cancel>
             <section
-                class="note-dialog"
-                role="dialog"
-                aria-modal="true"
-                aria-label="Highlight note"
-                on:keydown=move |event| handle_note_dialog_keydown(event, note_ref, cancel_ref, save_ref, submit, on_cancel)
+                on:keydown=move |event| handle_note_dialog_keydown(event, submit)
             >
                 <h2>"Highlight note"</h2>
                 <blockquote>{exact}</blockquote>
@@ -606,20 +626,19 @@ pub fn HighlightNoteOverlay(
                     node_ref=note_ref
                     rows="5"
                     aria-label="Note"
+                    autofocus=true
                     prop:value=move || note.get()
                     on:input=move |event| note.set(event_target_value(&event))
                 ></textarea>
                 <div class="note-dialog-actions">
                     <button
                         type="button"
-                        node_ref=cancel_ref
                         on:click=move |_| on_cancel.run(())
                     >
                         "Cancel"
                     </button>
                     <button
                         type="button"
-                        node_ref=save_ref
                         disabled=move || note.with(|value| value.trim().is_empty())
                         on:click=move |_| submit()
                     >
@@ -627,7 +646,7 @@ pub fn HighlightNoteOverlay(
                     </button>
                 </div>
             </section>
-        </div>
+        </Modal>
     }
 }
 
@@ -648,9 +667,16 @@ pub fn ArticleContent(
     });
     let has_byline = byline.is_some();
     let byline_label = byline.unwrap_or_default();
-    let date = item.published_at.clone().unwrap_or(item.time_label.clone());
+    let date = item
+        .published_at
+        .as_deref()
+        .map(publication_date_label)
+        .unwrap_or(item.time_label.clone());
     let has_original = item.primary_url.is_some();
     let content_html = item.content_html.clone();
+    let has_cache = item.readable_blob_id.is_some();
+    let has_text = !content_html.trim().is_empty();
+    let link_original = StoredValue::new(item.primary_url.clone());
 
     #[cfg(not(target_arch = "wasm32"))]
     let _ = (&highlights, status);
@@ -690,14 +716,24 @@ pub fn ArticleContent(
                     <span>{date}</span>
                 </div>
             </header>
-            <div class="reader-body" node_ref=body_ref inner_html=content_html></div>
+            <Show when=move || !has_cache>
+                <aside class="reader-cache-notice" role="note">
+                    {if has_text { "The full article is not cached. This is the saved feed summary." } else { "No article text is cached. Open the original when you are online." }}
+                </aside>
+            </Show>
+            <div class="reader-body" node_ref=body_ref inner_html=content_html
+                on:click=move |event| crate::links::article_link(event, body_ref, link_original.with_value(|url| url.clone()).as_deref(), status)
+                on:auxclick=move |event| crate::links::article_link(event, body_ref, link_original.with_value(|url| url.clone()).as_deref(), status)
+            ></div>
             <footer class="reader-footer">
-                <span class="reader-end">"end of article"</span>
+                <span class="reader-end">{if has_cache { "end of article" } else { "end of saved summary" }}</span>
                 <Show when=move || has_original>
                     <a
                         href=item.primary_url.clone().unwrap_or_default()
                         target="_blank"
                         rel="noreferrer"
+                        on:click=move |event| { event.prevent_default(); if let Some(url) = link_original.get_value() { crate::links::open_original(url, status); } }
+                        on:auxclick=move |event| { if event.button() == 1 { event.prevent_default(); if let Some(url) = link_original.get_value() { crate::links::open_original(url, status); } } }
                     >
                         "Open original"
                     </a>
@@ -705,6 +741,23 @@ pub fn ArticleContent(
             </footer>
         </article>
     }
+}
+
+fn publication_date_label(value: &str) -> String {
+    let Ok(date) =
+        time::OffsetDateTime::parse(value, &time::format_description::well_known::Rfc3339)
+    else {
+        return value.to_string();
+    };
+    let months = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+    format!(
+        "{} {} {}",
+        date.day(),
+        months[date.month() as usize - 1],
+        date.year()
+    )
 }
 
 fn star_action_label(starred: bool) -> &'static str {
@@ -735,11 +788,12 @@ fn create_highlight_from_selection(
     highlights: RwSignal<Vec<HighlightDetail>>,
     status: StatusController,
     feeds: FeedController,
+    writes: StoredValue<crate::writes::PendingWrites>,
 ) {
     let Some(request) = capture_highlight_request(item, body_ref, status) else {
         return;
     };
-    write_highlight(request, item, highlights, status, feeds);
+    write_highlight(request, item, highlights, status, feeds, writes);
 }
 
 fn begin_highlight_note(
@@ -813,12 +867,17 @@ fn write_highlight(
     >,
     #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))] status: StatusController,
     #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))] feeds: FeedController,
+    #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))] writes: StoredValue<
+        crate::writes::PendingWrites,
+    >,
 ) {
     #[cfg(target_arch = "wasm32")]
     {
         use wasm_bindgen_futures::spawn_local;
 
+        let guard = writes.get_value().begin();
         spawn_local(async move {
+            let _guard = guard;
             match api::create_highlight(request).await {
                 Ok(highlight) => {
                     if is_current_item(item, &highlight.item_id) {
@@ -846,22 +905,19 @@ fn confirm_highlight_note(
     #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))] highlights: RwSignal<
         Vec<HighlightDetail>,
     >,
-    pending_note: RwSignal<Option<PendingNoteDraft>>,
     #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))] status: StatusController,
     #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))] feeds: FeedController,
+    #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))] writes: StoredValue<
+        crate::writes::PendingWrites,
+    >,
 ) {
-    if body.trim().is_empty() {
-        status.info("Write a note before saving.");
-        return;
-    }
-
-    pending_note.set(None);
-
     #[cfg(target_arch = "wasm32")]
     {
         use wasm_bindgen_futures::spawn_local;
 
+        let guard = writes.get_value().begin();
         spawn_local(async move {
+            let _guard = guard;
             match api::create_highlight(request).await {
                 Ok(highlight) => {
                     let note_request = CreateHighlightNoteRequest {
@@ -899,74 +955,16 @@ fn confirm_highlight_note(
 }
 
 #[cfg(target_arch = "wasm32")]
-fn handle_note_dialog_keydown(
-    event: ev::KeyboardEvent,
-    note_ref: NodeRef<html::Textarea>,
-    cancel_ref: NodeRef<html::Button>,
-    save_ref: NodeRef<html::Button>,
-    submit: impl Fn() + Copy + 'static,
-    on_cancel: UnsyncCallback<()>,
-) {
-    match event.key().as_str() {
-        "Escape" => {
-            event.prevent_default();
-            event.stop_propagation();
-            on_cancel.run(());
-        }
-        "Enter" if event.meta_key() || event.ctrl_key() => {
-            event.prevent_default();
-            event.stop_propagation();
-            submit();
-        }
-        "Tab" => trap_note_dialog_focus(&event, note_ref, cancel_ref, save_ref),
-        _ => {}
+fn handle_note_dialog_keydown(event: ev::KeyboardEvent, submit: impl Fn() + Copy + 'static) {
+    if event.key() == "Enter" && (event.meta_key() || event.ctrl_key()) {
+        event.prevent_default();
+        event.stop_propagation();
+        submit();
     }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn handle_note_dialog_keydown(
-    _event: ev::KeyboardEvent,
-    _note_ref: NodeRef<html::Textarea>,
-    _cancel_ref: NodeRef<html::Button>,
-    _save_ref: NodeRef<html::Button>,
-    _submit: impl Fn() + Copy + 'static,
-    _on_cancel: UnsyncCallback<()>,
-) {
-}
-
-#[cfg(target_arch = "wasm32")]
-fn trap_note_dialog_focus(
-    event: &web_sys::KeyboardEvent,
-    note_ref: NodeRef<html::Textarea>,
-    cancel_ref: NodeRef<html::Button>,
-    save_ref: NodeRef<html::Button>,
-) {
-    use wasm_bindgen::JsCast;
-
-    let Some(document) = web_sys::window().and_then(|window| window.document()) else {
-        return;
-    };
-    let Some(active) = document.active_element() else {
-        return;
-    };
-
-    let Some(note) = note_ref.get_untracked() else {
-        return;
-    };
-    let Some(save) = save_ref.get_untracked() else {
-        return;
-    };
-
-    if event.shift_key() && active.is_same_node(Some(note.unchecked_ref())) {
-        event.prevent_default();
-        if let Some(cancel) = cancel_ref.get_untracked() {
-            let _ = cancel.focus();
-        }
-    } else if !event.shift_key() && active.is_same_node(Some(save.unchecked_ref())) {
-        event.prevent_default();
-        let _ = note.focus();
-    }
-}
+fn handle_note_dialog_keydown(_event: ev::KeyboardEvent, _submit: impl Fn() + Copy + 'static) {}
 
 #[derive(Clone, Copy)]
 enum Direction {
@@ -1292,6 +1290,37 @@ mod tests {
         assert!(html.contains("<p>First paragraph.</p>"));
         assert!(html.contains("<pre><code>let x = 1;</code></pre>"));
         assert!(html.contains("Example"));
+        assert!(html.contains("30 Apr 2026"));
+        assert!(!html.contains("2026-04-30T00:00:00Z"));
+    }
+
+    #[test]
+    fn uncached_content_identifies_a_summary_and_an_unavailable_article() {
+        for (text, message) in [
+            ("<p>Saved introduction.</p>", "saved feed summary"),
+            ("", "No article text is cached"),
+        ] {
+            let html = Owner::new().with(|| {
+                let status = crate::status::provide_status_controller();
+                let mut item = sample_item();
+                item.readable_blob_id = None;
+                item.content_html = text.into();
+                view! { <ArticleContent item=item highlights=Vec::new() body_ref=NodeRef::new() status=status/> }.to_html()
+            });
+            assert!(html.contains(message));
+            assert!(html.contains("end of saved summary"));
+            assert!(!html.contains("end of article"));
+        }
+    }
+
+    #[test]
+    fn publication_dates_use_calendar_dates_and_keep_unrecognized_values() {
+        assert_eq!(
+            publication_date_label("2024-02-29T23:30:00-07:00"),
+            "29 Feb 2024"
+        );
+        assert_eq!(publication_date_label("2026-12-01T00:00:00Z"), "1 Dec 2026");
+        assert_eq!(publication_date_label("unknown"), "unknown");
     }
 
     #[test]

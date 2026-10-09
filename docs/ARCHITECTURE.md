@@ -294,6 +294,21 @@ Progress starts an untouched item as Reading, preserves every existing explicit
 state, and keeps completed items at progress 1. Mark read/unread retains the
 saved position. No schema changes are needed.
 
+Normal window close and application quit wait for queued local writes. A native
+close request asks the mounted frontend to flush its progress queue; a small
+shared tracker waits for in-flight item, highlight, note, and subscription saves.
+The frontend then acknowledges the close. If progress cannot be saved, the
+window stays open with a quiet retry message. Startup before the frontend is
+ready and forced process termination do not use this handshake.
+
+External article links go through a native command using Tauri's official
+opener plugin. The command accepts web URLs and opens the system browser; it
+never navigates the reading webview or grants arbitrary filesystem opening.
+
+Feed parsing unwraps the feed format once and preserves HTML entities in article
+and summary bodies. The HTML sanitizer interprets those entities, so escaped
+code remains text while executable tags are still removed.
+
 The frontend never does business logic. It composes commands and renders results. This is enforced by code review, not by the type system, and is the most important UI architectural rule we have.
 
 ## Mobile

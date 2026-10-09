@@ -105,8 +105,47 @@ Keep the existing layers, typed errors, pure parsing/extraction boundaries, loca
 - After implementing the accepted reading loop, `just check` passed with 156 tests, native and CSR/WASM lint, and formatting. Regression coverage includes final-item completion, browse-only navigation, filtered-list restoration, failed and rapid optimistic actions, stale responses, late highlight results, progress persistence, reactive row metadata, and native button activation. A complete Trunk CSR build also passed. Metadata text contrast was checked numerically on base, elevated, and selected surfaces in all four themes.
 - The WASM target is now installed. A real Trunk CSR build also passed, including wasm-bindgen generation and copied frontend assets. The default frontend workspace feature is SSR; native checks alone still do not establish that the real webview compiles.
 - The interactive proposal's local navigation, plain next, explicit completion, filters, stars, highlights and notes, final-item return, saved-state restoration, and dialog controls were exercised with a DOM harness. This verifies those interactions, not rendered layout or the actual Tauri client.
-- Hands-on application/browser verification was unavailable. This review does not claim measured latency, visual QA of the running application, or an exhaustive security audit.
+- Hands-on application verification was unavailable during the initial review. The subsequent native pass below supplies rendered and interaction checks; neither pass claims a measured latency study or an exhaustive security audit.
 
-Manual desktop inspection remains outstanding: verify Cmd+B and the visible sidebar control mid-article, return scroll/selection, narrow-window wrapping, real article typography, keyboard focus, and offline failure recovery. Automated checks establish state handling and compilation, not rendered layout or measured responsiveness. The exploratory prototype introduces no backend changes; the implementation updates native item commands without changing the schema.
+The exploratory prototype introduces no backend changes; the reading-loop implementation updates native item commands without changing the schema.
+
+## Native desktop pass
+
+The follow-up pass used the actual macOS Tauri WKWebView with an isolated library
+of 80 articles from Julia Evans, Simon Willison, and John D. Cook. It covered
+long titles, prose, code, image-based equations, cached images, and all four
+themes, at normal and 860 × 600 desktop window sizes. The maintainer's library
+was not changed. The temporary inspection driver was removed before the final
+application build; the downloaded corpus and screenshots stayed outside the
+repository.
+
+| Finding | Result |
+| --- | --- |
+| Clicking an article link navigated the app webview away from Carrel. | Article links and Open original use the system browser through the official Tauri opener. Native checks preserved the reader's URL, DOM, and scroll. Cached fragment targets stay in the reader. |
+| Shutdown did not wait for queued local saves. | Normal close flushes the current scroll snapshot and waits for local writes. Reopening immediately after close restored 1450 px. A controlled write failure kept the window open; a second close succeeded, and reopening restored 1990 px. The close/quit state machine also has unit coverage. |
+| A list refresh shifted selection, and moving keyed rows could lose focus. | Selection and row identity follow article IDs. A controlled 70-to-80-row refresh using the real corpus retained the Julia article, its keyboard focus, and the exact 9120 px list offset. |
+| Feed titles stayed at their initial hostname after fetching. | Keyed sidebar rows read current feed metadata. The local one-article feed changed from its hostname to Julia Evans in place. |
+| Feed dialogs did not close on Escape or make the background inert. | Native modal dialogs provide inert background, Escape, and focus restoration. Add Feed and note input focus were exercised in the webview. The note dialog keeps Cmd/Ctrl+Enter for saving. |
+| Highlighting required learning a shortcut. | Deliberate selection exposes Highlight and Add note controls. Mouse-created highlights and a note survived native close/reopen; `h` remains available. |
+| Leading whitespace could invalidate a selection; reattachment could split paragraphs. | Selector capture accounts for leading separators, and highlight spans wrap text within existing elements. Regression cases include Unicode and selections crossing element boundaries. Native rendering retained paragraph structure. |
+| The header exposed raw timestamps and the reading measure used the chrome font. | The header uses a short date; item info retains the precise timestamp. The measure now uses Source Serif at the reading size. Narrow-window checks showed no reader overflow. |
+| Transparent equation images disappeared in dark themes. | Source images retain their colors on a paper backing. Cached equation images loaded and remained legible in dark and black themes. |
+| Escaped HTML code examples vanished from feed articles. | Feed parsing preserves HTML entities for the sanitizer. RSS, Atom, and JSON regression cases retain literal script examples while removing executable scripts. Re-ingesting a local copy of the real Julia entry produced ten escaped script examples and zero empty code blocks, verified in the native reader. |
+| A summary could look like the complete cached article. | Missing-cache copy and the summary footer state what is available. A controlled missing-cache response was checked visually. |
+
+An unreachable local feed was saved successfully, the Add dialog closed, and the
+fetch failure appeared in the status strip while cached articles remained
+available. This exercises fetch failure recovery, not a system-wide offline
+network simulation. Keyboard shortcuts, dialog focus, and programmatic focus
+attempts against an inert background were checked; a full assistive-technology
+audit remains separate. Native inspection covered macOS, not Windows or Linux.
+
+Existing library limits, search, OPML, highlight editing, and private sharing
+remain later milestones. This pass makes the existing reading loop more
+trustworthy without expanding those features.
+
+Final verification passed: `just check` (formatting, native lint, all 171 tests,
+and separate CSR/WASM lint), a full Trunk CSR build, and a native build without
+the inspection driver. No schema migration is required.
 
 The brief maintenance and successor audit is in [DEPENDENCY_REVIEW.md](DEPENDENCY_REVIEW.md). The two interactive layout proposals are in [carrel-reading-loop.html](../work/ux-review/carrel-reading-loop.html); these are inspectable design sketches, independent of the production frontend.

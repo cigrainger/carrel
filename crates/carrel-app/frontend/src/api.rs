@@ -679,6 +679,48 @@ pub async fn feed_status() -> Result<FeedStatusSummary, ApiError> {
     Ok(FeedStatusSummary::default())
 }
 
+/// Inform the native close coordinator that the frontend listener is mounted.
+#[cfg(target_arch = "wasm32")]
+pub(crate) async fn frontend_ready() -> Result<(), ApiError> {
+    tauri_invoke("frontend_ready", wasm_bindgen::JsValue::UNDEFINED)
+        .await
+        .map(|_| ())
+        .map_err(api_error_from_js)
+}
+
+/// Acknowledge that all local saves have completed before normal exit.
+#[cfg(target_arch = "wasm32")]
+pub(crate) async fn finish_app_close() -> Result<(), ApiError> {
+    tauri_invoke("finish_app_close", wasm_bindgen::JsValue::UNDEFINED)
+        .await
+        .map(|_| ())
+        .map_err(api_error_from_js)
+}
+
+/// Leave the window open so a failed close-time save can be retried.
+#[cfg(target_arch = "wasm32")]
+pub(crate) async fn cancel_app_close() -> Result<(), ApiError> {
+    tauri_invoke("cancel_app_close", wasm_bindgen::JsValue::UNDEFINED)
+        .await
+        .map(|_| ())
+        .map_err(api_error_from_js)
+}
+
+/// Open an article link in the system browser without replacing the reader.
+#[cfg(target_arch = "wasm32")]
+pub(crate) async fn open_external_url(url: String) -> Result<(), ApiError> {
+    #[derive(Serialize)]
+    struct Args {
+        url: String,
+    }
+    let args = serde_wasm_bindgen::to_value(&Args { url })
+        .map_err(|error| ApiError::new(error.to_string()))?;
+    tauri_invoke("open_external_url", args)
+        .await
+        .map(|_| ())
+        .map_err(api_error_from_js)
+}
+
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen::prelude::wasm_bindgen]
 extern "C" {

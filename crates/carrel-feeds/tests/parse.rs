@@ -1,6 +1,39 @@
 use carrel_feeds::parse_feed;
 
 #[test]
+fn escaped_code_remains_text_through_feed_parsing_and_sanitization() {
+    let html = "<p>Élodie &amp; friends</p><pre><code>&lt;script type=\"module\"&gt;alert('example');&lt;/script&gt;\nif (a &lt; b &amp;&amp; b &gt; 0) {}</code></pre><script>unsafe()</script>";
+    let atom = format!(
+        r#"<feed xmlns="http://www.w3.org/2005/Atom"><title>Example</title><id>feed</id><updated>2026-01-01T00:00:00Z</updated><entry><id>one</id><title>Code</title><updated>2026-01-01T00:00:00Z</updated><content type="html">{}</content></entry></feed>"#,
+        html_escape::encode_text(html)
+    );
+    let rss = format!(
+        r#"<rss version="2.0"><channel><title>Example</title><link>https://example.com</link><description>Feed</description><item><guid>one</guid><title>Code</title><description><![CDATA[{html}]]></description></item></channel></rss>"#
+    );
+    let json = serde_json::json!({"version":"https://jsonfeed.org/version/1.1", "title":"Example", "items":[{"id":"one", "content_html":html}]}).to_string();
+    for feed in [atom, rss, json] {
+        let parsed = parse_feed(feed.as_bytes(), "https://example.com/feed").unwrap();
+        let entry = &parsed.entries[0];
+        let body = entry
+            .content_html
+            .as_deref()
+            .or(entry.summary_html.as_deref())
+            .unwrap();
+        let article =
+            carrel_feeds::extract_embedded_html(body, "https://example.com/article").unwrap();
+        let text = carrel_feeds::html_to_text(&article.content_html);
+        assert!(
+            text.contains("<script type=\"module\">alert('example');</script>"),
+            "{text}"
+        );
+        assert!(text.contains("if (a < b && b > 0) {}"), "{text}");
+        assert!(text.contains("Élodie & friends"));
+        assert!(!article.content_html.contains("<script>"));
+        assert!(!text.contains("unsafe()"));
+    }
+}
+
+#[test]
 fn optional_and_blank_entry_author_names_fall_back_to_feed_authors() {
     for authors in [
         r#"[{"url":"https://example.com/author"}]"#,

@@ -32,6 +32,10 @@ pub enum AppError {
     #[error(transparent)]
     Tauri(#[from] tauri::Error),
 
+    /// The operating system could not open an article link.
+    #[error(transparent)]
+    OpenLink(#[from] tauri_plugin_opener::Error),
+
     /// A Tauri command received or produced malformed data.
     #[error("invalid app data for {context}: {value}")]
     InvalidData {
@@ -60,6 +64,7 @@ impl Serialize for AppError {
             Self::Keystore(_) => "keystore",
             Self::Feed(_) => "feed",
             Self::Tauri(_) => "tauri",
+            Self::OpenLink(_) => "open_link",
             Self::InvalidData { .. } => "invalid_data",
         };
 

@@ -47,8 +47,8 @@ pub fn Highlights() -> impl IntoView {
 
     use_keymap_layer(default::list_layer());
 
-    Effect::new(move |_| clamp_cursor(rows, cursor));
     let restore = RwSignal::new(snapshot);
+    let previous_ids = RwSignal::new(Vec::<String>::new());
     Effect::new(move |_| {
         if !loaded.get() {
             return;
@@ -69,8 +69,22 @@ pub fn Highlights() -> impl IntoView {
                     .collect::<Vec<_>>(),
             ));
             restore.set(None);
-            restore_list_scroll(RETURN_PATH.into(), snapshot.scroll_y);
+            restore_list_scroll(RETURN_PATH.into(), snapshot.scroll_y, true);
+        } else {
+            let original = previous_ids.get_untracked();
+            cursor.update(|index| {
+                *index = restored_index(
+                    &current
+                        .iter()
+                        .map(|row| row.highlight.id.clone())
+                        .collect::<Vec<_>>(),
+                    original.get(*index).map(String::as_str),
+                    *index,
+                    &original,
+                );
+            });
         }
+        previous_ids.set(current.iter().map(|row| row.highlight.id.clone()).collect());
     });
 
     use_action_handler("next-item", move || {
@@ -144,7 +158,12 @@ pub fn Highlights() -> impl IntoView {
                 }
                 match result {
                     Ok(highlights) => {
+                        let focus = crate::navigation::list_has_focus();
+                        let scroll_y = list_scroll_y();
                         rows.set(highlights);
+                        if focus {
+                            restore_list_scroll(RETURN_PATH.into(), scroll_y, true);
+                        }
                         error.set(None);
                     }
                     Err(err) => {
@@ -326,17 +345,6 @@ fn created_date_label(created_at: &str) -> String {
         .filter(|date| !date.is_empty())
         .unwrap_or(created_at)
         .to_string()
-}
-
-fn clamp_cursor(rows: RwSignal<Vec<HighlightListRow>>, cursor: RwSignal<usize>) {
-    let len = rows.with_untracked(Vec::len);
-    cursor.update(|index| {
-        if len == 0 {
-            *index = 0;
-        } else if *index >= len {
-            *index = len - 1;
-        }
-    });
 }
 
 #[derive(Clone, Copy)]

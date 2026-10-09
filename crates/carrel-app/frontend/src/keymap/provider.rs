@@ -258,6 +258,14 @@ fn push_warning(context: KeymapContext, warning: String) {
 
 #[cfg(target_arch = "wasm32")]
 fn handle_keydown(context: KeymapContext, event: web_sys::KeyboardEvent) {
+    if event.default_prevented()
+        || web_sys::window()
+            .and_then(|window| window.document())
+            .and_then(|document| document.query_selector("dialog[open]").ok().flatten())
+            .is_some()
+    {
+        return;
+    }
     let native_control = web_sys::window()
         .and_then(|window| window.document())
         .and_then(|document| document.active_element())

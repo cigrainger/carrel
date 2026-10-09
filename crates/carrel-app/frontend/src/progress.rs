@@ -3,6 +3,7 @@
 use crate::api::{self, ReadProgressUpdate};
 use crate::feeds::{FeedController, use_feed_controller};
 use crate::status::StatusController;
+use crate::writes::{PendingWrites, use_pending_writes};
 use leptos::prelude::*;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
@@ -49,6 +50,10 @@ impl ProgressQueue {
             self.latest.remove(&update.item_id);
         }
     }
+
+    fn retry_latest(&mut self) {
+        self.pending.extend(self.latest.clone());
+    }
 }
 
 #[derive(Clone)]
@@ -56,6 +61,7 @@ pub(crate) struct ProgressWriter {
     queue: Arc<Mutex<ProgressQueue>>,
     status: StatusController,
     feeds: FeedController,
+    writes: PendingWrites,
 }
 
 impl ProgressWriter {
@@ -64,6 +70,7 @@ impl ProgressWriter {
             queue: Arc::default(),
             status,
             feeds,
+            writes: use_pending_writes(),
         }
     }
 
@@ -101,7 +108,9 @@ impl ProgressWriter {
             return;
         }
         let writer = self.clone();
+        let guard = self.writes.begin();
         spawn_progress_task(async move {
+            let _guard = guard;
             loop {
                 let update = writer.queue.lock().expect("progress queue poisoned").next();
                 let Some(update) = update else {
@@ -119,6 +128,25 @@ impl ProgressWriter {
                 }
             }
         });
+    }
+
+    /// Retry earlier failed snapshots as well as the latest coalesced positions.
+    #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+    pub(crate) fn flush_for_close(&self) {
+        let mut queue = self.queue.lock().expect("progress queue poisoned");
+        queue.retry_latest();
+        drop(queue);
+        self.flush();
+    }
+
+    #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+    pub(crate) fn has_unsaved_positions(&self) -> bool {
+        !self
+            .queue
+            .lock()
+            .expect("progress queue poisoned")
+            .latest
+            .is_empty()
     }
 }
 
@@ -177,6 +205,27 @@ mod tests {
         assert!(queue.next().is_none());
         queue.record(update("b", 50.0));
         assert!(queue.start());
+    }
+
+    #[test]
+    fn close_retries_failed_positions_and_waits_for_the_latest_running_write() {
+        let mut queue = ProgressQueue::default();
+        queue.record(update("failed", 10.0));
+        assert!(queue.start());
+        let failed = queue.next().unwrap();
+        assert!(queue.next().is_none());
+        queue.retry_latest();
+        assert!(queue.start());
+        assert_eq!(queue.next(), Some(failed.clone()));
+        queue.record(update("failed", 30.0));
+        queue.retry_latest();
+        assert!(!queue.start());
+        queue.confirmed(&failed);
+        assert_eq!(queue.latest["failed"].scroll_y, 30.0);
+        let latest = queue.next().unwrap();
+        queue.confirmed(&latest);
+        assert!(queue.next().is_none());
+        assert!(queue.latest.is_empty());
     }
 
     #[test]

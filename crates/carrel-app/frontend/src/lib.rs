@@ -5,16 +5,20 @@
 
 pub mod api;
 mod components;
+mod desktop;
 mod feeds;
 mod highlights;
 mod item_actions;
 mod keymap;
+mod links;
 mod navigation;
 mod progress;
 mod requests;
 mod routes;
+mod selection;
 mod status;
 mod theme;
+mod writes;
 
 use leptos::prelude::*;
 use leptos_router::components::{Route, Router, Routes};
@@ -26,6 +30,7 @@ use crate::keymap::{GlobalKeymapActions, KeymapProvider};
 /// Root Leptos application.
 #[component]
 pub fn App() -> impl IntoView {
+    provide_context(writes::PendingWrites::default());
     let theme = theme::provide_theme_controller();
     navigation::provide_list_navigation_context();
     let reading_sidebar = navigation::use_reading_sidebar();
@@ -33,6 +38,7 @@ pub fn App() -> impl IntoView {
     status::provide_status_controller();
     item_actions::provide_item_actions();
     progress::provide_progress_writer();
+    desktop::install_close_handler();
 
     view! {
         <Router>

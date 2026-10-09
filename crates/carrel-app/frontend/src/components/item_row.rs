@@ -17,13 +17,15 @@ pub fn ItemList(
         <ul class="item-list" aria-label=aria_label>
             <For
                 each=move || { items.get().into_iter().enumerate().collect::<Vec<_>>() }
-                key=|(index, item)| (*index, item.id.clone())
+                key=|(_, item)| item.id.clone()
                 let:row
             >
                 {
-                    let (index, item) = row;
-                    let selected = Signal::derive(move || selected_index.get() == index);
-                    let item = row_data(items, index, item);
+                    let (initial_index, item) = row;
+                    let id = item.id.clone();
+                    let index = Memo::new(move |_| items.with(|items| items.iter().position(|item| item.id == id).unwrap_or(initial_index)));
+                    let selected = Signal::derive(move || selected_index.get() == index.get());
+                    let item = row_data(items, item);
                     view! { <ItemRow index=index item=item selected=selected on_open=on_open on_read=on_read on_star=on_star on_select=on_select/> }
                 }
             </For>
@@ -31,16 +33,12 @@ pub fn ItemList(
     }
 }
 
-fn row_data(
-    items: Signal<Vec<ItemSummary>>,
-    index: usize,
-    fallback: ItemSummary,
-) -> Memo<ItemSummary> {
+fn row_data(items: Signal<Vec<ItemSummary>>, fallback: ItemSummary) -> Memo<ItemSummary> {
     Memo::new(move |_| {
         items.with(|items| {
             items
-                .get(index)
-                .filter(|item| item.id == fallback.id)
+                .iter()
+                .find(|item| item.id == fallback.id)
                 .cloned()
                 .unwrap_or_else(|| fallback.clone())
         })
@@ -49,7 +47,7 @@ fn row_data(
 
 #[component]
 pub fn ItemRow(
-    index: usize,
+    #[prop(into)] index: Signal<usize>,
     #[prop(into)] item: Signal<ItemSummary>,
     #[prop(into)] selected: Signal<bool>,
     on_open: UnsyncCallback<usize>,
@@ -58,19 +56,19 @@ pub fn ItemRow(
     on_select: UnsyncCallback<usize>,
 ) -> impl IntoView {
     view! {
-        <li class="item-row" class:is-selected=move || selected.get() data-item-id=move || item.get().id on:focusin=move |_| on_select.run(index)>
+        <li class="item-row" class:is-selected=move || selected.get() data-item-id=move || item.get().id on:focusin=move |_| on_select.run(index.get_untracked())>
             <span class="read-indicator" aria-hidden="true">{move || if item.get().read_state == "unread" { "●" } else { "○" }}</span>
             <div class="item-row-body">
-                <h2><button class="item-open" type="button" on:click=move |_| on_open.run(index)>{move || item.get().title}</button></h2>
+                <h2><button class="item-open" type="button" on:click=move |_| on_open.run(index.get_untracked())>{move || item.get().title}</button></h2>
                 <p class="item-meta">
                     <span>{move || item.get().source_name}</span><span>{move || item.get().length_label}</span><span>{move || item.get().time_label}</span>
                 </p>
                 <p class="item-excerpt">{move || item.get().summary.unwrap_or_default()}</p>
                 <div class="item-row-actions">
-                    <button class="item-state-action" type="button" on:click=move |_| on_read.run(index)>
+                    <button class="item-state-action" type="button" on:click=move |_| on_read.run(index.get_untracked())>
                         {move || if item.get().read_state == "read" { "Mark unread" } else { "Mark read" }}
                     </button>
-                    <button class="item-star-action" type="button" aria-pressed=move || item.get().starred.to_string() on:click=move |_| on_star.run(index)>
+                    <button class="item-star-action" type="button" aria-pressed=move || item.get().starred.to_string() on:click=move |_| on_star.run(index.get_untracked())>
                         {move || if item.get().starred { "Unstar" } else { "Star" }}
                     </button>
                 </div>
@@ -99,7 +97,7 @@ mod tests {
                 discovered_at_micros: 1,
             };
             let items = RwSignal::new(vec![initial.clone()]);
-            let row = row_data(items.into(), 0, initial);
+            let row = row_data(items.into(), initial.clone());
             assert_eq!(row.get_untracked().title, "Before");
             items.update(|items| {
                 items[0].title = "After".into();
@@ -113,6 +111,12 @@ mod tests {
             assert!(updated.starred);
             assert_eq!(updated.read_state, "read");
             assert_eq!(updated.id, "one");
+            items.update(|items| {
+                let mut inserted = initial.clone();
+                inserted.id = "new".into();
+                items.insert(0, inserted);
+            });
+            assert_eq!(row.get_untracked(), updated);
         });
     }
 
