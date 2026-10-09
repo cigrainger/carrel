@@ -10,6 +10,7 @@ pub mod blobs;
 mod error;
 pub mod feeds;
 pub mod highlights;
+pub mod identity;
 pub mod ids;
 pub mod items;
 pub mod keystore;
@@ -41,6 +42,8 @@ pub struct Store {
     // Serializes local annotation read/modify/write operations across clones.
     // The facts remain in Cozo; this lock contains no durable state.
     annotation_lock: Arc<Mutex<()>>,
+    // Orders authorization changes against local annotation writes.
+    identity_lock: Arc<Mutex<()>>,
 }
 
 impl Store {
@@ -55,6 +58,7 @@ impl Store {
         Ok(Self {
             db,
             annotation_lock: Arc::new(Mutex::new(())),
+            identity_lock: Arc::new(Mutex::new(())),
         })
     }
 
@@ -64,6 +68,7 @@ impl Store {
         Ok(Self {
             db,
             annotation_lock: Arc::new(Mutex::new(())),
+            identity_lock: Arc::new(Mutex::new(())),
         })
     }
 

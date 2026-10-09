@@ -196,7 +196,20 @@ The publisher writes a complete feed file each time, not deltas. Feed files are 
 
 Identity in Carrel is a single ed25519 keypair. The public key is the user's stable handle on the network. The private key never leaves the user's devices.
 
-Each device the user owns generates a sub-key derived from a master keypair (or shares the same keypair, depending on backup choices the user makes). All sub-keys count as "you" for the purposes of self-sync. The user can revoke a device by removing its sub-key from their authorized list.
+Each installation keeps an independently generated device key. The master
+certifies that key; device keys are neither derived from the master nor shared
+between installations. Enabling sync preserves an existing device key, so
+previously signed annotations keep their author. A local identity binding fixes
+the chosen master and operational device. A master's signed revocation proof
+permanently denies that device key; deleting a row or changing an unsigned
+timestamp is not a revocation.
+
+Key files are written through a private temporary file, synced, and atomically
+installed. Creation refuses to overwrite an existing key, including after an
+interrupted setup or concurrent first-use requests. Unix key directories and
+files use owner-only permissions. The format stays version 1, and startup can
+read the master public key without decrypting its seed. Unlocking the master is
+needed to issue authorizations or revocations, not for ordinary reading.
 
 The master key is persisted as a passphrase-encrypted key file: Argon2id derives a local encryption key and XChaCha20-Poly1305 encrypts the Ed25519 seed. Key-file format v1 fixes Argon2id version 0x13 with 19,456 KiB of memory, two iterations, one lane, and a 32-byte output; these were the argon2 0.5.3 defaults and must remain stable across dependency updates. Compatibility fixtures check that older encrypted keys and canonical Ed25519 signatures still work. Device keys are persisted in plain local JSON in v1 because they are used continuously and the device filesystem is the trust boundary. The master key is the recovery secret; the device key is an operational sub-key.
 

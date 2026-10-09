@@ -56,14 +56,15 @@ pub fn run(context: &Context, command: &InitCommand) -> Result<()> {
 
     eprintln!("Saving keys...");
     let keystore = Keystore::open(&context.paths.keys);
-    keystore.save_master(&master, &passphrase)?;
-    keystore.save_device(&device)?;
+    keystore.create_master(&master, &passphrase)?;
+    keystore.create_device(&device)?;
 
     eprintln!("Creating store...");
     let store = Store::open(&context.paths.store)?;
     eprintln!("Applying schema migrations...");
     store.migrate()?;
     write_identity_rows(&store, &master, &device, &cert)?;
+    store.bind_self_identity(&cert, &device)?;
     write_default_config(context)?;
 
     println!("Initialized at {}", context.data_dir.display());

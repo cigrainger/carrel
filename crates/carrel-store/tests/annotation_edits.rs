@@ -67,6 +67,64 @@ fn edit(id: &str, expected: i64, body: &str) -> EditNoteInput {
 }
 
 #[test]
+fn self_device_removal_retains_author_and_never_restores_a_revoked_devices_work() {
+    use carrel_core::identity::{DeviceCert, RevocationCert};
+    let store = store();
+    let master = Keypair::from_seed(&[41; 32]);
+    let creator = Keypair::from_seed(&[42; 32]);
+    let local = Keypair::from_seed(&[43; 32]);
+    let original = highlight(&store, &creator);
+    let attached = note(&store, &creator, Some("highlight"), Some(&original.id));
+    let local_cert = DeviceCert::new_at_micros(&master, local.public(), 1, None);
+    store.bind_self_identity(&local_cert, &local).unwrap();
+    assert!(matches!(
+        store.remove_highlight(&original.id, &local),
+        Err(StoreError::AnnotationUnauthorized { .. })
+    ));
+    let creator_cert = DeviceCert::new_at_micros(&master, creator.public(), 1, None);
+    store.accept_self_device_certificate(&creator_cert).unwrap();
+    store
+        .accept_self_revocation(&RevocationCert::new_at_micros(&master, creator.public(), 2))
+        .unwrap();
+    let removal = store.remove_highlight(&original.id, &local).unwrap();
+    removal.verify_signature().unwrap();
+    assert_eq!(removal.removed_by, *local.public());
+    assert_eq!(
+        store.remove_highlight(&original.id, &local).unwrap(),
+        removal
+    );
+    assert_eq!(store.get_highlight(&original.id).unwrap(), None);
+    assert_eq!(store.get_note(&attached.id).unwrap(), None);
+    store.accept_self_device_certificate(&creator_cert).unwrap();
+    assert!(!store.self_device_authorized(creator.public()).unwrap());
+    assert_eq!(store.get_highlight(&original.id).unwrap(), None);
+    assert!(matches!(
+        store.remove_highlight(&original.id, &creator),
+        Err(StoreError::AnnotationUnauthorized { .. })
+    ));
+    store
+        .accept_self_revocation(&RevocationCert::new_at_micros(&master, local.public(), 3))
+        .unwrap();
+    assert!(matches!(
+        store.remove_highlight(&original.id, &local),
+        Err(StoreError::AnnotationUnauthorized { .. })
+    ));
+    assert!(matches!(
+        store.put_highlight(
+            PutHighlightInput {
+                item_id: "item".into(),
+                location: original.location,
+                location_label: None,
+                color: None,
+                created_at_micros: Some(TIME + 1),
+            },
+            &local
+        ),
+        Err(StoreError::IdentityDeviceUnauthorized)
+    ));
+}
+
+#[test]
 fn all_note_targets_keep_identity_metadata_and_signed_history_on_edit() {
     for kind in [None, Some("item"), Some("highlight")] {
         let store = store();

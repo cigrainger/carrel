@@ -9,6 +9,24 @@ pub type Result<T> = std::result::Result<T, StoreError>;
 /// Errors raised by the Carrel store boundary.
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
+    /// A signed identity certificate failed verification or bounded decoding.
+    #[error("invalid identity certificate: {0}")]
+    IdentityCertificate(#[from] carrel_core::identity::CertError),
+    /// The operation requires an explicitly chosen local self identity.
+    #[error("self identity is not bound to this installation")]
+    IdentityUnbound,
+    /// An operation attempted to change the installation's chosen keys.
+    #[error("self identity is already bound to different keys")]
+    IdentityBindingConflict,
+    /// A certificate was issued by a master other than the locally chosen one.
+    #[error("certificate does not belong to the bound self identity")]
+    IdentityMasterMismatch,
+    /// A different certificate already exists for the same operational key.
+    #[error("device certificate conflicts with the existing authorization")]
+    IdentityCertificateConflict,
+    /// The installation's device key has been revoked or blocked.
+    #[error("device is not authorized under the bound self identity")]
+    IdentityDeviceUnauthorized,
     /// An annotation or its target was removed or is missing.
     #[error("annotation is unavailable: {id}")]
     AnnotationUnavailable {

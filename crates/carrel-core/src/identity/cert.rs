@@ -10,6 +10,11 @@ use super::signing::{
     CanonicalVerifyError, SerializeError, canonical_bytes, sign_canonical, verify_canonical,
 };
 
+/// Maximum encoded size accepted for an identity certificate.
+pub const MAX_CERTIFICATE_BYTES: usize = 4096;
+/// Maximum UTF-8 byte length of a certified device label.
+pub const MAX_DEVICE_NAME_BYTES: usize = 256;
+
 /// A certificate proving that a master identity authorized a device key.
 ///
 /// The master signature covers `master_pubkey`, `device_pubkey`,
@@ -62,6 +67,13 @@ impl DeviceCert {
 
     /// Verify the certificate's master signature and key shapes.
     pub fn verify(&self) -> Result<(), CertError> {
+        if self
+            .device_name
+            .as_ref()
+            .is_some_and(|name| name.len() > MAX_DEVICE_NAME_BYTES)
+        {
+            return Err(CertError::DeviceNameTooLong);
+        }
         self.master_pubkey
             .validate()
             .map_err(CertError::InvalidMasterPublicKey)?;
@@ -79,8 +91,7 @@ impl DeviceCert {
 
     /// Deserialize and verify a certificate from canonical CBOR bytes.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, CertError> {
-        let cert: Self = ciborium::de::from_reader(Cursor::new(bytes))
-            .map_err(|source| CertError::Deserialize(source.to_string()))?;
+        let cert: Self = decode_certificate(bytes)?;
         cert.verify()?;
         Ok(cert)
     }
@@ -155,8 +166,7 @@ impl RevocationCert {
 
     /// Deserialize and verify a revocation certificate from canonical CBOR bytes.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, CertError> {
-        let cert: Self = ciborium::de::from_reader(Cursor::new(bytes))
-            .map_err(|source| CertError::Deserialize(source.to_string()))?;
+        let cert: Self = decode_certificate(bytes)?;
         cert.verify()?;
         Ok(cert)
     }
@@ -220,6 +230,15 @@ struct RevocationCertPayload<'a> {
 /// Errors returned while verifying identity certificates.
 #[derive(Debug, thiserror::Error)]
 pub enum CertError {
+    /// The encoded certificate exceeds the protocol's input bound.
+    #[error("certificate exceeds {MAX_CERTIFICATE_BYTES} bytes")]
+    CertificateTooLarge,
+    /// Bytes remain after the certificate's CBOR value.
+    #[error("unexpected trailing bytes after certificate")]
+    TrailingData,
+    /// The certified device label exceeds the protocol's UTF-8 byte bound.
+    #[error("device name exceeds {MAX_DEVICE_NAME_BYTES} UTF-8 bytes")]
+    DeviceNameTooLong,
     /// The master public key bytes are not a usable Ed25519 key.
     #[error("invalid master public key")]
     InvalidMasterPublicKey(#[source] VerifyError),
@@ -252,6 +271,19 @@ pub enum CertError {
     Deserialize(String),
 }
 
+fn decode_certificate<T: for<'de> Deserialize<'de>>(bytes: &[u8]) -> Result<T, CertError> {
+    if bytes.len() > MAX_CERTIFICATE_BYTES {
+        return Err(CertError::CertificateTooLarge);
+    }
+    let mut cursor = Cursor::new(bytes);
+    let value = ciborium::de::from_reader(&mut cursor)
+        .map_err(|source| CertError::Deserialize(source.to_string()))?;
+    if cursor.position() != bytes.len() as u64 {
+        return Err(CertError::TrailingData);
+    }
+    Ok(value)
+}
+
 fn now_micros() -> i64 {
     let micros = OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000;
     i64::try_from(micros).expect("current timestamp fits in i64 microseconds")
@@ -261,7 +293,10 @@ fn now_micros() -> i64 {
 mod tests {
     use proptest::prelude::*;
 
-    use super::{DeviceAuthorization, DeviceCert, RevocationCert};
+    use super::{
+        CertError, DeviceAuthorization, DeviceCert, MAX_CERTIFICATE_BYTES, MAX_DEVICE_NAME_BYTES,
+        RevocationCert,
+    };
     use crate::identity::Keypair;
 
     #[test]
@@ -316,6 +351,76 @@ mod tests {
         };
 
         authorization.verify().unwrap_err();
+    }
+
+    #[test]
+    fn certificate_decoders_reject_trailing_truncated_and_oversized_messages() {
+        let master = Keypair::from_seed(&[10; 32]);
+        let device = Keypair::from_seed(&[11; 32]);
+        let cert = DeviceCert::new_at_micros(&master, device.public(), 1, None);
+        let revoke = RevocationCert::new_at_micros(&master, device.public(), 2);
+        let mut cert_bytes = cert.to_bytes().unwrap();
+        let mut revoke_bytes = revoke.to_bytes().unwrap();
+        cert_bytes.push(0);
+        revoke_bytes.push(0);
+        assert!(matches!(
+            DeviceCert::from_bytes(&cert_bytes),
+            Err(CertError::TrailingData)
+        ));
+        assert!(matches!(
+            RevocationCert::from_bytes(&revoke_bytes),
+            Err(CertError::TrailingData)
+        ));
+        for bytes in [&[][..], &[0xff][..], &cert_bytes[..cert_bytes.len() - 2]] {
+            assert!(DeviceCert::from_bytes(bytes).is_err());
+        }
+        assert!(RevocationCert::from_bytes(&revoke_bytes[..revoke_bytes.len() - 2]).is_err());
+        let too_large = vec![0; MAX_CERTIFICATE_BYTES + 1];
+        assert!(matches!(
+            DeviceCert::from_bytes(&too_large),
+            Err(CertError::CertificateTooLarge)
+        ));
+        assert!(matches!(
+            RevocationCert::from_bytes(&too_large),
+            Err(CertError::CertificateTooLarge)
+        ));
+    }
+
+    #[test]
+    fn certified_device_labels_have_a_utf8_byte_bound() {
+        let master = Keypair::from_seed(&[12; 32]);
+        let device = Keypair::from_seed(&[13; 32]);
+        let label = "é".repeat(MAX_DEVICE_NAME_BYTES / 2);
+        let cert = DeviceCert::new_at_micros(&master, device.public(), 1, Some(label.clone()));
+        assert_eq!(
+            DeviceCert::from_bytes(&cert.to_bytes().unwrap()).unwrap(),
+            cert
+        );
+        let oversized = DeviceCert::new_at_micros(&master, device.public(), 2, Some(label + "é"));
+        assert!(matches!(
+            oversized.verify(),
+            Err(CertError::DeviceNameTooLong)
+        ));
+        assert!(matches!(
+            DeviceCert::from_bytes(&oversized.to_bytes().unwrap()),
+            Err(CertError::DeviceNameTooLong)
+        ));
+    }
+
+    #[test]
+    fn revocation_verification_rejects_tampered_keys_and_time() {
+        let master = Keypair::from_seed(&[14; 32]);
+        let device = Keypair::from_seed(&[15; 32]);
+        let original = RevocationCert::new_at_micros(&master, device.public(), 1);
+        for field in 0..3 {
+            let mut cert = original.clone();
+            match field {
+                0 => cert.master_pubkey = *device.public(),
+                1 => cert.device_pubkey = *master.public(),
+                _ => cert.revoked_at_micros = 2,
+            }
+            assert!(cert.verify().is_err());
+        }
     }
 
     proptest! {

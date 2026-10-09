@@ -343,6 +343,13 @@ impl Store {
         signer: &Keypair,
     ) -> Result<HighlightRecord> {
         let _guard = self.annotation_lock.lock().expect("annotation write lock");
+        let _identity_guard = self.identity_lock.lock().expect("identity write lock");
+        if !self
+            .annotation_creator_permissions_unlocked(signer.public())?
+            .contains(signer.public())
+        {
+            return Err(StoreError::IdentityDeviceUnauthorized);
+        }
         input
             .location
             .validate()
@@ -521,6 +528,13 @@ impl Store {
     /// Create a signed note, preserving identity on identical creation retries.
     pub fn put_note(&self, input: PutNoteInput, signer: &Keypair) -> Result<NoteRecord> {
         let _guard = self.annotation_lock.lock().expect("annotation write lock");
+        let _identity_guard = self.identity_lock.lock().expect("identity write lock");
+        if !self
+            .annotation_creator_permissions_unlocked(signer.public())?
+            .contains(signer.public())
+        {
+            return Err(StoreError::IdentityDeviceUnauthorized);
+        }
         validate_note_body(&input.body)?;
         if input.target_kind.is_some() != input.target_id.is_some() {
             return Err(StoreError::InvalidInput {
@@ -638,6 +652,7 @@ impl Store {
     /// Append an edit without changing the note's identity or immutable metadata.
     pub fn edit_note(&self, input: EditNoteInput, signer: &Keypair) -> Result<NoteRecord> {
         let _guard = self.annotation_lock.lock().expect("annotation write lock");
+        let _identity_guard = self.identity_lock.lock().expect("identity write lock");
         validate_note_body(&input.body)?;
         let previous =
             self.get_note(&input.id)?
@@ -645,7 +660,10 @@ impl Store {
                     id: input.id.clone(),
                 })?;
         previous.verify_signature()?;
-        if previous.created_by != *signer.public() {
+        if !self
+            .annotation_creator_permissions_unlocked(signer.public())?
+            .contains(&previous.created_by)
+        {
             return Err(StoreError::AnnotationUnauthorized { id: input.id });
         }
         if previous.updated_at_micros != input.expected_updated_at_micros {
@@ -731,9 +749,11 @@ impl Store {
     /// Permanently hide an owned highlight and its notes, retaining signed history.
     pub fn remove_highlight(&self, id: &str, signer: &Keypair) -> Result<AnnotationRemovalRecord> {
         let _guard = self.annotation_lock.lock().expect("annotation write lock");
+        let _identity_guard = self.identity_lock.lock().expect("identity write lock");
+        let permissions = self.annotation_creator_permissions_unlocked(signer.public())?;
         if let Some(existing) = self.get_annotation_removal(id)? {
             existing.verify_signature()?;
-            if existing.removed_by != *signer.public() {
+            if !permissions.contains(&existing.removed_by) {
                 return Err(StoreError::AnnotationUnauthorized { id: id.into() });
             }
             return Ok(existing);
@@ -742,7 +762,7 @@ impl Store {
             .get_highlight(id)?
             .ok_or_else(|| StoreError::AnnotationUnavailable { id: id.into() })?;
         record.verify_signature()?;
-        if record.created_by != *signer.public() {
+        if !permissions.contains(&record.created_by) {
             return Err(StoreError::AnnotationUnauthorized { id: id.into() });
         }
         let mut removal = AnnotationRemovalRecord {

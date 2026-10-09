@@ -1,15 +1,15 @@
 //! On-disk persistence for Carrel identity keys.
 
 use std::fs;
-use std::io;
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
 use argon2::{Algorithm, Argon2, Params, Version};
-use carrel_core::identity::{Keypair, SECRET_KEY_LENGTH};
+use carrel_core::identity::{Keypair, PublicKey, SECRET_KEY_LENGTH};
 use chacha20poly1305::aead::{Aead, KeyInit};
 use chacha20poly1305::{XChaCha20Poly1305, XNonce};
 use serde::{Deserialize, Serialize};
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 
 const MASTER_KEY_FILE: &str = "master.enc";
 const DEVICE_KEY_FILE: &str = "device.key";
@@ -17,6 +17,7 @@ const FORMAT_VERSION: u32 = 1;
 const SALT_LENGTH: usize = 16;
 const XCHACHA_NONCE_LENGTH: usize = 24;
 const DERIVED_KEY_LENGTH: usize = 32;
+const MAX_KEY_FILE_BYTES: u64 = 64 * 1024;
 
 /// Store-layer result alias for key persistence.
 pub type Result<T> = std::result::Result<T, KeystoreError>;
@@ -36,12 +37,19 @@ impl Keystore {
     }
 
     /// Save the master keypair encrypted with `passphrase`.
+    ///
+    /// Replaces an existing file atomically. Initial setup must use
+    /// [`Self::create_master`] to avoid overwriting an existing identity.
     pub fn save_master(&self, keypair: &Keypair, passphrase: &str) -> Result<()> {
-        fs::create_dir_all(&self.path).map_err(|source| KeystoreError::CreateKeystoreDir {
-            path: self.path.clone(),
-            source,
-        })?;
+        self.write_master(keypair, passphrase, false)
+    }
 
+    /// Create an encrypted master file without replacing any existing file.
+    pub fn create_master(&self, keypair: &Keypair, passphrase: &str) -> Result<()> {
+        self.write_master(keypair, passphrase, true)
+    }
+
+    fn write_master(&self, keypair: &Keypair, passphrase: &str, create: bool) -> Result<()> {
         let mut salt = [0_u8; SALT_LENGTH];
         let mut nonce = [0_u8; XCHACHA_NONCE_LENGTH];
         getrandom::fill(&mut salt).map_err(KeystoreError::Randomness)?;
@@ -65,7 +73,22 @@ impl Keystore {
             ciphertext: hex::encode(ciphertext),
         };
 
-        self.write_json(self.master_path(), &file)
+        self.write_json(self.master_path(), &file, create)
+    }
+
+    /// Read the encrypted master's public header without unlocking the seed.
+    ///
+    /// This identifies a local recovery file; it does not establish trust in a
+    /// remote device. Certificates must still be verified against the binding.
+    pub fn master_public_key(&self) -> Result<PublicKey> {
+        let path = self.master_path();
+        let file: EncryptedMasterKeyFile = self.read_json(&path)?;
+        file.require_version(&path)?;
+        file.require_algorithm(&path)?;
+        let key = PublicKey::from_bytes(decode_hex("master public key", &file.public_key)?);
+        key.validate()
+            .map_err(|_| KeystoreError::InvalidPublicKey { path })?;
+        Ok(key)
     }
 
     /// Load and decrypt the master keypair with `passphrase`.
@@ -86,10 +109,12 @@ impl Keystore {
         let key = derive_key(passphrase, &salt)?;
         let cipher = XChaCha20Poly1305::new_from_slice(key.as_ref())
             .expect("derived key is always 32 bytes");
-        let seed = cipher
-            .decrypt(&XNonce::from(nonce), ciphertext.as_ref())
-            .map_err(|_| KeystoreError::WrongPassphrase)?;
-        let seed = copy_fixed::<SECRET_KEY_LENGTH>("master seed", &seed)?;
+        let seed = Zeroizing::new(
+            cipher
+                .decrypt(&XNonce::from(nonce), ciphertext.as_ref())
+                .map_err(|_| KeystoreError::WrongPassphrase)?,
+        );
+        let seed = Zeroizing::new(copy_fixed::<SECRET_KEY_LENGTH>("master seed", &seed)?);
         let keypair = Keypair::from_seed(&seed);
 
         if keypair.public().to_hex() != file.public_key {
@@ -107,11 +132,15 @@ impl Keystore {
     /// Device keys are intentionally plain for v1: the user's device storage is
     /// the trust boundary, while the master key remains passphrase-encrypted.
     pub fn save_device(&self, keypair: &Keypair) -> Result<()> {
-        fs::create_dir_all(&self.path).map_err(|source| KeystoreError::CreateKeystoreDir {
-            path: self.path.clone(),
-            source,
-        })?;
+        self.write_device(keypair, false)
+    }
 
+    /// Create a device key file without replacing any existing file.
+    pub fn create_device(&self, keypair: &Keypair) -> Result<()> {
+        self.write_device(keypair, true)
+    }
+
+    fn write_device(&self, keypair: &Keypair, create: bool) -> Result<()> {
         let seed = Zeroizing::new(keypair.to_seed_bytes());
         let file = PlainDeviceKeyFile {
             version: FORMAT_VERSION,
@@ -119,7 +148,7 @@ impl Keystore {
             seed: hex::encode(seed.as_ref()),
         };
 
-        self.write_json(self.device_path(), &file)
+        self.write_json(self.device_path(), &file, create)
     }
 
     /// Load a plain device keypair.
@@ -128,7 +157,7 @@ impl Keystore {
         let file: PlainDeviceKeyFile = self.read_json(&path)?;
         file.require_version(path.as_path())?;
 
-        let seed = decode_hex::<SECRET_KEY_LENGTH>("device seed", &file.seed)?;
+        let seed = Zeroizing::new(decode_hex::<SECRET_KEY_LENGTH>("device seed", &file.seed)?);
         let keypair = Keypair::from_seed(&seed);
 
         if keypair.public().to_hex() != file.public_key {
@@ -153,22 +182,75 @@ impl Keystore {
     where
         T: for<'de> Deserialize<'de>,
     {
-        let bytes = fs::read(path).map_err(|source| KeystoreError::ReadKeyFile {
+        let read_error = |source| KeystoreError::ReadKeyFile {
             path: path.to_path_buf(),
             source,
-        })?;
+        };
+        let file = fs::File::open(path).map_err(read_error)?;
+        let mut bytes = Zeroizing::new(Vec::new());
+        file.take(MAX_KEY_FILE_BYTES + 1)
+            .read_to_end(&mut bytes)
+            .map_err(read_error)?;
+        if bytes.len() as u64 > MAX_KEY_FILE_BYTES {
+            return Err(KeystoreError::KeyFileTooLarge {
+                path: path.to_path_buf(),
+            });
+        }
         serde_json::from_slice(&bytes).map_err(|source| KeystoreError::ParseKeyFile {
             path: path.to_path_buf(),
             source,
         })
     }
 
-    fn write_json<T>(&self, path: PathBuf, value: &T) -> Result<()>
+    fn write_json<T>(&self, path: PathBuf, value: &T, create: bool) -> Result<()>
     where
         T: Serialize,
     {
-        let bytes = serde_json::to_vec_pretty(value).map_err(KeystoreError::SerializeKeyFile)?;
-        fs::write(&path, bytes).map_err(|source| KeystoreError::WriteKeyFile { path, source })
+        let bytes = Zeroizing::new(
+            serde_json::to_vec_pretty(value).map_err(KeystoreError::SerializeKeyFile)?,
+        );
+        fs::create_dir_all(&self.path).map_err(|source| KeystoreError::CreateKeystoreDir {
+            path: self.path.clone(),
+            source,
+        })?;
+        let write_error = |source| KeystoreError::WriteKeyFile {
+            path: path.clone(),
+            source,
+        };
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&self.path, fs::Permissions::from_mode(0o700))
+                .map_err(write_error)?;
+        }
+        let mut file = tempfile::NamedTempFile::new_in(&self.path).map_err(write_error)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            file.as_file()
+                .set_permissions(fs::Permissions::from_mode(0o600))
+                .map_err(write_error)?;
+        }
+        file.write_all(&bytes).map_err(write_error)?;
+        file.as_file().sync_all().map_err(write_error)?;
+        let installed = if create {
+            file.persist_noclobber(&path)
+        } else {
+            file.persist(&path)
+        };
+        installed.map_err(|error| {
+            if create && error.error.kind() == io::ErrorKind::AlreadyExists {
+                KeystoreError::KeyAlreadyExists { path: path.clone() }
+            } else {
+                write_error(error.error)
+            }
+        })?;
+        // Syncing the directory makes the installed name durable on Unix.
+        #[cfg(unix)]
+        fs::File::open(&self.path)
+            .and_then(|dir| dir.sync_all())
+            .map_err(write_error)?;
+        Ok(())
     }
 }
 
@@ -208,11 +290,17 @@ impl EncryptedMasterKeyFile {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Deserialize, Serialize)]
 struct PlainDeviceKeyFile {
     version: u32,
     public_key: String,
     seed: String,
+}
+
+impl Drop for PlainDeviceKeyFile {
+    fn drop(&mut self) {
+        self.seed.zeroize();
+    }
 }
 
 impl PlainDeviceKeyFile {
@@ -241,7 +329,9 @@ fn derive_key(passphrase: &str, salt: &[u8; SALT_LENGTH]) -> Result<Zeroizing<[u
 }
 
 fn decode_hex<const N: usize>(field: &'static str, value: &str) -> Result<[u8; N]> {
-    let bytes = hex::decode(value).map_err(|source| KeystoreError::DecodeHex { field, source })?;
+    let bytes = Zeroizing::new(
+        hex::decode(value).map_err(|source| KeystoreError::DecodeHex { field, source })?,
+    );
     copy_fixed(field, &bytes)
 }
 
@@ -258,6 +348,24 @@ fn copy_fixed<const N: usize>(field: &'static str, bytes: &[u8]) -> Result<[u8; 
 /// Errors raised while saving or loading identity keys.
 #[derive(Debug, thiserror::Error)]
 pub enum KeystoreError {
+    /// Initial setup found an existing key and refused to replace it.
+    #[error("key file already exists at {path}")]
+    KeyAlreadyExists {
+        /// Existing file path.
+        path: PathBuf,
+    },
+    /// A key file exceeds the bounded local format size.
+    #[error("key file exceeds {MAX_KEY_FILE_BYTES} bytes at {path}")]
+    KeyFileTooLarge {
+        /// Oversized file path.
+        path: PathBuf,
+    },
+    /// The public header is not a usable Ed25519 key.
+    #[error("invalid public key in {path}")]
+    InvalidPublicKey {
+        /// Key file path.
+        path: PathBuf,
+    },
     /// Operating-system randomness could not be read for a salt or nonce.
     #[error("operating-system randomness is unavailable")]
     Randomness(#[source] getrandom::Error),

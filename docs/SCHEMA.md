@@ -69,7 +69,10 @@ The allow-list is defined per-relation in this document, in the *Trust* annotati
 }
 ```
 
-The `peer` relation lists every public key your local instance knows about, including your own (with `is_self: true` for your master key and any device sub-keys you've authorized).
+The `peer` relation stores contact metadata, including your own keys recorded
+at CLI initialization. `is_self` is descriptive metadata, never proof of
+authorization. The verified device registry below owns self-sync trust; a newly
+certified device does not need a contact row before it can be verified.
 
 `pet_name` is the local label you assign — Petname-system style. `self_described_name` is what they put in their card. The two are separate because trust is local: a peer cannot rename themselves in your view of the world.
 
@@ -91,7 +94,64 @@ When a peer presents a fact signed by a device sub-key, the bridge verifies (a) 
 
 `device_cert` is canonical CBOR for the `DeviceCert` structure in `carrel-core::identity`. The master signature covers exactly `(master_pubkey, device_pubkey, authorized_at_micros, device_name)` encoded as canonical CBOR. Revocation certificates use the same rule: the master signs `(master_pubkey, device_pubkey, revoked_at_micros)`.
 
-Revocation: writing a `revoked_at` value invalidates the device. The bridge propagates revocations to peers via the social sync layer (your followers learn that your phone is no longer authorized).
+This is the legacy authorization relation. Migration 4 preserves it for
+inspection, but it is no longer an authority for self-sync. A timestamp alone
+is not proof that the master revoked a device.
+
+### Verified self identity (version 4)
+
+```
+:create self_identity { singleton: Int => master_pubkey: Bytes, device_pubkey: Bytes }
+:create device_certificate { master_pubkey: Bytes, device_pubkey: Bytes => device_cert: Bytes }
+:create device_revocation {
+    master_pubkey: Bytes, device_pubkey: Bytes, revoked_at: Validity => revocation_cert: Bytes
+}
+:create device_local_block { master_pubkey: Bytes, device_pubkey: Bytes => reason: String }
+```
+
+`self_identity` has exactly one possible key, `0`. Binding an installation is
+an explicit local operation that verifies its certificate against the chosen
+master and the installation's existing device key. Incoming facts cannot set
+or replace this binding. Each device uses an independent key; the master key
+is never an operational device key. Binding and inserting the local certificate
+are one transaction. Repeating the identical binding is safe; changing either
+key requires a separate future recovery workflow.
+
+`device_certificate` stores one immutable, verified certificate per master and
+device. Replaying its canonical bytes is idempotent; a different certificate
+for the same key is rejected. Display-name changes belong in local peer labels,
+not in replacement certificates. Certificate payloads retain their existing
+canonical format. Decoding is bounded, consumes the whole message, and rejects
+device labels exceeding 256 UTF-8 bytes.
+
+`device_revocation` retains the master's signed proof. Every proof must match
+its relation keys and timestamp. Revocation is permanent for that device key,
+including when the proof arrives before its authorization certificate, the
+clock moves backward, or an old certificate is replayed. Reads use validity
+at `"END"`; future-dated proofs cannot accidentally leave a device authorized.
+Revocation never erases previously accepted reading work.
+
+Migration 4 copies legacy certificates only after verifying their signatures
+and matching every signed field against the legacy columns. A legacy
+`revoked_at` without a signed proof becomes a **local block**, never a fabricated
+revocation certificate and never silently an authorized device. Invalid legacy
+rows remain inspectable in the old relation but confer no trust. Migration does
+not infer which device key is installed from a list of known peers. All new
+relations and guards are resumable; the schema version is recorded last.
+
+The bridge may accept certificates and revocations only for the locally bound
+master. It must authenticate the remote device against that binding before
+private document or blob access; possessing a document ticket is insufficient.
+Local blocks are never replicated as master-signed facts.
+
+Annotation ownership spans devices of the bound identity. An authorized local
+device may edit or remove an annotation whose creator has a verified certificate
+under that master, including an annotation created by a now-revoked device.
+A revoked local device cannot write annotations. Before binding, the existing
+single-device ownership checks remain in effect. Authorization and annotation
+writes serialize with revocation, so a completed revocation prevents later
+writes. This foundation does not enable incoming note revisions: the version 3
+timestamp key still needs causal conflict storage before network imports begin.
 
 **Trust:** signed. Cross-syncs to your own devices via `doc:self`. Visible to followers via `doc:public` so they can verify your facts.
 
@@ -403,9 +463,11 @@ updating device. Version 1 signatures retain their original canonical payload;
 version 2 adds `updated_by` and a signature-version field. Migration preserves
 legacy signatures without needing the signing key.
 
-The local workflow currently authorizes the original device to edit its notes.
-Self-sync extends this check to devices certified under the same master identity
-before allowing edits from another installation.
+Before choosing a self identity, the original device owns its notes. Once bound,
+an authorized local device can edit notes created by devices certified under
+the same master, with the original creator preserved and the editor signing
+as `updated_by`. Incoming cross-device revisions remain disabled until causal
+conflict storage replaces the single timestamp key.
 
 Removing a highlight writes a permanent `entity_tombstone` and a signed local
 removal record together. Its attached notes remain in history but are excluded
@@ -660,6 +722,11 @@ Version 3 migrates notes to validity-keyed revisions, setting legacy
 IDs or signatures. It adds signed annotation-removal history and write guards
 for immutable highlights and removed targets. Existing annotation data remains
 readable; migration resumes safely if creation, copy, or rename was interrupted.
+
+Version 4 adds an immutable local identity binding, verified device certificates,
+signed revocation history, and local blocks for unproven legacy revocations.
+It preserves all legacy rows and annotation signatures, without selecting a
+master identity or enabling network synchronization automatically.
 
 ## Invariants
 

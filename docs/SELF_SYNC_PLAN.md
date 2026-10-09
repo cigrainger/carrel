@@ -84,6 +84,26 @@ export formatting and filesystem paths are covered independently.
 pass with the temporary inspection dependency removed. The local milestones
 are complete; two-device self-sync remains active and unimplemented.
 
+The self-sync identity foundation now binds one master and the installation's
+existing independent device key in a single transaction. Verified certificates
+are immutable; signed revocations deny a device permanently, even before its
+certificate arrives or after certificate replay. Migration 4 retains legacy
+rows, verifies their signed fields, and blocks old unproven revocations locally
+without fabricating a signed proof. It never chooses an identity automatically.
+Certified local devices can alter their identity's annotations, including work
+created by a now-revoked device; revoked installations cannot make new writes.
+Private key-file creation is atomic and refuses replacement, including concurrent
+first use. Existing encrypted formats and signatures remain compatible.
+`just check` passes 236 tests, formatting, and native/CSR lint. Both full app
+builds pass. Coverage includes competing bindings across store clones, key-file
+permissions and no-clobber races, all interrupted migration relation stages,
+foreign/forged proofs, future timestamps, restart, permanent revocation under
+arbitrary replay, and certified annotation ownership in native command results.
+
+The timestamp-keyed note relation still needs causal conflict storage before
+incoming edits are enabled. Pairing, replication, and transport verification
+remain outstanding; the goal stays active.
+
 ## Decisions already made
 
 - Older articles extend the current list on demand with **Load older**. There
@@ -99,6 +119,8 @@ are complete; two-device self-sync remains active and unimplemented.
   text does not mark an article read.
 - Keep scope to self-sync. Friends, social audiences, public publishing, and
   mobile shells are separate work.
+- Concurrent offline note edits retain both versions, with a quiet **Review
+  conflict** control. Resolution explicitly chooses or merges the retained drafts.
 
 ## Foundations to resolve before the sync milestone
 
@@ -110,6 +132,15 @@ them. Subscription settings must be distinguished from device-local HTTP
 fetch state. Device authorization and revocation already have signed core
 types; pairing must use those boundaries.
 
-Verify the current compatible Iroh/docs/blobs release family when that
-milestone begins. Keep the library audit brief and prefer existing small
-dependencies for earlier milestones.
+The brief registry and current-documentation audit on 2026-10-10 found a
+compatible family: [Iroh 1.3.0](https://crates.io/crates/iroh/1.3.0),
+[iroh-docs 0.101.0](https://crates.io/crates/iroh-docs/0.101.0),
+[iroh-blobs 0.103.1](https://crates.io/crates/iroh-blobs/0.103.1), and
+[iroh-gossip 0.101.0](https://crates.io/crates/iroh-gossip/0.101.0).
+The docs/gossip releases require Iroh `^1`; docs requires blobs `^0.103`.
+All have Rust 1.91 as their minimum, within this workspace's requirement.
+The later-dated blobs 0.97 maintenance release belongs to the older Iroh 0.95
+family and is not the compatible choice. Dependencies will be added alongside
+the actual bridge rather than an unused transport stub. Current APIs compose
+Endpoint/Router with blobs, gossip, and docs; every private protocol needs the
+bound-device authorization gate before accepting access.

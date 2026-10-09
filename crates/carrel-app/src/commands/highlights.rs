@@ -1,5 +1,6 @@
 //! Highlight and note commands for the desktop shell.
 
+use std::collections::BTreeSet;
 use std::path::Path;
 use std::str::FromStr;
 
@@ -87,11 +88,15 @@ pub(crate) fn list_highlights_from_store(
         .unwrap_or(DEFAULT_HIGHLIGHT_LIMIT)
         .clamp(1, MAX_HIGHLIGHT_LIMIT);
     let page = store.annotation_page(limit, after)?;
+    let permissions = device
+        .map(|device| store.annotation_creator_permissions(device))
+        .transpose()?
+        .unwrap_or_default();
     Ok(AnnotationPage {
         items: page
             .items
             .iter()
-            .map(|row| HighlightListRow::from_review(row, device))
+            .map(|row| HighlightListRow::from_review(row, &permissions))
             .collect::<Result<_>>()?,
         next_cursor: page.next_cursor,
     })
@@ -335,8 +340,11 @@ fn load_device_key_from_path(path: &Path) -> Result<Keypair> {
             if source.kind() == std::io::ErrorKind::NotFound =>
         {
             let device = Keypair::generate();
-            keystore.save_device(&device)?;
-            Ok(device)
+            match keystore.create_device(&device) {
+                Ok(()) => Ok(device),
+                Err(KeystoreError::KeyAlreadyExists { .. }) => Ok(keystore.load_device()?),
+                Err(error) => Err(error.into()),
+            }
         }
         Err(source) => Err(source.into()),
     }
@@ -454,7 +462,7 @@ impl HighlightDetail {
 }
 
 impl HighlightListRow {
-    fn from_review(review: &AnnotationReview, device: Option<&PublicKey>) -> Result<Self> {
+    fn from_review(review: &AnnotationReview, permissions: &BTreeSet<PublicKey>) -> Result<Self> {
         let record = &review.source;
         Ok(Self {
             highlight: HighlightDetail::from_record(&record.highlight)?,
@@ -471,9 +479,9 @@ impl HighlightListRow {
             notes: review
                 .notes
                 .iter()
-                .map(|note| NoteDetail::from_record(note, device == Some(&note.created_by)))
+                .map(|note| NoteDetail::from_record(note, permissions.contains(&note.created_by)))
                 .collect(),
-            can_remove: device == Some(&record.highlight.created_by),
+            can_remove: permissions.contains(&record.highlight.created_by),
         })
     }
 }
@@ -681,6 +689,63 @@ mod tests {
         let loaded = load_device_key_from_path(tempdir.path()).unwrap();
 
         assert_eq!(loaded.public(), device.public());
+    }
+
+    #[test]
+    fn annotation_permissions_follow_the_bound_identity_and_revocation() {
+        use carrel_core::identity::{DeviceCert, RevocationCert};
+        let (store, _tempdir, blobs, blob_id) = store_with_readable_item();
+        let creator = Keypair::from_seed(&[44; 32]);
+        let local = Keypair::from_seed(&[45; 32]);
+        let master = Keypair::from_seed(&[46; 32]);
+        let highlight = create_highlight_with_device(
+            &store,
+            &blobs,
+            &creator,
+            request_for_blob(blob_id.as_str(), "quiet web", 4, 13),
+        )
+        .unwrap();
+        store
+            .put_note(
+                PutNoteInput {
+                    body: "An existing note".into(),
+                    target_kind: Some("highlight".into()),
+                    target_id: Some(highlight.id),
+                    created_at_micros: Some(1),
+                },
+                &creator,
+            )
+            .unwrap();
+        let before = list_highlights_from_store(&store, None, None, Some(local.public())).unwrap();
+        assert!(!before.items[0].can_remove && !before.items[0].notes[0].can_edit);
+        store
+            .bind_self_identity(
+                &DeviceCert::new_at_micros(&master, local.public(), 1, None),
+                &local,
+            )
+            .unwrap();
+        store
+            .accept_self_device_certificate(&DeviceCert::new_at_micros(
+                &master,
+                creator.public(),
+                1,
+                None,
+            ))
+            .unwrap();
+        let paired = list_highlights_from_store(&store, None, None, Some(local.public())).unwrap();
+        assert!(paired.items[0].can_remove && paired.items[0].notes[0].can_edit);
+        store
+            .accept_self_revocation(&RevocationCert::new_at_micros(&master, creator.public(), 2))
+            .unwrap();
+        let preserved =
+            list_highlights_from_store(&store, None, None, Some(local.public())).unwrap();
+        assert!(preserved.items[0].can_remove && preserved.items[0].notes[0].can_edit);
+        store
+            .accept_self_revocation(&RevocationCert::new_at_micros(&master, local.public(), 3))
+            .unwrap();
+        let revoked = list_highlights_from_store(&store, None, None, Some(local.public())).unwrap();
+        assert!(!revoked.items[0].can_remove && !revoked.items[0].notes[0].can_edit);
+        assert_eq!(revoked.items[0].notes[0].body, "An existing note");
     }
 
     #[test]

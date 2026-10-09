@@ -8,7 +8,10 @@ mod cert;
 mod keypair;
 mod signing;
 
-pub use cert::{CertError, DeviceAuthorization, DeviceCert, RevocationCert};
+pub use cert::{
+    CertError, DeviceAuthorization, DeviceCert, MAX_CERTIFICATE_BYTES, MAX_DEVICE_NAME_BYTES,
+    RevocationCert,
+};
 pub use keypair::{
     FixedBytesError, HexDecodeError, Keypair, PublicKey, SECRET_KEY_LENGTH, SecretKey, Signature,
     VerifyError, verify,

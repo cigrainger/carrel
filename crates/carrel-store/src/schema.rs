@@ -34,6 +34,53 @@ pub const RELATIONS: &[&str] = &[
     "item_search",
     "note_legacy_v2",
     "annotation_removal",
+    "self_identity",
+    "device_certificate",
+    "device_revocation",
+    "device_local_block",
+];
+
+/// Individually resumable relations for verified self-device trust.
+pub const SELF_IDENTITY_RELATIONS: &[(&str, &str)] = &[
+    (
+        "self_identity",
+        ":create self_identity { singleton: Int => master_pubkey: Bytes, device_pubkey: Bytes }",
+    ),
+    (
+        "device_certificate",
+        ":create device_certificate { master_pubkey: Bytes, device_pubkey: Bytes => device_cert: Bytes }",
+    ),
+    (
+        "device_revocation",
+        ":create device_revocation { master_pubkey: Bytes, device_pubkey: Bytes, revoked_at: Validity => revocation_cert: Bytes }",
+    ),
+    (
+        "device_local_block",
+        ":create device_local_block { master_pubkey: Bytes, device_pubkey: Bytes => reason: String }",
+    ),
+];
+
+/// Guard immutable identity bindings, certificates, revocations, and blocks.
+pub const SELF_IDENTITY_GUARDS: &[&str] = &[
+    r#"::set_triggers self_identity on put {
+        invalid[slot] := _new[slot, master, device], slot != 0
+        invalid[slot] := _new[slot, master, device], master == device
+        invalid[slot] := _new[slot, master, device], _old[slot, old_master, old_device], [master, device] != [old_master, old_device]
+        ?[slot] := invalid[slot]
+        :assert none
+    } on rm { ?[slot] := _old[slot, master, device] :assert none }"#,
+    r#"::set_triggers device_certificate on put {
+        ?[master, device] := _new[master, device, cert], _old[master, device, old_cert], cert != old_cert
+        :assert none
+    } on rm { ?[master, device] := _old[master, device, cert] :assert none }"#,
+    r#"::set_triggers device_revocation on put {
+        ?[master, device, at] := _new[master, device, at, cert], _old[master, device, at, old_cert], cert != old_cert
+        :assert none
+    } on rm { ?[master, device, at] := _old[master, device, at, cert] :assert none }"#,
+    r#"::set_triggers device_local_block on put {
+        ?[master, device] := _new[master, device, reason], _old[master, device, old_reason], reason != old_reason
+        :assert none
+    } on rm { ?[master, device] := _old[master, device, reason] :assert none }"#,
 ];
 
 /// Staging relation for migration 3, renamed to `note` after legacy copy.
