@@ -81,6 +81,191 @@ fn all_ids(store: &Store, mut filter: ItemFilter) -> Vec<String> {
     ids
 }
 
+fn search(mut filter: ItemFilter, query: &str) -> ItemFilter {
+    filter.search = Some(query.into());
+    filter
+}
+
+fn title(store: &Store, id: &str, title: &str) {
+    store.query_with_params(r#"
+        ?[id, kind, title, creators, primary_url, published_at, language, summary, discovered_at] :=
+            *item{id, kind, creators, primary_url, published_at, language, summary, discovered_at},
+            id = $id, title = $title
+        :put item {id => kind, title, creators, primary_url, published_at, language, summary, discovered_at}
+    "#, BTreeMap::from([("id".into(), DataValue::from(id)), ("title".into(), DataValue::from(title))])).unwrap();
+}
+
+fn content(store: &Store, id: &str, blob: &str) {
+    store
+        .query_with_params(
+            r#"
+        ?[item_id, format, blob_id, fetched_at, extracted_with, byte_size] <-
+            [[$id, 'html_readable', $blob, validity(1), 'test', 5]]
+        :put item_content {item_id, format => blob_id, fetched_at, extracted_with, byte_size}
+    "#,
+            BTreeMap::from([
+                ("id".into(), DataValue::from(id)),
+                ("blob".into(), DataValue::from(blob)),
+            ]),
+        )
+        .unwrap();
+}
+
+#[test]
+fn search_requires_every_literal_prefix_across_title_and_current_body() {
+    let store = archive(4, false);
+    title(&store, "item-0000", "CAFÉ architecture");
+    title(&store, "item-0001", "Café gardens");
+    title(&store, "item-0002", "Architecture only");
+    title(&store, "item-0003", "İSTANBUL 中文设计");
+    content(&store, "item-0001", "blob-a");
+    assert!(
+        store
+            .put_search_text("item-0001", "blob-a", "Contemporary architectural ideas")
+            .unwrap()
+    );
+    assert_eq!(
+        all_ids(&store, search(ItemFilter::library(), "cafÉ ARCH")),
+        ["item-0001", "item-0000"]
+    );
+    assert_eq!(
+        all_ids(&store, search(ItemFilter::library(), "caf café café")),
+        ["item-0001", "item-0000"]
+    );
+    assert_eq!(
+        all_ids(&store, search(ItemFilter::library(), "İST 中文")),
+        ["item-0003"]
+    );
+    for query in [
+        "***",
+        "café OR unknown",
+        "architecture gardens missing",
+        "x' :rm item {id}",
+    ] {
+        assert!(all_ids(&store, search(ItemFilter::library(), query)).is_empty());
+    }
+    assert_eq!(
+        all_ids(&store, search(ItemFilter::library(), "   ")).len(),
+        4
+    );
+}
+
+#[test]
+fn search_filters_the_entire_archive_before_pagination() {
+    let store = archive(650, false);
+    store
+        .query(
+            r#"
+        ?[item_id, state, progress, progress_label, last_position, updated_at] :=
+            *item{id: item_id, discovered_at}, item_id != 'item-0000',
+            state = 'read', progress = null, progress_label = null,
+            last_position = null, updated_at = discovered_at
+        :put read_state {item_id => state, progress, progress_label, last_position, updated_at}
+    "#,
+        )
+        .unwrap();
+    assert_eq!(
+        all_ids(&store, search(ItemFilter::unread(), "文章")),
+        ["item-0000"]
+    );
+    let ids = all_ids(
+        &store,
+        search(
+            ItemFilter {
+                limit: Some(23),
+                ..ItemFilter::library()
+            },
+            "文章",
+        ),
+    );
+    assert_eq!(
+        ids,
+        (0..650)
+            .rev()
+            .map(|i| format!("item-{i:04}"))
+            .collect::<Vec<_>>()
+    );
+    state(&store, "item-0000", "reading", 900);
+    star(&store, "item-0000", true, 900);
+    article(&store, "item-0000", "https://example.com/one");
+    for filter in [
+        ItemFilter::reading(),
+        ItemFilter::starred(),
+        ItemFilter::feed("https://example.com/one".into()),
+    ] {
+        assert_eq!(all_ids(&store, search(filter, "文章")), ["item-0000"]);
+    }
+    assert_eq!(
+        all_ids(&store, search(ItemFilter::today(), "文章")).len(),
+        650
+    );
+}
+
+#[test]
+fn changed_content_and_tombstones_cannot_match_stale_text() {
+    let store = archive(1, false);
+    content(&store, "item-0000", "old");
+    assert_eq!(store.pending_search_content().unwrap().len(), 1);
+    assert!(
+        store
+            .put_search_text("item-0000", "old", "obsolete words")
+            .unwrap()
+    );
+    assert!(store.pending_search_content().unwrap().is_empty());
+    content(&store, "item-0000", "new");
+    assert!(all_ids(&store, search(ItemFilter::library(), "obsolete")).is_empty());
+    assert!(
+        !store
+            .put_search_text("item-0000", "old", "late obsolete extraction")
+            .unwrap()
+    );
+    assert_eq!(store.pending_search_content().unwrap()[0].blob_id, "new");
+    assert!(
+        store
+            .put_search_text("item-0000", "new", "replacement words")
+            .unwrap()
+    );
+    assert!(all_ids(&store, search(ItemFilter::library(), "obsolete")).is_empty());
+    assert_eq!(
+        all_ids(&store, search(ItemFilter::library(), "replacement")),
+        ["item-0000"]
+    );
+    title(&store, "item-0000", "New title");
+    assert!(all_ids(&store, search(ItemFilter::library(), "文章")).is_empty());
+    store.query("?[id, tombstoned_at, reason] <- [['item-0000', validity(200), null]] :put entity_tombstone {id, tombstoned_at => reason}").unwrap();
+    assert!(!store.put_search_text("item-0000", "new", "late").unwrap());
+    assert!(store.pending_search_content().unwrap().is_empty());
+    assert!(all_ids(&store, search(ItemFilter::library(), "replacement")).is_empty());
+    assert!(all_ids(&store, search(ItemFilter::library(), "new")).is_empty());
+}
+
+#[test]
+fn search_cursors_are_scoped_to_normalized_query_and_queries_are_bounded() {
+    let store = archive(4, false);
+    let mut filter = search(
+        ItemFilter {
+            limit: Some(1),
+            ..ItemFilter::library()
+        },
+        "文章",
+    );
+    filter.after = store.list_item_page(&filter, 0).unwrap().next_cursor;
+    filter.search = Some(" 文章 文章 ".into());
+    assert_eq!(all_ids(&store, filter.clone()).len(), 3);
+    for query in [None, Some("other".into()), Some("*".into())] {
+        filter.search = query;
+        assert!(matches!(
+            store.list_item_page(&filter, 0),
+            Err(StoreError::InvalidInput { .. })
+        ));
+    }
+    assert!(matches!(
+        store.list_item_page(&search(ItemFilter::library(), &"x".repeat(2049)), 0),
+        Err(StoreError::InvalidInput { .. })
+    ));
+    assert!(!store.put_search_text("missing", "none", "text").unwrap());
+}
+
 #[test]
 fn older_unread_items_are_filtered_before_limiting_the_archive() {
     let store = archive(650, false);
@@ -277,6 +462,7 @@ fn limits_empty_archives_and_invalid_cursors_have_defined_behavior() {
         sort_at_micros: 0,
         id: "x".into(),
         since_micros: None,
+        search_terms: None,
     };
     assert!(matches!(
         store.list_item_page(
@@ -293,6 +479,7 @@ fn limits_empty_archives_and_invalid_cursors_have_defined_behavior() {
         sort_at_micros: 0,
         id: String::new(),
         since_micros: None,
+        search_terms: None,
     };
     assert!(matches!(
         store.list_item_page(

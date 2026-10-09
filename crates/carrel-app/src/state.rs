@@ -1,6 +1,6 @@
 //! Shared state managed by Tauri.
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, atomic::AtomicBool};
 
 use carrel_store::Store;
 use carrel_store::blobs::BlobStore;
@@ -17,6 +17,8 @@ pub struct AppState {
     // Read/modify/write commands must not race a delayed progress snapshot.
     pub(crate) item_state_lock: Arc<Mutex<()>>,
     pub(crate) feed_status: FeedStatusHandle,
+    pub(crate) search_status: Arc<Mutex<SearchStatus>>,
+    pub(crate) search_rebuilding: Arc<AtomicBool>,
     pub(crate) store: Store,
     pub(crate) paths: InstallPaths,
 }
@@ -28,10 +30,22 @@ impl AppState {
             feed_fetch_lock: Arc::new(AsyncMutex::new(())),
             item_state_lock: Arc::new(Mutex::new(())),
             feed_status: FeedStatusHandle::new(),
+            search_status: Arc::new(Mutex::new(SearchStatus::Preparing)),
+            search_rebuilding: Arc::new(AtomicBool::new(false)),
             store,
             paths,
         }
     }
+}
+
+/// Operational state of the local cached-text rebuild, never a synced fact.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum SearchStatus {
+    Preparing,
+    Ready,
+    Partial,
+    Failed,
 }
 
 /// Snapshot of quiet feed activity for the status strip.

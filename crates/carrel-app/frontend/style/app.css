@@ -838,6 +838,20 @@ a {
 .library-filters { display: flex; gap: var(--space-5); margin-bottom: var(--space-6); font-size: var(--text-sm); }
 .library-filters a { padding: var(--space-2) 0; }
 .library-filters a[aria-current="page"] { color: var(--color-accent); border-bottom: 1px solid var(--color-accent); }
+.list-search { margin-bottom: var(--space-6); }
+.list-search label { display: block; color: var(--color-text-secondary); font-size: var(--text-sm); margin-bottom: var(--space-2); }
+.list-search-control { display: flex; align-items: stretch; border-bottom: 1px solid var(--color-rule-strong); }
+.list-search-control:focus-within { border-color: var(--color-accent); }
+.list-search input { flex: 1; min-width: 0; padding: var(--space-2) 0; border: 0; outline: 0; border-radius: 0; color: var(--color-text); background: transparent; font: inherit; }
+.list-search input::placeholder { color: var(--color-text-tertiary); }
+.list-search input::-webkit-search-cancel-button { display: none; }
+.list-search input:focus-visible { outline: 0; }
+.list-search p { margin-top: var(--space-2); color: var(--color-text-tertiary); font-size: var(--text-xs); line-height: 1.5; }
+.list-search button { padding: var(--space-2) var(--space-3); border: 0; background: transparent; color: var(--color-text-secondary); font: inherit; font-size: var(--text-sm); cursor: pointer; }
+.list-search button:hover, .list-search button:focus-visible { color: var(--color-accent); }
+.list-search .search-status { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--space-2); }
+.list-search .search-status:empty { display: none; }
+.list-search .search-status button { padding: 0; text-decoration: underline; }
 .item-open { padding: 0; border: 0; background: transparent; color: var(--color-text); text-align: left; font: inherit; cursor: pointer; }
 .item-row-body h2 { font-family: var(--font-body); font-size: var(--text-2xl); line-height: 1.25; font-weight: 500; }
 .item-row-actions { display: flex; gap: var(--space-3); margin-top: var(--space-3); font-size: var(--text-xs); }

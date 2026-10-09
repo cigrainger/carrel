@@ -119,7 +119,13 @@ pub(crate) fn list_has_focus() -> bool {
     web_sys::window()
         .and_then(|window| window.document())
         .and_then(|document| document.active_element())
-        .is_some_and(|element| element.closest("[data-list-path]").ok().flatten().is_some())
+        .is_some_and(|element| {
+            element
+                .closest(".item-row, .highlight-row")
+                .ok()
+                .flatten()
+                .is_some()
+        })
 }
 
 pub(crate) fn restore_list_scroll(path: String, y: i32, restore_focus: bool) {

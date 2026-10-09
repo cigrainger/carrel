@@ -225,6 +225,7 @@ async fn extract_entry_content(
 
     Ok(EntryContentExtraction {
         content: Some(ExtractedEntryContent {
+            searchable_text: carrel_feeds::html_to_text(&article.content_html),
             feed_guid: entry.feed_guid.clone(),
             title: article.title,
             byline: article.byline,
@@ -337,6 +338,17 @@ mod tests {
         let blob_id = readable.blob_id.parse().unwrap();
         let html = String::from_utf8(blobs.get(&blob_id).await.unwrap().to_vec()).unwrap();
         assert!(html.contains("readable article body"));
+        assert!(store.pending_search_content().unwrap().is_empty());
+        let matches = store
+            .list_item_page(
+                &carrel_core::library::ItemFilter {
+                    search: Some("readable body".into()),
+                    ..carrel_core::library::ItemFilter::library()
+                },
+                0,
+            )
+            .unwrap();
+        assert_eq!(matches.items[0].id, item_id.as_str());
     }
 
     #[tokio::test]

@@ -280,6 +280,22 @@ fixed for subsequent pages. List snapshots also retain the continuation and
 whether the archive end was reached; refreshes query through that older
 boundary. Async generations guard the entire multi-page refresh.
 
+Local search uses Cozo's existing full-text machinery. Pure, bounded literal
+query tokenization lives beside the list contracts in `carrel-core`; the store
+intersects indexed word prefixes with list membership before sorting and
+pagination. It does not apply an FTS top-k cutoff that could hide matches in a
+filtered archive. Cursors also carry normalized query terms. The webview keeps
+the raw query in the route URL, so reader return snapshots include the query.
+
+Titles are indexed on the item relation. Cached body text is derived in
+`carrel-feeds` and kept in local `item_search`, with its source blob and
+extractor version. The native worker rebuilds older available blobs in the
+background; failed or missing content has a quiet retry path. Derived writes
+include the source content key in transaction conflict detection, and queries
+also reject text from a replaced blob. These caches and indexes are rebuilt
+on each installation and never replicated as signed facts. See `SCHEMA.md`
+for migration 2 and the Cozo 0.7.6 FTS update workaround.
+
 OPML parsing/writing lives in `carrel-feeds`; portable subscription metadata is
 in `carrel-core`. The store validates the entire batch and inserts missing
 canonical URLs in one transaction. Existing subscriptions, saved items, and

@@ -5,6 +5,33 @@ use serde::{Deserialize, Serialize};
 
 pub use carrel_core::library::{ItemCursor, ItemFilter, ItemPage, ItemView};
 
+/// Operational state of locally derived cached-text search.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum SearchStatus {
+    #[default]
+    Preparing,
+    Ready,
+    Partial,
+    Failed,
+}
+
+#[cfg(target_arch = "wasm32")]
+pub(crate) async fn search_status() -> Result<SearchStatus, ApiError> {
+    let result = tauri_invoke("search_status", wasm_bindgen::JsValue::UNDEFINED)
+        .await
+        .map_err(api_error_from_js)?;
+    serde_wasm_bindgen::from_value(result).map_err(|error| ApiError::new(error.to_string()))
+}
+
+#[cfg(target_arch = "wasm32")]
+pub(crate) async fn rebuild_search() -> Result<(), ApiError> {
+    tauri_invoke("rebuild_search", wasm_bindgen::JsValue::UNDEFINED)
+        .await
+        .map(|_| ())
+        .map_err(api_error_from_js)
+}
+
 /// Choose an OPML file and import subscriptions. False means cancellation.
 #[cfg(target_arch = "wasm32")]
 pub async fn import_subscriptions() -> Result<bool, ApiError> {

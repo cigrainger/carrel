@@ -1,5 +1,6 @@
 use std::process::{Command, Output};
 
+use carrel_store::CURRENT_SCHEMA_VERSION;
 use carrel_store::ids::{canonicalize_external_identifier, id_for_external};
 use serde_json::Value;
 use wiremock::matchers::{method, path};
@@ -24,7 +25,10 @@ fn init_info_migrate_and_query_work() {
     assert!(init.stderr.contains("Generating master keypair"));
 
     let info = run_ok(carrel_cli().args(["--data-dir", data_dir]).arg("info"));
-    assert!(info.stdout.contains("Schema:        v1"));
+    assert!(
+        info.stdout
+            .contains(&format!("Schema:        v{CURRENT_SCHEMA_VERSION}"))
+    );
     assert!(info.stdout.contains("Items:         0"));
     assert!(info.stdout.contains("Feeds:         0"));
     assert!(info.stdout.contains("Highlights:    0"));
@@ -35,23 +39,30 @@ fn init_info_migrate_and_query_work() {
             .args(["--data-dir", data_dir])
             .args(["db", "migrate"]),
     );
-    assert!(migrate.stdout.contains("Already at v1."));
+    assert!(
+        migrate
+            .stdout
+            .contains(&format!("Already at v{CURRENT_SCHEMA_VERSION}."))
+    );
 
     let table = run_ok(carrel_cli().args(["--data-dir", data_dir]).args([
         "db",
         "query",
-        "?[version] := *schema_version{version}",
+        "?[max(version)] := *schema_version{version}",
     ]));
     assert!(table.stdout.contains("version"));
-    assert!(table.stdout.contains('1'));
+    assert!(table.stdout.contains(&CURRENT_SCHEMA_VERSION.to_string()));
 
     let json = run_ok(carrel_cli().args(["--data-dir", data_dir]).args([
         "--json",
         "db",
         "query",
-        "?[version] := *schema_version{version}",
+        "?[version] := *schema_version{version} :sort -version :limit 1",
     ]));
-    assert!(json.stdout.contains("\"version\": 1"));
+    assert!(
+        json.stdout
+            .contains(&format!("\"version\": {CURRENT_SCHEMA_VERSION}"))
+    );
 }
 
 #[test]

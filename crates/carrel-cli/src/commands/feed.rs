@@ -352,6 +352,7 @@ async fn extract_entry_content(
 
     Ok(EntryContentExtraction {
         content: Some(ExtractedEntryContent {
+            searchable_text: carrel_feeds::html_to_text(&article.content_html),
             feed_guid: entry.feed_guid.clone(),
             title: article.title,
             byline: article.byline,

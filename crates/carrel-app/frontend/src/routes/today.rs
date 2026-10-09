@@ -2,6 +2,7 @@
 
 use crate::api::{ItemFilter, ItemSummary, ItemView};
 use crate::components::ItemList;
+use crate::feeds::{self, use_feed_controller};
 use crate::item_actions::{ItemAction, ItemActions, ItemState, use_item_actions};
 use crate::keymap::{use_action_handler, use_keymap_layer};
 use crate::navigation::ensure_list_cursor_visible;
@@ -10,14 +11,14 @@ use crate::navigation::{
     use_list_navigation_context,
 };
 #[cfg(target_arch = "wasm32")]
-use crate::{
-    api,
-    feeds::{self, use_feed_controller},
-    requests::Requests,
-};
+use crate::{api, requests::Requests};
 use carrel_core::keymap::default;
 use leptos::prelude::*;
-use leptos_router::{NavigateOptions, components::A, hooks::use_navigate};
+use leptos_router::{
+    NavigateOptions,
+    components::A,
+    hooks::{use_navigate, use_query_map},
+};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ListSpec {
@@ -103,7 +104,80 @@ pub fn Starred() -> impl IntoView {
 pub(crate) fn list_route_view(
     spec_builder: impl Fn() -> ListSpec + Send + Sync + 'static,
 ) -> impl IntoView {
-    let spec = Memo::new(move |_| spec_builder());
+    let base_spec = Memo::new(move |_| spec_builder());
+    let query_map = use_query_map();
+    let query = Memo::new(move |_| {
+        query_map.with(|map| {
+            map.get_str("q")
+                .filter(|query| !query.trim().is_empty())
+                .map(str::to_owned)
+        })
+    });
+    let spec = Memo::new(move |_| {
+        let mut spec = base_spec.get();
+        spec.filter.search = query.get();
+        spec.return_path = search_path(&spec.return_path, spec.filter.search.as_deref());
+        spec
+    });
+    let draft = RwSignal::new(query.get_untracked().unwrap_or_default());
+    Effect::new(move |_| draft.set(query.get().unwrap_or_default()));
+    let search_input = NodeRef::<leptos::html::Input>::new();
+    let navigate_search = use_navigate();
+    let commit_search = UnsyncCallback::new(move |value: String| {
+        navigate_search(
+            &search_path(&base_spec.get_untracked().return_path, Some(&value)),
+            NavigateOptions {
+                replace: true,
+                scroll: false,
+                ..NavigateOptions::default()
+            },
+        );
+    });
+    #[cfg(target_arch = "wasm32")]
+    let search_timer = StoredValue::new(None::<leptos::leptos_dom::helpers::TimeoutHandle>);
+    #[cfg(target_arch = "wasm32")]
+    on_cleanup(move || {
+        if let Some(timer) = search_timer.get_value() {
+            timer.clear();
+        }
+    });
+    let submit_search = UnsyncCallback::new(move |value: String| {
+        #[cfg(target_arch = "wasm32")]
+        if let Some(timer) = search_timer.get_value() {
+            timer.clear();
+        }
+        commit_search.run(value);
+    });
+    let change_search = UnsyncCallback::new(move |value: String| {
+        draft.set(value.clone());
+        #[cfg(target_arch = "wasm32")]
+        {
+            if let Some(timer) = search_timer.get_value() {
+                timer.clear();
+            }
+            search_timer.set_value(
+                set_timeout_with_handle(
+                    move || commit_search.run(value),
+                    std::time::Duration::from_millis(200),
+                )
+                .ok(),
+            );
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        commit_search.run(value);
+    });
+    let clear_search = UnsyncCallback::new(move |()| {
+        draft.set(String::new());
+        submit_search.run(String::new());
+    });
+    use_action_handler("search-list", move || {
+        if let Some(input) = search_input.get() {
+            let _ = input.focus();
+        }
+    });
+    use_action_handler("clear-search", move || clear_search.run(()));
+    let controller = use_feed_controller();
+    let search_status = controller.search_status;
     let list_navigation = use_list_navigation_context();
     let snapshot = list_navigation.snapshot(&spec.get_untracked().return_path);
     let items = RwSignal::new(
@@ -183,7 +257,7 @@ pub(crate) fn list_route_view(
             restore_list_scroll(
                 spec.get_untracked().return_path,
                 snapshot.scroll_y,
-                context.is_some(),
+                context.is_some() && !search_has_focus(),
             );
         } else {
             let original = previous_ids.get_untracked();
@@ -283,7 +357,14 @@ pub(crate) fn list_route_view(
             request_at(visible, cursor.get_untracked(), actions, action)
         });
     }
-    use_action_handler("go-back", move || {});
+    use_action_handler("go-back", move || {
+        if let Some(input) = search_input.get()
+            && search_has_focus()
+        {
+            let _ = input.blur();
+            ensure_list_cursor_visible(spec.get_untracked().return_path);
+        }
+    });
     let read = UnsyncCallback::new(move |index| {
         if let Some(item) = visible.get_untracked().get(index) {
             request_at(
@@ -299,7 +380,6 @@ pub(crate) fn list_route_view(
 
     #[cfg(target_arch = "wasm32")]
     {
-        let controller = use_feed_controller();
         let requests = Requests::default();
         let cleanup = requests.clone();
         on_cleanup(move || cleanup.invalidate());
@@ -334,6 +414,7 @@ pub(crate) fn list_route_view(
                 cursor.set(0);
                 restore.set(Some(snapshot.unwrap_or_default()));
                 previous_path.set(current.return_path.clone());
+                restore_list_scroll(current.return_path.clone(), 0, false);
             }
             let _ = controller.refresh_token().get();
             let _ = reload.get();
@@ -423,14 +504,40 @@ pub(crate) fn list_route_view(
             </header>
             <Show when=move || matches!(spec.get().filter.view, ItemView::Library | ItemView::Unread | ItemView::Starred)>
                 <nav class="library-filters" aria-label="Library filter">
-                    <A href="/library" exact=true>"All"</A><A href="/unread" exact=true>"Unread"</A><A href="/starred" exact=true>"Starred"</A>
+                    <A href=move || search_path("/library", Some(&draft.get())) exact=true>"All"</A><A href=move || search_path("/unread", Some(&draft.get())) exact=true>"Unread"</A><A href=move || search_path("/starred", Some(&draft.get())) exact=true>"Starred"</A>
                 </nav>
             </Show>
+            <form class="list-search" role="search" on:submit=move |event| { event.prevent_default(); submit_search.run(draft.get_untracked()); }>
+                <label for="article-search">{move || search_label(&spec.get())}</label>
+                <div class="list-search-control">
+                    <input id="article-search" type="search" node_ref=search_input autocomplete="off" spellcheck="false" maxlength="512"
+                        aria-describedby="article-search-help" placeholder="Title or cached text" prop:value=move || draft.get()
+                        on:input=move |event| change_search.run(event_target_value(&event))/>
+                    <Show when=move || !draft.get().is_empty()><button type="button" on:click=move |_| clear_search.run(())>"Clear"</button></Show>
+                </div>
+                <p id="article-search-help">"Each word matches a word beginning in the title or cached text."</p>
+                <Show when=move || query.get().is_some()>
+                    <p class="search-status" role="status">{move || match search_status.get() {
+                        crate::api::SearchStatus::Preparing => "Preparing cached text. Titles are searchable now.",
+                        crate::api::SearchStatus::Partial => "Some cached text is unavailable. Titles remain searchable.",
+                        crate::api::SearchStatus::Failed => "Could not prepare cached text. Titles remain searchable.",
+                        crate::api::SearchStatus::Ready => "",
+                    }}
+                        <Show when=move || matches!(search_status.get(), crate::api::SearchStatus::Partial | crate::api::SearchStatus::Failed)>
+                            <button type="button" on:click=move |_| feeds::retry_search(controller)>"Retry cached text"</button>
+                        </Show>
+                    </p>
+                </Show>
+            </form>
             {move || error.get().map(|message| view! { <div class="quiet-state" role="status"><p>{message}</p><button type="button" on:click=move |_| {
                 if retry_older.get_untracked() { older.update(|token| *token += 1); } else { reload.update(|token| *token += 1); }
             }>"Try again"</button></div> })}
             <Show when=move || loaded.get()>
-                <Show when=move || !visible.get().is_empty() fallback=move || view! { <Show when=move || error.get().is_none()><div class="quiet-state"><p>{spec.get().empty_message}</p><EmptyListAddFeed/></div></Show> }>
+                <Show when=move || !visible.get().is_empty() fallback=move || view! { <Show when=move || error.get().is_none()><div class="quiet-state">
+                    <Show when=move || query.get().is_some() fallback=move || view! {<p>{spec.get().empty_message}</p><EmptyListAddFeed/>}>
+                        <p>"No articles match in this view."</p><button type="button" on:click=move |_| clear_search.run(())>"Clear search"</button>
+                    </Show>
+                </div></Show> }>
                     <ItemList items=visible selected_index=cursor aria_label=spec.get_untracked().title on_open=open on_read=read on_star=star on_select=UnsyncCallback::new(move |index| cursor.set(index))/>
                 </Show>
                 <Show when=move || next_cursor.get().is_some()>
@@ -438,6 +545,36 @@ pub(crate) fn list_route_view(
                 </Show>
             </Show>
         </section>
+    }
+}
+
+fn search_path(path: &str, query: Option<&str>) -> String {
+    match query.filter(|query| !query.trim().is_empty()) {
+        Some(query) => format!("{path}?q={}", feeds::percent_encode(query)),
+        None => path.into(),
+    }
+}
+
+fn search_label(spec: &ListSpec) -> String {
+    match spec.filter.view {
+        ItemView::Unread => "Search unread articles".into(),
+        ItemView::Starred => "Search starred articles".into(),
+        ItemView::Feed { .. } => "Search this feed".into(),
+        _ => format!("Search {}", spec.title.to_lowercase()),
+    }
+}
+
+fn search_has_focus() -> bool {
+    #[cfg(target_arch = "wasm32")]
+    {
+        web_sys::window()
+            .and_then(|window| window.document())
+            .and_then(|document| document.active_element())
+            .is_some_and(|element| element.id() == "article-search")
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        false
     }
 }
 

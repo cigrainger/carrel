@@ -62,6 +62,8 @@ pub fn feed_guid_identifier(feed_url: &str, feed_guid: &str) -> String {
 /// Readable article content extracted for a feed entry before store ingest.
 #[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct ExtractedEntryContent {
+    /// Plain text derived from the cached readable HTML for local search.
+    pub searchable_text: String,
     /// Entry GUID this content belongs to, before feed URL scoping.
     pub feed_guid: String,
     /// Extracted or embedded article title, if the extractor found one.

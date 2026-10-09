@@ -1,6 +1,6 @@
 //! Cozo schema scripts for Carrel's documented data model.
 
-/// All relation names created by the initial schema migration.
+/// All base relation names in the current schema.
 pub const RELATIONS: &[&str] = &[
     "peer",
     "device_authorization",
@@ -31,7 +31,23 @@ pub const RELATIONS: &[&str] = &[
     "feed",
     "entity_tombstone",
     "schema_version",
+    "item_search",
 ];
+
+/// Derived readable-text cache, created by migration 2.
+pub const CREATE_SEARCH_SCHEMA: &str = r#"
+    :create item_search { item_id: String => blob_id: String, text: String, extractor_version: Int }
+"#;
+
+/// Title index, maintained transactionally by Cozo when items change.
+pub const CREATE_TITLE_SEARCH_INDEX: &str = r#"
+    ::fts create item:title_words { extractor: title, tokenizer: Simple, filters: [Lowercase] }
+"#;
+
+/// Body index, maintained transactionally by Cozo when derived text changes.
+pub const CREATE_BODY_SEARCH_INDEX: &str = r#"
+    ::fts create item_search:body_words { extractor: text, tokenizer: Simple, filters: [Lowercase] }
+"#;
 
 /// Initial schema creation script.
 pub const CREATE_SCHEMA: &str = r#"

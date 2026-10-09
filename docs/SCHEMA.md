@@ -250,6 +250,28 @@ Resilience: the moment a user highlights an item, we ensure the readable HTML bl
 
 **Trust:** the metadata fact is signed when shared (a peer sharing an item with its content reference includes the blob_id); the blob itself is fetched separately via iroh-blobs.
 
+## Local search
+
+Search uses Cozo's built-in full-text indexes with the `Simple` tokenizer and `Lowercase` filter. Titles are indexed directly from `item.title`. Cached readable HTML is reduced to plain text in `carrel-feeds` and stored in a derived relation:
+
+```
+:create item_search {
+    item_id: String,
+    =>
+    blob_id: String,
+    text: String,
+    extractor_version: Int
+}
+```
+
+`item:title_words` indexes titles; `item_search:body_words` indexes cached text. These indexes and `item_search` are local, rebuildable data, not facts exchanged through `doc:self` or with other peers. `blob_id` identifies the readable HTML used to derive the text; `extractor_version` allows later extraction changes to trigger a rebuild. A derived write is accepted only while that blob is still the item's current `html_readable` content. Search joins body matches to the current content reference so stale text never supplies a result.
+
+Cozo 0.7.6 only deletes old full-text terms on replacement when a normal index also exists on that relation (`query/stored.rs`, `put_into_relation`). Each indexed relation therefore also has a small `search_updates` index over its primary key. Regression tests cover title and body replacement; this workaround can be removed when a Cozo update fixes the behavior.
+
+Queries are literal, case-insensitive words, with every distinct word required across the title and cached text. Each word matches the beginning of an indexed word. Punctuation has no query-language meaning. Membership, tombstone exclusion, ordering, and pagination use the same rules as the current list; search does not impose a relevance cutoff before applying those filters.
+
+Existing titles are indexed during migration. A background task rebuilds text from locally available readable blobs; missing blobs leave titles searchable and can be retried on a later launch. The UI indicates when cached text is still being prepared. New extractions update this derived data as part of ingestion.
+
 ## Personal state
 
 State that is yours alone — your read state, your tags, your stars, your lists — is not shared with peers. It syncs between your own devices via `doc:self` but does not cross trust boundaries.
@@ -594,6 +616,8 @@ We keep migration code in the codebase indefinitely. A user upgrading from a yea
 Breaking changes (a relation field removed, a meaning changed) require a migration. Additive changes (a new relation, a new optional field with a default) can ship without a migration version bump if existing queries don't break.
 
 Update this document *before* writing the migration code. The migration's description in this document is what the maintainer six months from now will read to understand what changed and why.
+
+Version 2 adds `item_search`, two full-text indexes, and their normal-index update workaround. It preserves all existing facts and indexes existing titles. Relation and index creation are individually resumable; the version is recorded only after all indexes exist. Cached body text is rebuilt from blobs after migration rather than holding up startup on filesystem I/O.
 
 ## Invariants
 

@@ -2,7 +2,9 @@
 
 use std::collections::BTreeMap;
 
-use carrel_core::library::{ITEM_PAGE_SIZE, ItemCursor, ItemFilter, ItemPage, ItemView};
+use carrel_core::library::{
+    ITEM_PAGE_SIZE, ItemCursor, ItemFilter, ItemPage, ItemView, search_terms,
+};
 use cozo::{DataValue, Num};
 
 use crate::{Result, Store, StoreError};
@@ -42,14 +44,19 @@ impl Store {
         filter: &ItemFilter,
         since_micros: i64,
     ) -> Result<ItemPage<LibraryItem>> {
-        if filter
-            .after
-            .as_ref()
-            .is_some_and(|cursor| cursor.view != filter.view || cursor.id.is_empty())
-        {
+        let terms =
+            search_terms(filter.search.as_deref()).map_err(|error| StoreError::InvalidInput {
+                context: "item search",
+                message: error.to_string(),
+            })?;
+        if filter.after.as_ref().is_some_and(|cursor| {
+            cursor.view != filter.view || cursor.search_terms != terms || cursor.id.is_empty()
+        }) {
             return Err(StoreError::InvalidInput {
                 context: "item cursor",
-                message: "cursor must belong to the requested view and contain an item ID".into(),
+                message:
+                    "cursor must belong to the requested view and query and contain an item ID"
+                        .into(),
             });
         }
         let limit = filter
@@ -81,13 +88,30 @@ impl Store {
                 "*item_article{item_id: id, feed_url: $feed_url}, sort_at = to_int(discovered_at)"
             }
         };
+        let (search_rules, search_membership) = if terms.is_some() {
+            (
+                r#"
+                terms[term, upper] <- $terms
+                hit[id, term] := terms[term, upper], *item:title_words{word, src_id: id}, word >= term, word < upper
+                hit[id, term] := terms[term, upper], *item_search:body_words{word, src_item_id: id}, word >= term, word < upper,
+                    *item_search{item_id: id, blob_id, extractor_version: $extractor_version},
+                    *item_content{item_id: id, format: 'html_readable', blob_id}
+                match[id, count_unique(term)] := hit[id, term]
+            "#,
+                "match[id, $term_count],",
+            )
+        } else {
+            ("", "")
+        };
         let query = format!(
             r#"
             unread[id] := *read_state{{item_id: id, state: 'unread'}}
             unread[id] := *item{{id}}, not *read_state{{item_id: id}}
+            {search_rules}
             eligible[id, sort_at] :=
                 *item{{id, discovered_at}},
                 not *entity_tombstone{{id}},
+                {search_membership}
                 {membership},
                 (!$has_after || sort_at < $after_time || (sort_at == $after_time && id > $after_id))
             page[rank, sort_at, id] <~ ReorderSort(eligible[id, sort_at],
@@ -108,6 +132,30 @@ impl Store {
         let rows = self.query_with_params(
             &query,
             BTreeMap::from([
+                (
+                    "terms".into(),
+                    DataValue::List(
+                        terms
+                            .as_deref()
+                            .unwrap_or_default()
+                            .iter()
+                            .map(|term| {
+                                DataValue::List(vec![
+                                    DataValue::from(term.as_str()),
+                                    DataValue::from(format!("{term}\u{10ffff}")),
+                                ])
+                            })
+                            .collect(),
+                    ),
+                ),
+                (
+                    "term_count".into(),
+                    DataValue::from(terms.as_ref().map_or(0, Vec::len) as i64),
+                ),
+                (
+                    "extractor_version".into(),
+                    DataValue::from(crate::search::SEARCH_EXTRACTOR_VERSION),
+                ),
                 ("since".into(), DataValue::from(since.unwrap_or(0))),
                 (
                     "feed_url".into(),
@@ -148,6 +196,7 @@ impl Store {
                 sort_at_micros: integer(&last[0])?,
                 id: string(&last[1])?,
                 since_micros: since,
+                search_terms: terms,
             })
         } else {
             None

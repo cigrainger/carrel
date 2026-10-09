@@ -292,6 +292,27 @@ Selection follows article identity when a refresh inserts or reorders rows.
 Returning from the reader restores keyboard focus to the selected article
 without changing the restored list scroll offset.
 
+### Local article search
+
+Each article list has one quiet, ruled search field below its heading and
+Library filters. Its label names the active view (including Unread, Starred,
+or the selected feed). Search stays within that view and retains its existing
+order. Changing Library filters carries the query along. `/` focuses the field,
+`\` clears the query from the list, and Escape leaves the field and returns
+focus to the selected article. Typing updates the query after a brief pause;
+it does not add a history entry for every word or steal focus when results arrive.
+
+The field searches titles and locally cached article text. Words are literal
+and case-insensitive, and every word must match a word beginning in the title
+or text. A short help line states this behavior. There is no relevance ranking,
+result count, remote request, or suggested query. Empty results say that no
+articles match in the current view and offer to clear the search. The query,
+loaded pages, selection, and scroll survive opening an article and returning.
+
+Older cached text is prepared in the background. While it is being prepared,
+a quiet line says that titles are available. If some text cannot be prepared,
+the line says so and offers a retry. No spinner or modal blocks local reading.
+
 The status strip is small, at the bottom, showing quiet operation and error messages without counts. It's the system-tray-style surface we use *instead of* OS notifications. Users who want to ignore it can hide it; it never demands attention.
 
 ### The reading view

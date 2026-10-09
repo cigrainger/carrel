@@ -16,6 +16,7 @@ pub mod keystore;
 pub mod library;
 mod migrations;
 pub mod schema;
+pub mod search;
 
 use std::collections::BTreeMap;
 use std::fs;

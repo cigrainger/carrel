@@ -1005,6 +1005,7 @@ mod tests {
                 view: ItemView::Library,
                 limit: Some(3),
                 after: None,
+                search: None,
             },
         )
         .unwrap();
@@ -1019,6 +1020,7 @@ mod tests {
                 view: ItemView::Unread,
                 limit: Some(10),
                 after: None,
+                search: None,
             },
         )
         .unwrap();
@@ -1038,6 +1040,7 @@ mod tests {
                 view: ItemView::Reading,
                 limit: Some(10),
                 after: None,
+                search: None,
             },
         )
         .unwrap();
@@ -1049,6 +1052,7 @@ mod tests {
                 view: ItemView::Starred,
                 limit: Some(10),
                 after: None,
+                search: None,
             },
         )
         .unwrap();
@@ -1063,6 +1067,7 @@ mod tests {
                 },
                 limit: Some(10),
                 after: None,
+                search: None,
             },
         )
         .unwrap();

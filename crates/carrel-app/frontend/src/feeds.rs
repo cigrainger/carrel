@@ -17,6 +17,7 @@ pub(crate) struct FeedController {
     error: RwSignal<Option<String>>,
     pub(crate) add_open: RwSignal<bool>,
     pub(crate) file_busy: RwSignal<bool>,
+    pub(crate) search_status: RwSignal<crate::api::SearchStatus>,
     #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
     writes: StoredValue<crate::writes::PendingWrites>,
     #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
@@ -56,6 +57,7 @@ pub(crate) fn provide_feed_controller() -> FeedController {
         error: RwSignal::new(None),
         add_open: RwSignal::new(false),
         file_busy: RwSignal::new(false),
+        search_status: RwSignal::new(crate::api::SearchStatus::default()),
         writes: StoredValue::new(crate::writes::use_pending_writes()),
         refresh_token: RwSignal::new(0),
     };
@@ -64,9 +66,13 @@ pub(crate) fn provide_feed_controller() -> FeedController {
     #[cfg(target_arch = "wasm32")]
     {
         reload(controller);
+        poll_search_status(controller);
         let interval = set_interval_with_handle(
             move || {
                 poll_status(controller);
+                if controller.search_status.get_untracked() == crate::api::SearchStatus::Preparing {
+                    poll_search_status(controller);
+                }
             },
             Duration::from_secs(5),
         );
@@ -216,6 +222,41 @@ fn poll_status(controller: FeedController) {
 }
 
 #[cfg(target_arch = "wasm32")]
+fn poll_search_status(controller: FeedController) {
+    wasm_bindgen_futures::spawn_local(async move {
+        let status = api::search_status()
+            .await
+            .unwrap_or(crate::api::SearchStatus::Failed);
+        let previous = controller.search_status.get_untracked();
+        controller.search_status.set(status);
+        if previous == crate::api::SearchStatus::Preparing && status != previous {
+            controller.bump_refresh();
+        }
+    });
+}
+
+/// Retry the local text rebuild and resume status checks.
+pub(crate) fn retry_search(controller: FeedController) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        controller
+            .search_status
+            .set(crate::api::SearchStatus::Preparing);
+        wasm_bindgen_futures::spawn_local(async move {
+            if api::rebuild_search().await.is_err() {
+                controller
+                    .search_status
+                    .set(crate::api::SearchStatus::Failed);
+            } else {
+                poll_search_status(controller);
+            }
+        });
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    let _ = controller;
+}
+
+#[cfg(target_arch = "wasm32")]
 async fn refresh_after_mutation(controller: FeedController) -> Result<(), String> {
     refresh(controller, true).await;
     Ok(())
@@ -246,7 +287,7 @@ fn message(error: ApiError) -> String {
     error.message().to_string()
 }
 
-fn percent_encode(value: &str) -> String {
+pub(crate) fn percent_encode(value: &str) -> String {
     let mut encoded = String::new();
     for byte in value.bytes() {
         if is_unreserved(byte) {

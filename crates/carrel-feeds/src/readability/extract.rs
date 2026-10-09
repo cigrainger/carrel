@@ -165,14 +165,74 @@ pub async fn extract_from_url_with_options(
     }
 }
 
-/// Convert sanitized HTML into plain text for previews and tests.
+/// Convert HTML into plain text, retaining word boundaries between blocks.
 pub fn html_to_text(html: &str) -> String {
-    kuchiki::parse_html()
-        .one(html)
-        .text_contents()
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
+    use kuchiki::{NodeData, iter::NodeEdge};
+    let document = kuchiki::parse_html().one(html);
+    let mut text = String::new();
+    let mut ignored = 0_usize;
+    for edge in document.traverse() {
+        let (node, opening) = match edge {
+            NodeEdge::Start(node) => (node, true),
+            NodeEdge::End(node) => (node, false),
+        };
+        match node.data() {
+            NodeData::Element(element) => {
+                let name = element.name.local.as_ref();
+                if matches!(name, "script" | "style" | "template") {
+                    if opening {
+                        ignored += 1;
+                    } else {
+                        ignored -= 1;
+                    }
+                }
+                if ignored == 0
+                    && matches!(
+                        name,
+                        "address"
+                            | "article"
+                            | "aside"
+                            | "blockquote"
+                            | "br"
+                            | "dd"
+                            | "div"
+                            | "dl"
+                            | "dt"
+                            | "figcaption"
+                            | "figure"
+                            | "footer"
+                            | "h1"
+                            | "h2"
+                            | "h3"
+                            | "h4"
+                            | "h5"
+                            | "h6"
+                            | "header"
+                            | "hr"
+                            | "li"
+                            | "main"
+                            | "nav"
+                            | "ol"
+                            | "p"
+                            | "pre"
+                            | "section"
+                            | "table"
+                            | "tbody"
+                            | "td"
+                            | "th"
+                            | "thead"
+                            | "tr"
+                            | "ul"
+                    )
+                {
+                    text.push(' ');
+                }
+            }
+            NodeData::Text(value) if opening && ignored == 0 => text.push_str(&value.borrow()),
+            _ => {}
+        }
+    }
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 fn looks_like_network_error_page(html: &str) -> bool {
@@ -310,4 +370,24 @@ fn normalize_text(value: Option<String>) -> Option<String> {
     value
         .map(|value| value.split_whitespace().collect::<Vec<_>>().join(" "))
         .filter(|value| !value.is_empty())
+}
+
+#[cfg(test)]
+mod text_tests {
+    use super::html_to_text;
+
+    #[test]
+    fn text_keeps_blocks_separate_and_inline_words_together() {
+        assert_eq!(
+            html_to_text(
+                "<p>read<b>ing</b></p><p>next<br>line &amp; café</p><ul><li>one</li><li>two</li></ul>"
+            ),
+            "reading next line & café one two"
+        );
+        assert_eq!(
+            html_to_text("<style>hidden css</style><p>visible</p><script>hidden code</script>"),
+            "visible"
+        );
+        assert_eq!(html_to_text(""), "");
+    }
 }

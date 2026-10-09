@@ -44,13 +44,29 @@ checked with 250 isolated articles. The native import picker opens; automated
 file selection requires macOS assistive access, which was unavailable. Parser,
 filesystem, and store paths are covered independently. The milestone passes
 `just check` with 188 tests, a full Trunk CSR build, and a native build without
-the temporary inspection driver. Local search follows; the self-sync goal
-remains active.
+the temporary inspection driver.
+
+Local article search now covers titles and cached readable text within the
+current list filter, with literal case-insensitive word prefixes and the same
+ordering and explicit pagination. Query-scoped cursors and route URLs preserve
+the query and loaded results on reader return. Migration 2 indexes existing
+titles; the native worker rebuilds available older blobs with a quiet status
+and retry path. Derived text stays local and is checked against its source
+blob. A Cozo 0.7.6 index-update workaround has replacement regression coverage.
+`just check` passes 199 tests, native and CSR lint, and formatting; both full
+builds pass without the temporary inspection driver. Native checks cover
+100-to-250 searched results, article return with selection and scroll intact,
+Unicode cached-body matching in the oldest unread article, filter retention,
+empty-result recovery, and the search keymap. Annotation review follows;
+the two-device self-sync goal remains active.
 
 ## Decisions already made
 
 - Older articles extend the current list on demand with **Load older**. There
   is no automatic infinite scrolling and no article-count badge.
+- Search stays within the current article view and carries its query across
+  Library filters. Titles and cached text are searched locally without a
+  relevance cutoff or remote service.
 - Cozo is authoritative. `carrel-sync` alone owns the Iroh mirror and incoming
   verification. Local writes remain useful while the other device is offline.
 - Reading is explicit: opening, navigating, syncing, or reaching the end of

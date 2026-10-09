@@ -503,6 +503,7 @@ impl Store {
                 ),
             ]),
         )?;
+        self.put_search_text(item_id, &content.blob_id, &content.searchable_text)?;
         Ok(())
     }
 
@@ -815,6 +816,7 @@ mod tests {
             }],
         };
         let content = ExtractedEntryContent {
+            searchable_text: "Cached article body".into(),
             feed_guid: "post-1".to_string(),
             title: Some("Extracted Title".to_string()),
             byline: Some("Ada".to_string()),

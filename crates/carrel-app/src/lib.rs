@@ -45,6 +45,7 @@ pub fn run() -> Result<()> {
         })
         .setup(move |_| {
             background::spawn_feed_loop(background_state.clone());
+            background::spawn_search_rebuild(background_state.clone());
             Ok(())
         })
         .manage(app_state)
@@ -73,6 +74,8 @@ pub fn run() -> Result<()> {
             commands::items::toggle_item_star,
             commands::items::update_read_progress,
             commands::status::version,
+            commands::status::search_status,
+            commands::status::rebuild_search,
         ])
         .build(tauri::generate_context!())?
         .run(close::on_run_event);

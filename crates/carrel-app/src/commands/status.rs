@@ -6,6 +6,18 @@ use tauri::State;
 use crate::state::AppState;
 use crate::{Result, config::InstallPaths};
 
+/// Snapshot the local cached-text preparation state.
+#[tauri::command]
+pub(crate) fn search_status(state: State<'_, AppState>) -> crate::state::SearchStatus {
+    *state.search_status.lock().expect("search status lock")
+}
+
+/// Retry unavailable cached text without overlapping an existing rebuild.
+#[tauri::command]
+pub(crate) fn rebuild_search(state: State<'_, AppState>) {
+    crate::background::spawn_search_rebuild(state.inner().clone());
+}
+
 /// Desktop shell and data-store version metadata.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]

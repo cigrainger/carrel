@@ -51,8 +51,11 @@ highlights and notes, and local lists for Today, Reading, Library, Unread,
 Starred, and individual feeds. **Load older** extends lists through the archive.
 **Import OPML** and **Export OPML** use native file dialogs; importing keeps
 existing subscription settings. Nested OPML folders become readable folder
-paths, exported as named groups. Local search and two-device self-sync are the
-next milestones in [`docs/SELF_SYNC_PLAN.md`](docs/SELF_SYNC_PLAN.md).
+paths, exported as named groups. Each article list can search titles and cached
+text offline; `/` focuses search and `\` clears it. Every word matches a word
+beginning, within the current filter. The query and loaded results survive
+opening an article and returning. Annotation review and two-device self-sync
+follow in [`docs/SELF_SYNC_PLAN.md`](docs/SELF_SYNC_PLAN.md).
 
 The CLI can initialize a local data directory, print install info, run schema
 migrations, execute raw Cozo queries, subscribe to feeds, fetch RSS/Atom/JSON
