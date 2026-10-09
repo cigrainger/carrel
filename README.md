@@ -39,6 +39,11 @@ just cli     # run CLI commands
 
 The native frontend tests use Leptos's SSR feature. `just frontend-check` separately compiles and lints the CSR/WASM code used by the real desktop webview, and is included in `just check` and CI.
 
+Normal development and test builds retain line-level debugging for Carrel's
+code, omit dependency debug symbols, and disable incremental caches to keep
+disk use manageable. For full debugger inspection, use `cargo build --profile
+debugging` or `cargo test --profile debugging`. Release builds are unaffected.
+
 The desktop app currently boots a Tauri 2 shell with a Leptos webview, bundled reading fonts, design tokens, sidebar chrome, a status strip, feed management, reading view, and local library surfaces for Today, Library, Unread, Reading, Starred, and per-feed item lists. The CLI can initialize a local data directory, print install info, run schema migrations, execute raw Cozo queries, subscribe to feeds, manually fetch RSS/Atom/JSON Feed subscriptions, cache readable article HTML and images, inspect content-shape facts, recompute derived shape facts, and show a text preview of cached items; it remains a dogfooding and development surface while the desktop reader comes online.
 
 ## License

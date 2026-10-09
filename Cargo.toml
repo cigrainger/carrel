@@ -61,3 +61,20 @@ wasm-bindgen-futures = "0.4.79"
 web-sys = { version = "0.3.106", features = ["Document", "DocumentFragment", "DomRect", "Element", "FocusOptions", "HtmlButtonElement", "HtmlDialogElement", "HtmlElement", "HtmlInputElement", "HtmlTextAreaElement", "KeyboardEvent", "Location", "MouseEvent", "Node", "NodeList", "Range", "Selection", "ScrollIntoViewOptions", "ScrollLogicalPosition", "Storage", "Window", "console"] }
 wiremock = "0.6.5"
 zeroize = "1.9.1"
+
+# Keep normal desktop builds practical on disk while retaining useful backtraces.
+[profile.dev]
+debug = "line-tables-only"
+incremental = false
+
+[profile.dev.package."*"]
+debug = false
+
+# Opt in when inspecting variables or stepping through dependencies.
+[profile.debugging]
+inherits = "dev"
+debug = true
+incremental = true
+
+[profile.debugging.package."*"]
+debug = true
