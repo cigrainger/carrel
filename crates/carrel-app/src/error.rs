@@ -32,6 +32,10 @@ pub enum AppError {
     #[error("{0}")]
     SubscriptionFile(String),
 
+    /// Annotation export could not save a file.
+    #[error("{0}")]
+    AnnotationFile(String),
+
     /// Tauri failed while building or running the shell.
     #[error(transparent)]
     Tauri(#[from] tauri::Error),
@@ -63,11 +67,15 @@ impl Serialize for AppError {
     {
         let kind = match self {
             Self::Config(_) => "config",
+            Self::Store(carrel_store::StoreError::AnnotationConflict { .. }) => {
+                "annotation_conflict"
+            }
             Self::Store(_) => "store",
             Self::Blob(_) => "blob",
             Self::Keystore(_) => "keystore",
             Self::Feed(_) => "feed",
             Self::SubscriptionFile(_) => "subscription_file",
+            Self::AnnotationFile(_) => "annotation_file",
             Self::Tauri(_) => "tauri",
             Self::OpenLink(_) => "open_link",
             Self::InvalidData { .. } => "invalid_data",

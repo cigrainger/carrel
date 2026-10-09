@@ -6,8 +6,8 @@ In spirit: a successor to Google Reader's social layer. In practice: a desktop a
 
 ## Status
 
-Early. Pre-alpha. The local reading loop works; search and peer-to-peer sync
-are still being built.
+Early. Pre-alpha. The local reading loop, archive, offline search, and annotation
+review work. Two-device peer-to-peer self-sync is the next milestone.
 
 This repository is the home of the project's design documents, code, and (eventually) releases. The design documents are stable enough to guide implementation, and the foundation crates are now taking shape: the Cargo workspace, Cozo schema, identity primitives, keystore, CLI, feed ingestion, readable article extraction, content-shape detection, and the first Tauri + Leptos desktop reader surfaces are implemented. The CLI remains a development surface rather than end-user software.
 
@@ -54,8 +54,10 @@ existing subscription settings. Nested OPML folders become readable folder
 paths, exported as named groups. Each article list can search titles and cached
 text offline; `/` focuses search and `\` clears it. Every word matches a word
 beginning, within the current filter. The query and loaded results survive
-opening an article and returning. Annotation review and two-device self-sync
-follow in [`docs/SELF_SYNC_PLAN.md`](docs/SELF_SYNC_PLAN.md).
+opening an article and returning. Highlights supports full note review, note
+editing, deliberate removal, and a complete Markdown export through a native
+save dialog. Two-device self-sync follows in
+[`docs/SELF_SYNC_PLAN.md`](docs/SELF_SYNC_PLAN.md).
 
 The CLI can initialize a local data directory, print install info, run schema
 migrations, execute raw Cozo queries, subscribe to feeds, fetch RSS/Atom/JSON

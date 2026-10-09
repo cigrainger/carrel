@@ -192,7 +192,7 @@ fn round_trips_one_row_through_each_schema_relation() {
                 :put highlight {id => item_id, quoted_text, location, location_label, color, created_by, created_at, signature}
             }
             {
-                ?[id, body, target_kind, target_id, created_by, created_at, updated_at, signature] :=
+                ?[id, body, target_kind, target_id, created_by, created_at, updated_at, updated_by, signature_version, signature] :=
                     id = 'note-1',
                     body = 'note body',
                     target_kind = 'item',
@@ -200,8 +200,10 @@ fn round_trips_one_row_through_each_schema_relation() {
                     created_by = $peer,
                     created_at = 'ASSERT',
                     updated_at = 'ASSERT',
+                    updated_by = $peer,
+                    signature_version = 2,
                     signature = $signature
-                :put note {id => body, target_kind, target_id, created_by, created_at, updated_at, signature}
+                :put note {id, updated_at => body, target_kind, target_id, created_by, created_at, updated_by, signature_version, signature}
             }
             {
                 ?[id, source_id, target_id, relation, note, created_by, created_at, signature] :=

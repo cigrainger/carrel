@@ -400,6 +400,38 @@ the end of the archive. Filtering applies to all saved articles before any
 limit; an old unread or starred article remains reachable. Returning from
 reading and refreshing after a local write preserve the loaded older boundary.
 
+### Annotation review
+
+Highlights uses the same editorial grid and explicit **Load older** interaction
+as the article library. It shows the quote, original article context, and a
+short excerpt of the latest note. A quiet **Notes** control expands all attached
+notes in place; notes retain line breaks and each has an **Edit note** action.
+Opening the source and returning restores the loaded pages, expanded notes,
+selected highlight, focus, and scroll. Full notes use a readable line length.
+
+Editing keeps the quote visible for context, preserves the note's identity, and
+uses the existing focus-contained note editor. Cmd+Enter saves; Escape cancels.
+A failed save restores the old note and retains the draft. A stale edit is
+explained in the editor so the user can keep or copy their draft and reload the
+current note. Local writes have no spinners.
+
+Creating a highlight with a note also retains its draft on failure. If the
+highlight succeeded first, retrying the note uses that confirmed highlight
+instead of creating another one. The editor explains this partial save.
+
+**Remove highlight** asks for a deliberate confirmation showing the quote and
+stating that its attached notes will also disappear from this library. The
+removed row disappears immediately; a failed write restores it and its selection
+when the user has not moved elsewhere. Removing the
+selected row selects its nearest remaining neighbor. There is no permanent
+delete action hidden behind a keystroke without this confirmation.
+
+**Export Markdown** uses a native save dialog and includes the entire surviving
+annotation archive, with article titles and links, stable references, dates,
+quotes, and full notes. It exports beyond the pages currently loaded. The
+document remains readable without Carrel. Export and review contain no counts
+or engagement signals. Friends and sharing remain separate work.
+
 ### The friends view
 
 Shares from followed peers, in chronological order. Each share displays: the sharer's pet name, the share note (prominently — this is what they thought you should know), the item title, and small affordances to read, save, or react.

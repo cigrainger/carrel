@@ -32,7 +32,63 @@ pub const RELATIONS: &[&str] = &[
     "entity_tombstone",
     "schema_version",
     "item_search",
+    "note_legacy_v2",
+    "annotation_removal",
 ];
+
+/// Staging relation for migration 3, renamed to `note` after legacy copy.
+pub const CREATE_NOTE_REVISIONS: &str = r#"
+    :create note_v3 {
+        id: String, updated_at: Validity =>
+        body: String, target_kind: String?, target_id: String?,
+        created_by: Bytes, created_at: Validity, updated_by: Bytes,
+        signature_version: Int, signature: Bytes
+    }
+"#;
+
+/// Private signed removal history, alongside permanent entity tombstones.
+pub const CREATE_ANNOTATION_REMOVALS: &str = r#"
+    :create annotation_removal {
+        id: String, removed_at: Validity => kind: String, removed_by: Bytes, signature: Bytes
+    }
+"#;
+
+/// Reject highlight mutation and writes to removed entities or targets.
+pub const CREATE_HIGHLIGHT_TRIGGERS: &str = r#"
+    ::set_triggers highlight on put {
+        invalid[id] := _new[id, item_id, quoted_text, location, label, color, author, at, signature], *entity_tombstone{id}
+        invalid[id] := _new[id, item_id, quoted_text, location, label, color, author, at, signature], *entity_tombstone{id: item_id}
+        invalid[id] := _new[id, item_id, quoted_text, location, label, color, author, at, signature], not *item{id: item_id}
+        invalid[id] := _new[id, item_id, quoted_text, location, label, color, author, at, signature],
+            _old[id, old_item, old_quote, old_location, old_label, old_color, old_author, old_at, old_signature],
+            [item_id, quoted_text, location, label, color, author, at, signature] !=
+            [old_item, old_quote, old_location, old_label, old_color, old_author, old_at, old_signature]
+        ?[id] := invalid[id]
+        :assert none
+    }
+"#;
+
+/// Keep note revisions immutable and their original metadata stable.
+pub const CREATE_NOTE_TRIGGERS: &str = r#"
+    ::set_triggers note on put {
+        alive_item[id] := *item{id}, not *entity_tombstone{id}
+        alive_highlight[id] := *highlight{id, item_id}, alive_item[item_id], not *entity_tombstone{id}
+        invalid[id] := _new[id, revision, body, kind, target, author, created, updater, version, signature], *entity_tombstone{id}
+        invalid[id] := _new[id, revision, body, kind, target, author, created, updater, version, signature], kind = 'item', not alive_item[target]
+        invalid[id] := _new[id, revision, body, kind, target, author, created, updater, version, signature], kind = 'highlight', not alive_highlight[target]
+        invalid[id] := _new[id, revision, body, kind, target, author, created, updater, version, signature],
+            (is_null(kind) != is_null(target) || (!is_null(kind) && kind != 'item' && kind != 'highlight'))
+        invalid[id] := _new[id, revision, body, kind, target, author, created, updater, version, signature],
+            *note{id, updated_at: previous, target_kind: old_kind, target_id: old_target, created_by: old_author, created_at: old_created},
+            previous != revision, [kind, target, author, created] != [old_kind, old_target, old_author, old_created]
+        invalid[id] := _new[id, revision, body, kind, target, author, created, updater, version, signature],
+            _old[id, revision, old_body, old_kind, old_target, old_author, old_created, old_updater, old_version, old_signature],
+            [body, kind, target, author, created, updater, version, signature] !=
+            [old_body, old_kind, old_target, old_author, old_created, old_updater, old_version, old_signature]
+        ?[id] := invalid[id]
+        :assert none
+    }
+"#;
 
 /// Derived readable-text cache, created by migration 2.
 pub const CREATE_SEARCH_SCHEMA: &str = r#"

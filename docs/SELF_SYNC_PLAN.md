@@ -57,8 +57,32 @@ blob. A Cozo 0.7.6 index-update workaround has replacement regression coverage.
 builds pass without the temporary inspection driver. Native checks cover
 100-to-250 searched results, article return with selection and scroll intact,
 Unicode cached-body matching in the oldest unread article, filter retention,
-empty-result recovery, and the search keymap. Annotation review follows;
-the two-device self-sync goal remains active.
+empty-result recovery, and the search keymap.
+
+Annotation review now pages through the complete highlight archive, with every
+current note and joined article context. Notes expand in place, can be edited
+against a specific revision, and retain their drafts after failures. Source
+return restores loaded pages, expanded notes, selection, focus, and scroll;
+deep links wait for the annotation query before focusing. Highlight removal
+uses signed permanent tombstones and hides attached notes. Failed removals
+restore the row and its selection if the user has not moved away. Markdown
+export reads a complete database snapshot, includes full notes and original
+article references, escapes source text, and replaces files atomically.
+
+Migration 3 preserves legacy signatures and resumes interrupted migration
+stages. Note revisions preserve identity and immutable metadata; local edits
+serialize across store clones, detect stale editors, and advance despite a
+backward clock. Tests cover all note targets, unauthorized/tampered writes,
+concurrent local edits, removal dominance, persistence, archive pagination
+beyond 500 highlights, full exports, and failure recovery. Native checks used
+250 isolated highlights and exercised full-note editing, real stale conflicts,
+storage failure rollback, 100-to-250 browsing, exact source return, and partial
+note creation failure/retry without a duplicate highlight. Native file-dialog
+selection remains a manual check because macOS assistive access was unavailable;
+export formatting and filesystem paths are covered independently.
+`just check` passes 216 tests, formatting, native and CSR lint. Both full builds
+pass with the temporary inspection dependency removed. The local milestones
+are complete; two-device self-sync remains active and unimplemented.
 
 ## Decisions already made
 
@@ -67,6 +91,8 @@ the two-device self-sync goal remains active.
 - Search stays within the current article view and carries its query across
   Library filters. Titles and cached text are searched locally without a
   relevance cutoff or remote service.
+- Annotation exports use Markdown, with complete quotes, full notes, dates,
+  article links, and stable references. The export is independent of loaded pages.
 - Cozo is authoritative. `carrel-sync` alone owns the Iroh mirror and incoming
   verification. Local writes remain useful while the other device is offline.
 - Reading is explicit: opening, navigating, syncing, or reaching the end of

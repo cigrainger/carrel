@@ -29,6 +29,21 @@ use crate::status::{StatusController, use_status_controller};
 struct PendingNoteDraft {
     request: CreateHighlightRequest,
     exact: String,
+    body: String,
+    saved_highlight: Option<HighlightDetail>,
+    failure: Option<String>,
+}
+
+impl PendingNoteDraft {
+    fn new(request: CreateHighlightRequest, exact: String) -> Self {
+        Self {
+            request,
+            exact,
+            body: String::new(),
+            saved_highlight: None,
+            failure: None,
+        }
+    }
 }
 
 /// Full-page article reader.
@@ -39,11 +54,16 @@ pub fn ReadingView() -> impl IntoView {
     let item_id = Memo::new(move |_| params.read().get("id").unwrap_or_default());
     let item = RwSignal::new(None::<ItemDetail>);
     let highlights = RwSignal::new(Vec::<HighlightDetail>::new());
+    let highlights_ready = RwSignal::new(false);
+    let annotation_actions = crate::annotation_actions::use_annotation_actions();
+    let visible_highlights =
+        Signal::derive(move || annotation_actions.project_highlights(highlights.get()));
     let error = RwSignal::new(None::<String>);
     let loaded = RwSignal::new(false);
     let reload = RwSignal::new(0_u64);
     let info_open = RwSignal::new(false);
     let pending_note = RwSignal::new(None::<PendingNoteDraft>);
+    let note_saving = RwSignal::new(false);
     let restored_item = RwSignal::new(None::<String>);
     let scroll_ref = NodeRef::<html::Div>::new();
     let body_ref = NodeRef::<html::Div>::new();
@@ -219,11 +239,13 @@ pub fn ReadingView() -> impl IntoView {
             let action_revision = actions.state.with_untracked(|state| state.revision());
             item.set(None);
             highlights.set(Vec::new());
+            highlights_ready.set(false);
             error.set(None);
             loaded.set(false);
             restored_item.set(None);
             info_open.set(false);
             pending_note.set(None);
+            note_saving.set(false);
 
             spawn_local(async move {
                 let result = api::get_item(id.clone()).await;
@@ -262,6 +284,7 @@ pub fn ReadingView() -> impl IntoView {
                                         }
                                     }
                                     highlights.set(rows);
+                                    highlights_ready.set(true);
                                 }
                                 Ok(_) => {}
                                 Err(err) => {
@@ -368,31 +391,37 @@ pub fn ReadingView() -> impl IntoView {
                 pending_note
                     .get()
                     .map(|draft| {
-                        let request = draft.request.clone();
-                        let exact = draft.exact;
                         let confirm = UnsyncCallback::new(move |body: String| {
                             if body.trim().is_empty() {
                                 status.info("Write a note before saving.");
                                 return;
                             }
-                            pending_note.set(None);
+                            if note_saving.get_untracked() {return;}
+                            let Some(mut draft) = pending_note.get_untracked() else {return;};
+                            draft.body = body; draft.failure = None;
+                            pending_note.set(Some(draft.clone()));
+                            note_saving.set(true);
                             confirm_highlight_note(
-                                request.clone(),
+                                draft,
                                 item,
-                                body,
                                 highlights,
                                 status,
                                 feeds,
                                 writes,
+                                (pending_note, note_saving),
                             );
                         });
                         let cancel = UnsyncCallback::new(move |()| {
+                            if note_saving.get_untracked() {return;}
                             pending_note.set(None);
                             status.info("Highlight note cancelled.");
                         });
                         view! {
                             <HighlightNoteOverlay
-                                exact=exact
+                                exact=draft.exact
+                                initial_body=draft.body
+                                failure=draft.failure
+                                saving=note_saving
                                 on_confirm=confirm
                                 on_cancel=cancel
                             />
@@ -403,7 +432,7 @@ pub fn ReadingView() -> impl IntoView {
                 on_highlight=UnsyncCallback::new(move |request| write_highlight(request, item, highlights, status, feeds, writes))
                 on_note=UnsyncCallback::new(move |request: CreateHighlightRequest| {
                     let carrel_core::annotation::HighlightLocation::HtmlText(selector) = &request.location;
-                    pending_note.set(Some(PendingNoteDraft { exact: selector.exact.clone(), request }));
+                    pending_note.set(Some(PendingNoteDraft::new(request.clone(), selector.exact.clone())));
                 })
             />
             <div
@@ -429,7 +458,8 @@ pub fn ReadingView() -> impl IntoView {
                                     </Show>
                                     <ArticleContent
                                         item=detail
-                                         highlights=highlights
+                                         highlights=visible_highlights
+                                         highlights_ready=highlights_ready
                                         body_ref=body_ref
                                         status=status
                                      />
@@ -595,10 +625,13 @@ pub fn ItemInfo(item: ItemDetail, on_close: UnsyncCallback<()>) -> impl IntoView
 #[component]
 pub fn HighlightNoteOverlay(
     exact: String,
+    #[prop(default = String::new())] initial_body: String,
+    #[prop(optional_no_strip)] failure: Option<String>,
+    #[prop(default = Signal::stored(false), into)] saving: Signal<bool>,
     on_confirm: UnsyncCallback<String>,
     on_cancel: UnsyncCallback<()>,
 ) -> impl IntoView {
-    let note = RwSignal::new(String::new());
+    let note = RwSignal::new(initial_body);
     let note_ref = NodeRef::<html::Textarea>::new();
 
     #[cfg(target_arch = "wasm32")]
@@ -610,7 +643,7 @@ pub fn HighlightNoteOverlay(
 
     let submit = move || {
         let body = note.get_untracked();
-        if !body.trim().is_empty() {
+        if !body.trim().is_empty() && !saving.get_untracked() {
             on_confirm.run(body);
         }
     };
@@ -627,19 +660,22 @@ pub fn HighlightNoteOverlay(
                     rows="5"
                     aria-label="Note"
                     autofocus=true
+                    readonly=move || saving.get()
                     prop:value=move || note.get()
                     on:input=move |event| note.set(event_target_value(&event))
                 ></textarea>
+                {failure.map(|message| view! {<p class="annotation-error" role="alert">{message}</p>})}
                 <div class="note-dialog-actions">
                     <button
                         type="button"
+                        disabled=move || saving.get()
                         on:click=move |_| on_cancel.run(())
                     >
                         "Cancel"
                     </button>
                     <button
                         type="button"
-                        disabled=move || note.with(|value| value.trim().is_empty())
+                        disabled=move || saving.get() || note.with(|value| value.trim().is_empty())
                         on:click=move |_| submit()
                     >
                         "Save"
@@ -655,6 +691,7 @@ pub fn HighlightNoteOverlay(
 pub fn ArticleContent(
     item: ItemDetail,
     #[prop(into)] highlights: Signal<Vec<HighlightDetail>>,
+    #[prop(default = Signal::stored(true), into)] highlights_ready: Signal<bool>,
     body_ref: NodeRef<html::Div>,
     status: StatusController,
 ) -> impl IntoView {
@@ -679,7 +716,7 @@ pub fn ArticleContent(
     let link_original = StoredValue::new(item.primary_url.clone());
 
     #[cfg(not(target_arch = "wasm32"))]
-    let _ = (&highlights, status);
+    let _ = (&highlights, highlights_ready, status);
 
     #[cfg(target_arch = "wasm32")]
     {
@@ -688,15 +725,13 @@ pub fn ArticleContent(
             let Some(body) = body_ref.get() else {
                 return;
             };
-            let focus_id = highlights::current_hash_highlight_id();
-            let failed = highlights::render_highlights(
-                &body,
-                &content_html,
-                &highlights.get(),
-                focus_id.as_deref(),
-            );
+            let hash_id = highlights::current_hash_highlight_id();
+            let focus_id =
+                highlights::focus_target_after_load(highlights_ready.get(), hash_id.as_deref());
+            let failed =
+                highlights::render_highlights(&body, &content_html, &highlights.get(), focus_id);
             if let Some(focus_id) = focus_id
-                && failed.iter().any(|id| id == &focus_id)
+                && failed.iter().any(|id| id == focus_id)
             {
                 status.warn("Could not locate that highlight in the cached article.");
             }
@@ -808,7 +843,7 @@ fn begin_highlight_note(
     let exact = match &request.location {
         carrel_core::annotation::HighlightLocation::HtmlText(selector) => selector.exact.clone(),
     };
-    pending_note.set(Some(PendingNoteDraft { request, exact }));
+    pending_note.set(Some(PendingNoteDraft::new(request, exact)));
 }
 
 fn capture_highlight_request(
@@ -896,12 +931,10 @@ fn write_highlight(
 }
 
 fn confirm_highlight_note(
-    #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))]
-    request: CreateHighlightRequest,
+    #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))] mut draft: PendingNoteDraft,
     #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))] item: RwSignal<
         Option<ItemDetail>,
     >,
-    #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))] body: String,
     #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))] highlights: RwSignal<
         Vec<HighlightDetail>,
     >,
@@ -910,6 +943,10 @@ fn confirm_highlight_note(
     #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))] writes: StoredValue<
         crate::writes::PendingWrites,
     >,
+    #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))] editor: (
+        RwSignal<Option<PendingNoteDraft>>,
+        RwSignal<bool>,
+    ),
 ) {
     #[cfg(target_arch = "wasm32")]
     {
@@ -918,25 +955,38 @@ fn confirm_highlight_note(
         let guard = writes.get_value().begin();
         spawn_local(async move {
             let _guard = guard;
-            match api::create_highlight(request).await {
+            let result = note_highlight(&mut draft, api::create_highlight).await;
+            match result {
                 Ok(highlight) => {
+                    if is_current_item(item, &highlight.item_id) {
+                        highlights.try_update(|rows| {
+                            if !rows.iter().any(|row| row.id == highlight.id) {
+                                rows.push(highlight.clone());
+                            }
+                        });
+                    }
                     let note_request = CreateHighlightNoteRequest {
                         highlight_id: highlight.id.clone(),
-                        body,
+                        body: draft.body.clone(),
                     };
                     match api::create_highlight_note(note_request).await {
                         Ok(_) => {
                             if is_current_item(item, &highlight.item_id) {
-                                highlights.try_update(|rows| rows.push(highlight));
                                 highlights::clear_current_selection();
+                                editor.0.set(None);
+                                editor.1.set(false);
                             }
                             status.info("Highlight note saved.");
                             feeds.bump_refresh();
                         }
                         Err(error) => {
                             if is_current_item(item, &highlight.item_id) {
-                                highlights.try_update(|rows| rows.push(highlight));
-                                highlights::clear_current_selection();
+                                draft.failure = Some(format!(
+                                    "The highlight was saved, but its note could not be saved. Your draft is still here; retrying will use the same highlight. {}",
+                                    error.message()
+                                ));
+                                editor.0.set(Some(draft));
+                                editor.1.set(false);
                             }
                             status.warn(format!(
                                 "Highlight saved, but note failed: {}",
@@ -947,11 +997,39 @@ fn confirm_highlight_note(
                     }
                 }
                 Err(error) => {
+                    if is_current_item(item, &draft.request.item_id) {
+                        draft.failure = Some(format!(
+                            "Could not save this highlight and note. Your draft is still here. {}",
+                            error.message()
+                        ));
+                        editor.0.set(Some(draft));
+                        editor.1.set(false);
+                    }
                     status.warn(format!("Could not save highlight: {}", error.message()));
                 }
             }
         });
     }
+    #[cfg(not(target_arch = "wasm32"))]
+    let _ = &mut draft;
+}
+
+#[cfg(any(test, target_arch = "wasm32"))]
+async fn note_highlight<F, Fut>(
+    draft: &mut PendingNoteDraft,
+    create: F,
+) -> Result<HighlightDetail, crate::api::ApiError>
+where
+    F: FnOnce(CreateHighlightRequest) -> Fut,
+    Fut: std::future::Future<Output = Result<HighlightDetail, crate::api::ApiError>>,
+{
+    if let Some(highlight) = &draft.saved_highlight {
+        return Ok(highlight.clone());
+    }
+    let highlight = create(draft.request.clone()).await?;
+    // A failed note write must retry against this same confirmed highlight.
+    draft.saved_highlight = Some(highlight.clone());
+    Ok(highlight)
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -1138,6 +1216,84 @@ fn restore_scroll(scroll_ref: NodeRef<html::Div>, scroll_y: Option<f64>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn partial_note_retry_reuses_the_confirmed_highlight_and_keeps_the_draft() {
+        use std::{
+            cell::Cell,
+            future::{Future, ready},
+            task::{Context, Poll, Waker},
+        };
+        fn complete<T>(future: impl Future<Output = T>) -> T {
+            let mut future = std::pin::pin!(future);
+            match future
+                .as_mut()
+                .poll(&mut Context::from_waker(Waker::noop()))
+            {
+                Poll::Ready(value) => value,
+                Poll::Pending => panic!("fixture should be immediately ready"),
+            }
+        }
+        let location = carrel_core::annotation::HighlightLocation::HtmlText(
+            carrel_core::annotation::HtmlTextSelector {
+                content_blob_id: None,
+                exact: "quiet".into(),
+                prefix: String::new(),
+                suffix: String::new(),
+                start: 0,
+                end: 5,
+            },
+        );
+        let request = CreateHighlightRequest {
+            item_id: "item".into(),
+            location: location.clone(),
+            location_label: None,
+            color: None,
+        };
+        let saved = HighlightDetail {
+            id: "confirmed".into(),
+            item_id: "item".into(),
+            quoted_text: "quiet".into(),
+            location,
+            location_label: None,
+            color: None,
+            created_by: String::new(),
+            created_at: String::new(),
+            created_at_micros: 1,
+            signature: String::new(),
+        };
+        let mut draft = PendingNoteDraft::new(request.clone(), "quiet".into());
+        draft.body = "Retained café draft".into();
+        let calls = Cell::new(0);
+        for _ in 0..2 {
+            let actual = complete(note_highlight(&mut draft, |actual| {
+                assert_eq!(actual, request);
+                calls.set(calls.get() + 1);
+                ready(Ok(saved.clone()))
+            }))
+            .unwrap();
+            assert_eq!(actual, saved);
+            draft.failure = Some("note failed after highlight succeeded".into());
+        }
+        assert_eq!(calls.get(), 1);
+        assert_eq!(draft.body, "Retained café draft");
+        assert_eq!(draft.saved_highlight, Some(saved.clone()));
+
+        let mut fresh = PendingNoteDraft::new(request, "quiet".into());
+        fresh.body = "First attempt failed".into();
+        assert!(
+            complete(note_highlight(&mut fresh, |_| ready(Err(
+                crate::api::ApiError::new("creation failed")
+            ))))
+            .is_err()
+        );
+        assert!(fresh.saved_highlight.is_none());
+        assert_eq!(fresh.body, "First attempt failed");
+        assert_eq!(
+            complete(note_highlight(&mut fresh, |_| ready(Ok(saved.clone())))).unwrap(),
+            saved
+        );
+    }
 
     #[test]
     fn a_highlight_save_can_only_update_the_article_it_belongs_to() {

@@ -377,20 +377,56 @@ Highlights are append-only. To "edit" a highlight, you make a new one. This matt
 ```
 :create note {
     id: String,
+    updated_at: Validity,     ;; revision key; query @ "END" for the current note
     =>
     body: String,             ;; markdown
     target_kind: String?,     ;; "item" | "highlight" | null (standalone)
     target_id: String?,
     created_by: Bytes,
     created_at: Validity,
-    updated_at: Validity,
+    updated_by: Bytes,        ;; device signing this revision
+    signature_version: Int,  ;; 1 for legacy notes, 2 for current revision payloads
     signature: Bytes
 }
 ```
 
 Notes are markdown text. They can attach to an item, attach to a highlight, or stand alone (a thought you want to capture without anchoring to anything). The same operation — make a note — covers all three use cases; the target_kind/target_id fields just say where it points.
 
-Notes are mutable. We store both `created_at` and `updated_at`; the signature covers the current body and `updated_at`.
+Notes keep their original ID, target, creator, and creation time when edited.
+Revisions are append-only, keyed by `updated_at`, with Cozo validity reads
+at `"END"` selecting the latest known revision even after a backward clock
+change. An editor submits the revision it opened;
+a changed revision is a conflict, preserving the draft rather than silently
+overwriting it. Local timestamps advance monotonically even if the clock moves
+backward. The signature covers the body, immutable metadata, update time, and
+updating device. Version 1 signatures retain their original canonical payload;
+version 2 adds `updated_by` and a signature-version field. Migration preserves
+legacy signatures without needing the signing key.
+
+The local workflow currently authorizes the original device to edit its notes.
+Self-sync extends this check to devices certified under the same master identity
+before allowing edits from another installation.
+
+Removing a highlight writes a permanent `entity_tombstone` and a signed local
+removal record together. Its attached notes remain in history but are excluded
+from review and export. No new note or highlight write may resurrect a removed
+entity or target a removed item/highlight. Highlights remain immutable; an
+identical creation retry returns the existing fact without changing it.
+
+```
+:create annotation_removal {
+    id: String,
+    removed_at: Validity,
+    =>
+    kind: String,            ;; "highlight"
+    removed_by: Bytes,
+    signature: Bytes
+}
+```
+
+Removal signatures bind the entity ID, kind, timestamp, and device. These records
+are private; they will be accepted only through authenticated self-sync, never
+from social peers. Tombstone checks dominate note revisions regardless of time.
 
 **Trust:** signed. Notes can be shared.
 
@@ -618,6 +654,12 @@ Breaking changes (a relation field removed, a meaning changed) require a migrati
 Update this document *before* writing the migration code. The migration's description in this document is what the maintainer six months from now will read to understand what changed and why.
 
 Version 2 adds `item_search`, two full-text indexes, and their normal-index update workaround. It preserves all existing facts and indexes existing titles. Relation and index creation are individually resumable; the version is recorded only after all indexes exist. Cached body text is rebuilt from blobs after migration rather than holding up startup on filesystem I/O.
+
+Version 3 migrates notes to validity-keyed revisions, setting legacy
+`updated_by` to `created_by` and `signature_version` to 1 without changing their
+IDs or signatures. It adds signed annotation-removal history and write guards
+for immutable highlights and removed targets. Existing annotation data remains
+readable; migration resumes safely if creation, copy, or rename was interrupted.
 
 ## Invariants
 

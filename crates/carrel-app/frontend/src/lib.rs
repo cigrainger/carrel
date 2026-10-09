@@ -3,6 +3,7 @@
 #![deny(unsafe_code)]
 #![recursion_limit = "256"]
 
+mod annotation_actions;
 pub mod api;
 mod components;
 mod desktop;
@@ -37,6 +38,7 @@ pub fn App() -> impl IntoView {
     feeds::provide_feed_controller();
     status::provide_status_controller();
     item_actions::provide_item_actions();
+    annotation_actions::provide_annotation_actions();
     progress::provide_progress_writer();
     desktop::install_close_handler();
 

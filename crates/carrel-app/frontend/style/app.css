@@ -934,6 +934,57 @@ button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px soli
   margin-top: var(--space-3);
 }
 
+.highlight-row-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.highlight-row-actions button:not(.highlight-open),
+.highlight-note-full button {
+  padding: var(--space-1) 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.highlight-row-actions button:hover,
+.highlight-note-full button:hover {
+  color: var(--color-accent);
+}
+
+.highlight-notes {
+  margin-top: var(--space-4);
+  border-left: 2px solid var(--color-highlight);
+  padding-left: var(--space-4);
+}
+
+.highlight-note-full + .highlight-note-full {
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-rule);
+}
+
+.highlight-note-full p {
+  max-width: 72ch;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+}
+
+.annotation-error {
+  margin-top: var(--space-3);
+  color: var(--color-accent);
+  font-size: var(--text-sm);
+}
+
 .highlight-source {
   display: flex;
   min-width: 0;

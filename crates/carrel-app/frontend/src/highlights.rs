@@ -342,6 +342,12 @@ pub(crate) fn current_hash_highlight_id() -> Option<String> {
         .map(ToString::to_string)
 }
 
+/// A deep link cannot be declared missing while its annotations are still loading.
+#[cfg(any(test, target_arch = "wasm32"))]
+pub(crate) fn focus_target_after_load(loaded: bool, hash_id: Option<&str>) -> Option<&str> {
+    hash_id.filter(|_| loaded)
+}
+
 #[cfg(target_arch = "wasm32")]
 fn wrap_raw_range(
     body: &web_sys::HtmlElement,
@@ -467,6 +473,19 @@ fn node_contains(root: &web_sys::Node, node: &web_sys::Node) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_highlight_deep_link_waits_for_the_annotation_query_before_reattachment() {
+        assert_eq!(
+            focus_target_after_load(false, Some("highlight-from-list")),
+            None
+        );
+        assert_eq!(
+            focus_target_after_load(true, Some("highlight-from-list")),
+            Some("highlight-from-list")
+        );
+        assert_eq!(focus_target_after_load(true, None), None);
+    }
 
     fn highlight(id: &str, start: u32, end: u32, exact: &str) -> HighlightDetail {
         HighlightDetail {

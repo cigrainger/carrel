@@ -9,6 +9,24 @@ pub type Result<T> = std::result::Result<T, StoreError>;
 /// Errors raised by the Carrel store boundary.
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
+    /// An annotation or its target was removed or is missing.
+    #[error("annotation is unavailable: {id}")]
+    AnnotationUnavailable {
+        /// Requested annotation identity.
+        id: String,
+    },
+    /// A note changed after the editor opened its revision.
+    #[error("note changed since editing began: {id}")]
+    AnnotationConflict {
+        /// Conflicting note identity.
+        id: String,
+    },
+    /// A device cannot alter another author's annotation.
+    #[error("device is not authorized to alter annotation: {id}")]
+    AnnotationUnauthorized {
+        /// Annotation identity.
+        id: String,
+    },
     /// Could not create the directory backing the persistent store.
     #[error("failed to create store directory {path}")]
     CreateStoreDir {

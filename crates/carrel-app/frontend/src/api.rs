@@ -3,6 +3,7 @@
 use carrel_core::annotation::HighlightLocation;
 use serde::{Deserialize, Serialize};
 
+pub use carrel_core::annotation::{AnnotationCursor, AnnotationPage};
 pub use carrel_core::library::{ItemCursor, ItemFilter, ItemPage, ItemView};
 
 /// Operational state of locally derived cached-text search.
@@ -42,6 +43,12 @@ pub async fn import_subscriptions() -> Result<bool, ApiError> {
 #[cfg(target_arch = "wasm32")]
 pub async fn export_subscriptions() -> Result<bool, ApiError> {
     subscription_file_command("export_subscriptions").await
+}
+
+/// Choose a Markdown destination for all saved highlights and notes.
+#[cfg(target_arch = "wasm32")]
+pub async fn export_annotations() -> Result<bool, ApiError> {
+    subscription_file_command("export_annotations").await
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -117,6 +124,15 @@ pub struct CreateHighlightNoteRequest {
     pub body: String,
 }
 
+/// Save against the note revision the editor originally displayed.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EditHighlightNoteRequest {
+    pub note_id: String,
+    pub body: String,
+    pub expected_updated_at_micros: i64,
+}
+
 /// Highlight payload returned by the native shell.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -142,6 +158,8 @@ pub struct HighlightListRow {
     pub item_source_name: String,
     pub item_primary_url: Option<String>,
     pub note_excerpt: Option<String>,
+    pub notes: Vec<NoteDetail>,
+    pub can_remove: bool,
 }
 
 /// Note payload returned by the native shell.
@@ -157,6 +175,7 @@ pub struct NoteDetail {
     pub created_at_micros: i64,
     pub updated_at_micros: i64,
     pub signature: String,
+    pub can_edit: bool,
 }
 
 /// Item-state mutation request.
@@ -255,6 +274,7 @@ impl Default for FeedStatusSummary {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ApiError {
     message: String,
+    kind: Option<String>,
 }
 
 impl ApiError {
@@ -262,10 +282,15 @@ impl ApiError {
         &self.message
     }
 
-    #[cfg(target_arch = "wasm32")]
-    fn new(message: impl Into<String>) -> Self {
+    pub fn is_annotation_conflict(&self) -> bool {
+        self.kind.as_deref() == Some("annotation_conflict")
+    }
+
+    #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+    pub(crate) fn new(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
+            kind: None,
         }
     }
 }
@@ -472,13 +497,17 @@ pub async fn list_item_highlights(_item_id: String) -> Result<Vec<HighlightDetai
 
 /// List highlights across the local library.
 #[cfg(target_arch = "wasm32")]
-pub async fn list_highlights(limit: Option<usize>) -> Result<Vec<HighlightListRow>, ApiError> {
+pub async fn list_highlights(
+    limit: Option<usize>,
+    after: Option<AnnotationCursor>,
+) -> Result<AnnotationPage<HighlightListRow>, ApiError> {
     #[derive(Serialize)]
     struct Args {
         limit: Option<usize>,
+        after: Option<AnnotationCursor>,
     }
 
-    let args = serde_wasm_bindgen::to_value(&Args { limit })
+    let args = serde_wasm_bindgen::to_value(&Args { limit, after })
         .map_err(|error| ApiError::new(error.to_string()))?;
     let rows = tauri_invoke("list_highlights", args)
         .await
@@ -489,8 +518,47 @@ pub async fn list_highlights(limit: Option<usize>) -> Result<Vec<HighlightListRo
 
 /// List highlights across the local library for SSR tests and non-wasm builds.
 #[cfg(not(target_arch = "wasm32"))]
-pub async fn list_highlights(_limit: Option<usize>) -> Result<Vec<HighlightListRow>, ApiError> {
-    Ok(Vec::new())
+pub async fn list_highlights(
+    _limit: Option<usize>,
+    _after: Option<AnnotationCursor>,
+) -> Result<AnnotationPage<HighlightListRow>, ApiError> {
+    Ok(AnnotationPage {
+        items: Vec::new(),
+        next_cursor: None,
+    })
+}
+
+/// Update a note without replacing a newer revision silently.
+#[cfg(target_arch = "wasm32")]
+pub async fn edit_highlight_note(
+    request: EditHighlightNoteRequest,
+) -> Result<NoteDetail, ApiError> {
+    #[derive(Serialize)]
+    struct Args {
+        request: EditHighlightNoteRequest,
+    }
+    let args = serde_wasm_bindgen::to_value(&Args { request })
+        .map_err(|error| ApiError::new(error.to_string()))?;
+    let value = tauri_invoke("edit_highlight_note", args)
+        .await
+        .map_err(api_error_from_js)?;
+    serde_wasm_bindgen::from_value(value).map_err(|error| ApiError::new(error.to_string()))
+}
+
+/// Remove a highlight through the signed local store boundary.
+#[cfg(target_arch = "wasm32")]
+pub async fn remove_highlight(highlight_id: String) -> Result<(), ApiError> {
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Args {
+        highlight_id: String,
+    }
+    let args = serde_wasm_bindgen::to_value(&Args { highlight_id })
+        .map_err(|error| ApiError::new(error.to_string()))?;
+    tauri_invoke("remove_highlight", args)
+        .await
+        .map(|_| ())
+        .map_err(api_error_from_js)
 }
 
 /// Create a note attached to a highlight.
@@ -527,6 +595,7 @@ pub async fn create_highlight_note(
         created_at_micros: 0,
         updated_at_micros: 0,
         signature: String::new(),
+        can_edit: true,
     })
 }
 
@@ -740,7 +809,10 @@ fn api_error_from_js(value: wasm_bindgen::JsValue) -> ApiError {
     }
 
     match serde_wasm_bindgen::from_value::<CommandError>(value) {
-        Ok(error) => ApiError::new(error.message),
+        Ok(error) => ApiError {
+            message: error.message,
+            kind: error.kind,
+        },
         Err(error) => ApiError::new(error.to_string()),
     }
 }
@@ -749,4 +821,5 @@ fn api_error_from_js(value: wasm_bindgen::JsValue) -> ApiError {
 #[derive(Deserialize)]
 struct CommandError {
     message: String,
+    kind: Option<String>,
 }

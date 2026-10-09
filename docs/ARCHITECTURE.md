@@ -316,6 +316,21 @@ progress writes also invalidate lists, so returning before a save finishes does
 not strand the list on an earlier result. The revision currently comes from the
 shell's feed controller; a general query layer can own it when that layer exists.
 
+Annotation review uses a bounded highlight cursor and a single joined store
+snapshot containing article context and every latest attached note. Markdown
+export reads the whole living archive in one snapshot, then writes through a
+native save dialog and atomic file replacement. Note edits append signed
+revisions against the timestamp the editor read; a stale save fails explicitly.
+Highlight removal writes its signed removal and permanent tombstone together,
+which also hides attached notes. The store serializes compound annotation
+writes across clones; native commands additionally serialize first-use device
+key creation. Session projections retain pending and confirmed annotation
+intent across older list snapshots, with rollback on failure. They are UI
+reconciliation state, never a second durable store. Reader deep links wait for
+the annotation query before focusing a passage or reporting failed attachment.
+The reader retains a confirmed highlight in its note draft after a partial
+save, so retrying the note does not create a duplicate highlight.
+
 The application also owns a progress writer shared across reader routes. It
 coalesces scroll snapshots over 500ms, serializes native writes, and flushes
 pending positions on article navigation and route cleanup. Its latest session

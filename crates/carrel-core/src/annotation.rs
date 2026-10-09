@@ -5,6 +5,32 @@ use serde::{Deserialize, Serialize};
 /// Maximum prefix/suffix context length, counted in Unicode scalar values.
 pub const MAX_TEXT_CONTEXT_CHARS: usize = 256;
 
+/// Maximum UTF-8 size of a note body.
+pub const MAX_NOTE_BYTES: usize = 65_536;
+
+/// Stable boundary for browsing older highlights.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AnnotationCursor {
+    /// Creation time of the last displayed highlight.
+    pub created_at_micros: i64,
+    /// Identity breaks ties between equal creation times.
+    pub id: String,
+}
+
+/// A bounded review page, with an explicit continuation.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AnnotationPage<T> {
+    /// Highlights and their current notes.
+    pub items: Vec<T>,
+    /// Present only when older highlights remain.
+    pub next_cursor: Option<AnnotationCursor>,
+}
+
+/// Advance a local revision after its predecessor, including clock rollback.
+pub fn next_note_revision(now_micros: i64, previous_micros: i64) -> Option<i64> {
+    Some(now_micros.max(previous_micros.checked_add(1)?))
+}
+
 /// Text selector against normalized readable HTML text.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -180,6 +206,22 @@ pub enum SelectorError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn note_revision_handles_clock_rollback_and_timestamp_exhaustion() {
+        assert_eq!(next_note_revision(10, 20), Some(21));
+        assert_eq!(next_note_revision(30, 20), Some(30));
+        assert_eq!(next_note_revision(i64::MAX, i64::MAX), None);
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn revisions_advance_monotonically(now in proptest::prelude::any::<i64>(), previous in i64::MIN..i64::MAX) {
+            let next = next_note_revision(now, previous).unwrap();
+            proptest::prop_assert!(next > previous);
+            proptest::prop_assert!(next >= now);
+        }
+    }
 
     #[test]
     fn html_text_location_round_trips_through_tagged_json() {

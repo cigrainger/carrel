@@ -1,18 +1,18 @@
 //! Highlight and note commands for the desktop shell.
 
-use std::collections::BTreeMap;
 use std::path::Path;
 use std::str::FromStr;
 
-use carrel_core::annotation::{HighlightLocation, normalize_readable_text};
-use carrel_core::identity::Keypair;
+use carrel_core::annotation::{
+    AnnotationCursor, AnnotationPage, HighlightLocation, normalize_readable_text,
+};
+use carrel_core::identity::{Keypair, PublicKey};
 use carrel_store::blobs::{BlobError, BlobId, BlobStore};
 use carrel_store::highlights::{
-    HighlightRecord, HighlightWithItem, NoteRecord, PutHighlightInput, PutNoteInput,
+    AnnotationReview, EditNoteInput, HighlightRecord, NoteRecord, PutHighlightInput, PutNoteInput,
 };
 use carrel_store::items::ItemDetail as StoreItemDetail;
 use carrel_store::keystore::{Keystore, KeystoreError};
-use cozo::DataValue;
 use kuchiki::traits::TendrilSink;
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -24,7 +24,7 @@ use crate::state::AppState;
 use crate::{Result, config::InstallPaths};
 
 const DEFAULT_HIGHLIGHT_LIMIT: usize = 100;
-const MAX_HIGHLIGHT_LIMIT: usize = 500;
+const MAX_HIGHLIGHT_LIMIT: usize = 100;
 
 /// Create a highlight for an item.
 #[tauri::command]
@@ -32,6 +32,10 @@ pub fn create_highlight(
     state: State<'_, AppState>,
     request: CreateHighlightRequest,
 ) -> Result<HighlightDetail> {
+    let _guard = state
+        .annotation_lock
+        .lock()
+        .expect("annotation command lock");
     let device = load_device_key(&state.paths)?;
     create_highlight_with_device(&state.store, &state.blobs, &device, request)
 }
@@ -56,22 +60,41 @@ pub fn list_item_highlights(
 pub fn list_highlights(
     state: State<'_, AppState>,
     limit: Option<usize>,
-) -> Result<Vec<HighlightListRow>> {
-    list_highlights_from_store(&state.store, limit)
+    after: Option<AnnotationCursor>,
+) -> Result<AnnotationPage<HighlightListRow>> {
+    let device = {
+        let _guard = state
+            .annotation_lock
+            .lock()
+            .expect("annotation command lock");
+        existing_device_key(&state.paths)?
+    };
+    list_highlights_from_store(
+        &state.store,
+        limit,
+        after.as_ref(),
+        device.as_ref().map(Keypair::public),
+    )
 }
 
 pub(crate) fn list_highlights_from_store(
     store: &carrel_store::Store,
     limit: Option<usize>,
-) -> Result<Vec<HighlightListRow>> {
+    after: Option<&AnnotationCursor>,
+    device: Option<&PublicKey>,
+) -> Result<AnnotationPage<HighlightListRow>> {
     let limit = limit
         .unwrap_or(DEFAULT_HIGHLIGHT_LIMIT)
         .clamp(1, MAX_HIGHLIGHT_LIMIT);
-    store
-        .list_highlights(limit)?
-        .iter()
-        .map(|record| HighlightListRow::from_record(store, record))
-        .collect()
+    let page = store.annotation_page(limit, after)?;
+    Ok(AnnotationPage {
+        items: page
+            .items
+            .iter()
+            .map(|row| HighlightListRow::from_review(row, device))
+            .collect::<Result<_>>()?,
+        next_cursor: page.next_cursor,
+    })
 }
 
 /// Create a note attached to a highlight.
@@ -80,8 +103,69 @@ pub fn create_highlight_note(
     state: State<'_, AppState>,
     request: CreateHighlightNoteRequest,
 ) -> Result<NoteDetail> {
+    let _guard = state
+        .annotation_lock
+        .lock()
+        .expect("annotation command lock");
     let device = load_device_key(&state.paths)?;
     create_highlight_note_with_device(&state.store, &device, request)
+}
+
+/// Save a note against the revision the editor originally read.
+#[tauri::command]
+pub fn edit_highlight_note(
+    state: State<'_, AppState>,
+    request: EditHighlightNoteRequest,
+) -> Result<NoteDetail> {
+    let _guard = state
+        .annotation_lock
+        .lock()
+        .expect("annotation command lock");
+    let device = load_device_key(&state.paths)?;
+    let previous = state.store.get_note(&request.note_id)?.ok_or_else(|| {
+        carrel_store::StoreError::AnnotationUnavailable {
+            id: request.note_id.clone(),
+        }
+    })?;
+    if previous.target_kind.as_deref() != Some("highlight") {
+        return Err(AppError::InvalidData {
+            context: "note.target",
+            value: "expected highlight note".into(),
+        });
+    }
+    let record = state.store.edit_note(
+        EditNoteInput {
+            id: request.note_id,
+            body: request.body,
+            expected_updated_at_micros: request.expected_updated_at_micros,
+            now_micros: None,
+        },
+        &device,
+    )?;
+    Ok(NoteDetail::from_record(&record, true))
+}
+
+/// Remove a highlight and hide its attached notes from review and export.
+#[tauri::command]
+pub fn remove_highlight(state: State<'_, AppState>, highlight_id: String) -> Result<()> {
+    let _guard = state
+        .annotation_lock
+        .lock()
+        .expect("annotation command lock");
+    let device = load_device_key(&state.paths)?;
+    state.store.remove_highlight(&highlight_id, &device)?;
+    Ok(())
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EditHighlightNoteRequest {
+    /// Existing note identity.
+    pub note_id: String,
+    /// Replacement Markdown body.
+    pub body: String,
+    /// Revision originally displayed to the editor.
+    pub expected_updated_at_micros: i64,
 }
 
 /// Highlight creation request accepted by the webview.
@@ -148,6 +232,10 @@ pub struct HighlightListRow {
     pub item_primary_url: Option<String>,
     /// Excerpt from the newest note attached to this highlight, if any.
     pub note_excerpt: Option<String>,
+    /// Every current note, without excerpt truncation.
+    pub notes: Vec<NoteDetail>,
+    /// Whether this device may remove the private highlight.
+    pub can_remove: bool,
 }
 
 /// Note DTO returned to the webview.
@@ -172,6 +260,8 @@ pub struct NoteDetail {
     pub updated_at_micros: i64,
     /// Hex-encoded Ed25519 signature.
     pub signature: String,
+    /// Whether this device may edit the private note.
+    pub can_edit: bool,
 }
 
 pub(crate) fn create_highlight_with_device(
@@ -218,7 +308,19 @@ pub(crate) fn create_highlight_note_with_device(
         device,
     )?;
 
-    Ok(NoteDetail::from_record(&record))
+    Ok(NoteDetail::from_record(&record, true))
+}
+
+fn existing_device_key(paths: &InstallPaths) -> Result<Option<Keypair>> {
+    match Keystore::open(&paths.keys).load_device() {
+        Ok(key) => Ok(Some(key)),
+        Err(KeystoreError::ReadKeyFile { source, .. })
+            if source.kind() == std::io::ErrorKind::NotFound =>
+        {
+            Ok(None)
+        }
+        Err(error) => Err(error.into()),
+    }
 }
 
 fn load_device_key(paths: &InstallPaths) -> Result<Keypair> {
@@ -352,20 +454,32 @@ impl HighlightDetail {
 }
 
 impl HighlightListRow {
-    fn from_record(store: &carrel_store::Store, record: &HighlightWithItem) -> Result<Self> {
-        let site_name = item_site_name(store, &record.highlight.item_id)?;
+    fn from_review(review: &AnnotationReview, device: Option<&PublicKey>) -> Result<Self> {
+        let record = &review.source;
         Ok(Self {
             highlight: HighlightDetail::from_record(&record.highlight)?,
             item_title: record.item_title.clone(),
-            item_source_name: source_name(record.item_primary_url.as_deref(), site_name.as_deref()),
+            item_source_name: source_name(
+                record.item_primary_url.as_deref(),
+                review.site_name.as_deref(),
+            ),
             item_primary_url: record.item_primary_url.clone(),
-            note_excerpt: latest_note_excerpt(store, &record.highlight.id)?,
+            note_excerpt: review
+                .notes
+                .first()
+                .and_then(|note| note_excerpt(&note.body)),
+            notes: review
+                .notes
+                .iter()
+                .map(|note| NoteDetail::from_record(note, device == Some(&note.created_by)))
+                .collect(),
+            can_remove: device == Some(&record.highlight.created_by),
         })
     }
 }
 
 impl NoteDetail {
-    fn from_record(record: &NoteRecord) -> Self {
+    fn from_record(record: &NoteRecord, can_edit: bool) -> Self {
         Self {
             id: record.id.clone(),
             body: record.body.clone(),
@@ -376,31 +490,9 @@ impl NoteDetail {
             created_at_micros: record.created_at_micros,
             updated_at_micros: record.updated_at_micros,
             signature: record.signature.to_hex(),
+            can_edit,
         }
     }
-}
-
-fn item_site_name(store: &carrel_store::Store, item_id: &str) -> Result<Option<String>> {
-    let rows = store.query_with_params(
-        r#"
-        ?[site_name] :=
-            *item_article{item_id, site_name},
-            item_id = $item_id
-        :limit 1
-        "#,
-        BTreeMap::from([("item_id".to_string(), DataValue::from(item_id))]),
-    )?;
-
-    rows.rows
-        .first()
-        .map(|row| optional_string(required(row, 0, "item_article.site_name")?))
-        .transpose()
-        .map(Option::flatten)
-}
-
-fn latest_note_excerpt(store: &carrel_store::Store, highlight_id: &str) -> Result<Option<String>> {
-    let notes = store.list_notes_for_target("highlight", highlight_id)?;
-    Ok(notes.first().and_then(|note| note_excerpt(&note.body)))
 }
 
 fn note_excerpt(body: &str) -> Option<String> {
@@ -416,28 +508,6 @@ fn note_excerpt(body: &str) -> Option<String> {
 
     let excerpt = text.chars().take(MAX_CHARS).collect::<String>();
     Some(format!("{excerpt}..."))
-}
-
-fn required<'a>(
-    row: &'a [DataValue],
-    index: usize,
-    context: &'static str,
-) -> Result<&'a DataValue> {
-    row.get(index).ok_or_else(|| AppError::InvalidData {
-        context,
-        value: "missing column".to_string(),
-    })
-}
-
-fn optional_string(value: &DataValue) -> Result<Option<String>> {
-    match value {
-        DataValue::Null => Ok(None),
-        DataValue::Str(value) => Ok(Some(value.to_string())),
-        other => Err(AppError::InvalidData {
-            context: "optional string",
-            value: format!("{other:?}"),
-        }),
-    }
 }
 
 #[cfg(test)]
@@ -583,7 +653,9 @@ mod tests {
             )
             .unwrap();
 
-        let rows = list_highlights_from_store(&store, Some(10)).unwrap();
+        let page =
+            list_highlights_from_store(&store, Some(10), None, Some(device.public())).unwrap();
+        let rows = page.items;
 
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].item_title, "A Quiet Web");
@@ -596,6 +668,8 @@ mod tests {
             rows[0].note_excerpt.as_deref(),
             Some("Newest note with spacing.")
         );
+        assert_eq!(rows[0].notes.len(), 2);
+        assert!(rows[0].can_remove && rows[0].notes.iter().all(|note| note.can_edit));
     }
 
     #[test]

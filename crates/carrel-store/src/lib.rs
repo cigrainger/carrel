@@ -21,6 +21,7 @@ pub mod search;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 
 use cozo::{DataValue, DbInstance, NamedRows, ScriptMutability};
 
@@ -37,6 +38,9 @@ pub const CURRENT_SCHEMA_VERSION: u32 = migrations::CURRENT_SCHEMA_VERSION;
 #[derive(Clone)]
 pub struct Store {
     db: DbInstance,
+    // Serializes local annotation read/modify/write operations across clones.
+    // The facts remain in Cozo; this lock contains no durable state.
+    annotation_lock: Arc<Mutex<()>>,
 }
 
 impl Store {
@@ -48,13 +52,19 @@ impl Store {
         })?;
 
         let db = DbInstance::new("rocksdb", path, "")?;
-        Ok(Self { db })
+        Ok(Self {
+            db,
+            annotation_lock: Arc::new(Mutex::new(())),
+        })
     }
 
     /// Open an in-memory store for tests and short-lived tools.
     pub fn open_in_memory() -> Result<Self> {
         let db = DbInstance::new("mem", "", "")?;
-        Ok(Self { db })
+        Ok(Self {
+            db,
+            annotation_lock: Arc::new(Mutex::new(())),
+        })
     }
 
     /// Return the newest applied schema version, or zero for an unmigrated DB.
