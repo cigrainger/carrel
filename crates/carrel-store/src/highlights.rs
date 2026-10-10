@@ -16,7 +16,10 @@ use crate::{Result, Store, StoreError};
 
 /// Removals dominate revision time and cascade to attached notes.
 pub(crate) const NOTE_ALIVE_RULES: &str = r#"
-    superseded[id, parent] := *note{id, parents}, parent in parents
+    superseded[id, parent] := *note{id, parents, signature_version: 3}, parent in parents
+    latest_legacy[id, max(at)] := *note{id, updated_at, signature_version: version}, version < 3, at = to_int(updated_at)
+    superseded[id, revision] := *note{id, revision_id: revision, updated_at: at, signature_version: version},
+        version < 3, latest_legacy[id, latest], to_int(at) != latest
     note_head[id, revision] := *note{id, revision_id: revision}, not superseded[id, revision]
     live_item[id] := *item{id}, not *entity_tombstone{id}
     live_highlight[id] := *highlight{id, item_id}, live_item[item_id], not *entity_tombstone{id}
@@ -237,7 +240,7 @@ impl Store {
                 });
             }
             if !matches!(required(row, 12, "note.id")?, DataValue::Null) {
-                let note = decode_note_row(row, 12)?;
+                let note = decode_note_row(row, 12)?.into_portable();
                 let review = result.last_mut().expect("highlight added above");
                 if let Some(&index) = note_positions.get(&note.id) {
                     let versions = review

@@ -140,12 +140,21 @@ revocation/forwarding, forgery, raw immutability, and transactional failure.
 `just check` passes 279 tests, formatting, and native/CSR lint. Full native and
 CSR builds pass.
 
+Legacy note portability now omits unsigned migration links from private wire
+records and current-head reads. Partial copies recognize identical signed
+versions without ancestry collisions or missing-parent waits. Signed legacy
+times retain their original ordering within versions 1/2, preserving equal-time
+drafts; neither those times nor unsigned links can hide a modern version 3 draft.
+Migration 7 resumes normalization of older staging rows without changing stored
+history or signatures. Regression coverage includes partial-copy edits, all
+legacy delivery orders, extreme clocks, unsigned replacement claims, explicit
+resolution, and interrupted/invalid migration.
+`just check` passes 284 tests, formatting, and native/CSR lint; both full app
+builds pass.
+
 Pairing, cached-item/annotation replication, the Iroh mirror/transport, and
 transport verification remain outstanding; the goal stays active. These
-separate-store tests do not claim to verify network synchronization. Before
-enabling the bridge, legacy note ancestry must also be checked across partial
-copies: migration-derived parents are unsigned metadata and must neither
-override a modern draft nor cause a collision between identical signed versions.
+separate-store tests do not claim to verify network synchronization.
 
 ## Decisions already made
 

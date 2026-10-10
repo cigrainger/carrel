@@ -343,7 +343,10 @@ Annotation review uses a bounded highlight cursor and a single joined store
 snapshot containing article context and every latest attached note. Markdown
 export reads the whole living archive in one snapshot, then writes through a
 native save dialog and atomic file replacement. Note edits append signed
-revisions against the timestamp the editor read; a stale save fails explicitly.
+revisions against the exact revision IDs the editor read; a stale save fails
+explicitly. Concurrent versions remain separate until an explicit resolution
+signs every reviewed head. Legacy unsigned migration links remain diagnostic
+history and never supersede a modern draft; private wire records omit them.
 Highlight removal writes its signed removal and permanent tombstone together,
 which also hides attached notes. The store serializes compound annotation
 writes across clones; native commands additionally serialize first-use device

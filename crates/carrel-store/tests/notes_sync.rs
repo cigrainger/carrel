@@ -1,7 +1,12 @@
-use carrel_core::annotation::note::NoteContent;
-use carrel_core::identity::{DeviceCert, Keypair, RevocationCert};
+use carrel_core::annotation::note::{NoteContent, NoteRevision};
+use carrel_core::identity::{
+    DeviceCert, Keypair, PublicKey, RevocationCert, Signature, sign_canonical,
+};
 use carrel_store::notes::{EditNoteInput, NoteReceive, PutNoteInput, ResolveNoteInput};
 use carrel_store::{Store, StoreError};
+use cozo::{DataValue, Validity};
+use serde::Serialize;
+use std::collections::BTreeMap;
 
 struct Pair {
     a: Store,
@@ -64,6 +69,207 @@ fn edit(
             key,
         )
         .unwrap()
+}
+
+fn legacy_revision(p: &Pair, version: i64, at: i64, body: &str, updater: &Keypair) -> NoteRevision {
+    #[derive(Serialize)]
+    struct Payload<'a> {
+        relation: &'static str,
+        id: &'a str,
+        body: &'a str,
+        target_kind: Option<&'a str>,
+        target_id: Option<&'a str>,
+        created_by: PublicKey,
+        created_at_micros: i64,
+        updated_at_micros: i64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        updated_by: Option<PublicKey>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        signature_version: Option<i64>,
+    }
+    let mut record = NoteRevision {
+        id: "legacy-partial-copy".into(),
+        revision_id: String::new(),
+        body: body.into(),
+        target_kind: None,
+        target_id: None,
+        created_by: *p.ka.public(),
+        created_at_micros: 1,
+        updated_at_micros: at,
+        updated_by: *updater.public(),
+        signature_version: version,
+        parents: Vec::new(),
+        signature: Signature::from_bytes([0; 64]),
+    };
+    record.signature = sign_canonical(
+        updater,
+        &Payload {
+            relation: "note",
+            id: &record.id,
+            body,
+            target_kind: None,
+            target_id: None,
+            created_by: record.created_by,
+            created_at_micros: 1,
+            updated_at_micros: at,
+            updated_by: (version == 2).then_some(record.updated_by),
+            signature_version: (version == 2).then_some(2),
+        },
+    )
+    .unwrap();
+    record.revision_id = record.computed_revision_id().unwrap();
+    record.verify_signature().unwrap();
+    record
+}
+
+fn put_migrated_legacy(store: &Store, record: &NoteRevision) {
+    store.query_with_params(r#"
+        ?[id, revision_id, body, target_kind, target_id, created_by, created_at, updated_at, updated_by, signature_version, parents, signature] <-
+            [[$id, $revision, $body, null, null, $creator, $created, $updated, $updater, $version, $parents, $signature]]
+        :put note {id, revision_id => body, target_kind, target_id, created_by, created_at, updated_at, updated_by, signature_version, parents, signature}
+    "#, BTreeMap::from([
+        ("id".into(), DataValue::from(record.id.as_str())),
+        ("revision".into(), DataValue::from(record.revision_id.as_str())),
+        ("body".into(), DataValue::from(record.body.as_str())),
+        ("creator".into(), DataValue::Bytes(record.created_by.to_bytes().to_vec())),
+        ("created".into(), DataValue::Validity(Validity::from((record.created_at_micros, true)))),
+        ("updated".into(), DataValue::Validity(Validity::from((record.updated_at_micros, true)))),
+        ("updater".into(), DataValue::Bytes(record.updated_by.to_bytes().to_vec())),
+        ("version".into(), DataValue::from(record.signature_version)),
+        ("parents".into(), DataValue::List(record.parents.iter().map(|id| DataValue::from(id.as_str())).collect())),
+        ("signature".into(), DataValue::Bytes(record.signature.to_bytes().to_vec())),
+    ])).unwrap();
+}
+
+#[test]
+fn partial_legacy_copies_converge_without_missing_unsigned_ancestry_or_revision_collisions() {
+    let p = pair();
+    let original = legacy_revision(&p, 1, 1, "Original legacy 日本語", &p.ka);
+    let mut latest = legacy_revision(&p, 2, 9, "Latest legacy café", &p.ka);
+    latest.parents = vec![original.revision_id.clone()];
+    put_migrated_legacy(&p.a, &original);
+    put_migrated_legacy(&p.a, &latest);
+    assert_eq!(
+        p.b.accept_self_note_revision(&latest, p.ka.public())
+            .unwrap(),
+        NoteReceive::Applied
+    );
+    let portable = latest.clone().into_portable();
+    assert_eq!(
+        p.a.accept_self_note_revision(&portable, p.kb.public())
+            .unwrap(),
+        NoteReceive::Existing
+    );
+    assert_eq!(
+        p.a.note_heads(&latest.id).unwrap(),
+        p.b.note_heads(&latest.id).unwrap()
+    );
+    assert_eq!(p.a.get_note(&latest.id).unwrap(), Some(portable.clone()));
+    assert!(p.a.note_revisions(&latest.id).unwrap().contains(&latest));
+    let modern = edit(&p.b, &p.kb, &portable, "Modern draft from the partial copy");
+    p.a.accept_self_note_revision(&modern, p.kb.public())
+        .unwrap();
+    p.b.accept_self_note_revision(&original, p.ka.public())
+        .unwrap();
+    p.b.accept_self_note_revision(&latest, p.ka.public())
+        .unwrap();
+    assert_eq!(p.a.get_note(&latest.id).unwrap(), Some(modern.clone()));
+    assert_eq!(p.b.get_note(&latest.id).unwrap(), Some(modern));
+    assert!(p.a.note_revisions(&latest.id).unwrap().contains(&latest));
+}
+
+#[test]
+fn unsigned_legacy_links_and_extreme_clocks_cannot_suppress_a_modern_draft() {
+    let p = pair();
+    let original = legacy_revision(&p, 1, 1, "Old original", &p.ka);
+    p.a.accept_self_note_revision(&original, p.ka.public())
+        .unwrap();
+    p.b.accept_self_note_revision(&original, p.ka.public())
+        .unwrap();
+    let modern = edit(&p.a, &p.ka, &original, "Modern draft to preserve");
+    p.b.accept_self_note_revision(&modern, p.ka.public())
+        .unwrap();
+    let mut forged_ancestry = original.clone();
+    forged_ancestry.parents = vec![modern.revision_id.clone()];
+    forged_ancestry.verify_signature().unwrap();
+    assert_eq!(
+        p.a.accept_self_note_revision(&forged_ancestry, p.kb.public())
+            .unwrap(),
+        NoteReceive::Existing
+    );
+    assert_eq!(p.a.get_note(&original.id).unwrap(), Some(modern.clone()));
+    let mut newer_legacy = legacy_revision(&p, 2, i64::MAX, "Unseen legacy branch", &p.kb);
+    newer_legacy.parents = vec![modern.revision_id.clone()];
+    for store in [&p.a, &p.b] {
+        assert_eq!(
+            store
+                .accept_self_note_revision(&newer_legacy, p.kb.public())
+                .unwrap(),
+            NoteReceive::Applied
+        );
+        let heads = store.note_heads(&original.id).unwrap();
+        assert_eq!(heads.len(), 2);
+        assert!(heads.contains(&modern));
+        assert!(heads.contains(&newer_legacy.clone().into_portable()));
+    }
+    let heads = p.a.note_heads(&original.id).unwrap();
+    let merged =
+        p.a.resolve_note(
+            ResolveNoteInput {
+                id: original.id.clone(),
+                body: "Explicitly reviewed both".into(),
+                expected_revision_ids: heads.iter().map(|head| head.revision_id.clone()).collect(),
+                now_micros: Some(3),
+            },
+            &p.ka,
+        )
+        .unwrap();
+    p.b.accept_self_note_revision(&merged, p.ka.public())
+        .unwrap();
+    assert_eq!(
+        p.a.get_note(&original.id).unwrap(),
+        p.b.get_note(&original.id).unwrap()
+    );
+    assert_eq!(p.a.get_note(&original.id).unwrap(), Some(merged));
+}
+
+#[test]
+fn equal_time_legacy_versions_remain_conflicts_under_every_delivery_order() {
+    for order in [
+        [0, 1, 2],
+        [0, 2, 1],
+        [1, 0, 2],
+        [1, 2, 0],
+        [2, 0, 1],
+        [2, 1, 0],
+    ] {
+        let p = pair();
+        let revisions = [
+            legacy_revision(&p, 1, i64::MIN, "Older version", &p.ka),
+            legacy_revision(&p, 2, 5, "A legacy offline draft", &p.ka),
+            legacy_revision(&p, 2, 5, "B legacy offline draft", &p.kb),
+        ];
+        for index in order {
+            let revision = &revisions[index];
+            assert_eq!(
+                p.a.accept_self_note_revision(revision, p.ka.public())
+                    .unwrap(),
+                NoteReceive::Applied
+            );
+            assert_eq!(
+                p.a.accept_self_note_revision(revision, p.ka.public())
+                    .unwrap(),
+                NoteReceive::Existing
+            );
+        }
+        let heads = p.a.note_heads(&revisions[0].id).unwrap();
+        assert_eq!(heads.len(), 2);
+        assert!(heads.contains(&revisions[1]) && heads.contains(&revisions[2]));
+        assert!(matches!(
+            p.a.get_note(&revisions[0].id),
+            Err(StoreError::AnnotationConflict { .. })
+        ));
+    }
 }
 
 #[test]

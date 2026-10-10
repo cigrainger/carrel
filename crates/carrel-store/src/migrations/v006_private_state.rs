@@ -60,7 +60,10 @@ mod tests {
                 store.query(schema::PRIVATE_STATE_GUARDS[2]).unwrap();
             }
             store.migrate().unwrap();
-            assert_eq!(store.current_schema_version().unwrap(), 6);
+            assert_eq!(
+                store.current_schema_version().unwrap(),
+                crate::CURRENT_SCHEMA_VERSION
+            );
             assert_eq!(store.query("?[item_id, state, progress, progress_label, last_position, updated_at] := *read_state{item_id, state, progress, progress_label, last_position, updated_at}").unwrap().rows, before.rows);
             assert_eq!(
                 store
@@ -78,7 +81,10 @@ mod tests {
                     .is_empty()
             );
             store.migrate().unwrap();
-            assert_eq!(store.current_schema_version().unwrap(), 6);
+            assert_eq!(
+                store.current_schema_version().unwrap(),
+                crate::CURRENT_SCHEMA_VERSION
+            );
         }
     }
 }

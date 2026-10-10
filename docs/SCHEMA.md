@@ -512,7 +512,7 @@ Highlights are append-only. To "edit" a highlight, you make a new one. This matt
     target_id: String?,
     created_by: Bytes,
     created_at: Validity,
-    updated_at: Validity,     ;; display metadata, never conflict resolution
+    updated_at: Validity,     ;; display metadata; legacy 1/2 retain validity ordering
     updated_by: Bytes,        ;; device signing this revision
     signature_version: Int,  ;; 1/2 preserve legacy payloads; 3 signs causal parents
     parents: [String],       ;; sorted unique revision IDs, all for this note
@@ -526,7 +526,7 @@ Notes keep their original ID, target, creator, and creation time when edited.
 Version 5 stores immutable revisions by content hash rather than time, so two
 devices may save different bodies at the same timestamp without a collision.
 Each new revision signs the sorted IDs of the versions it supersedes. Current
-heads are revisions that no known child names as a parent. Parent references
+heads are revisions that no known version 3 child names as a signed parent. Parent references
 must exist, belong to the same note, and preserve its immutable metadata.
 Historical ancestors remain stored; tombstones still dominate the whole graph.
 
@@ -546,9 +546,20 @@ A revision ID hashes a domain-separated canonical record containing the signed
 payload and its signature. Legacy IDs exclude their migration-derived parent
 metadata, so their existing signatures and identities remain portable. Migration
 5 copies every legacy revision in Cozo validity order and links its predecessor,
-without signing or changing any body or immutable metadata. Legacy parent
-metadata is accepted only in authenticated self-sync snapshots; it is not a
-standalone social claim. Every new note creation or edit uses signature version 3.
+without signing or changing any body or immutable metadata. Those unsigned links
+remain diagnostic history only. Wire records and current-version reads omit
+them; identical signed legacy revisions are idempotent across partial copies
+with different migration ancestry. Legacy links cannot supersede any revision.
+
+Versions 1/2 retain their original Cozo validity ordering within the legacy
+subset: only the latest signed legacy time remains current, with distinct
+equal-time versions retained together. This compatibility rule never suppresses
+a version 3 draft, regardless of a legacy timestamp or unsigned parent claim.
+A modern edit signs the current heads it observed; an unseen later legacy
+version remains a conflict until explicitly reviewed. Every new creation or edit
+uses version 3. Migration 7 normalizes already-staged legacy wire records and
+their dependency indexes in resumable transactions, without changing stored
+note history, bodies, signatures, or revision IDs. Its version is recorded last.
 
 `note_incoming {id: String, revision_id: String => encoded: Bytes,
 parents: [String], target_kind: String?, target_id: String?}` durably stages
@@ -852,6 +863,15 @@ revisions, retaining the old relation as `note_legacy_v3`. Staging creation, cop
 and atomic rename are resumable; the schema version is written last. Existing
 version 1/2 signatures remain unchanged. It adds private pending-revision storage
 and guards for immutable records, stable note metadata, and removed targets.
+
+Version 6 adds signed private state history, pending dependency storage, and an
+exact-revision mirror queue. Legacy rows are adopted only by an authorized local
+key; migration creates relations and guards without signing or rewriting them.
+
+Version 7 normalizes staged version 1/2 note records to their portable signed
+content. It removes unsigned predecessor dependencies, validates the input before
+writing, and commits each replacement atomically. Stored diagnostic history and
+all signatures remain unchanged; interrupted normalization resumes safely.
 
 ## Invariants
 

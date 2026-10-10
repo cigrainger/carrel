@@ -158,7 +158,7 @@ impl Store {
         "#), BTreeMap::from([("id".into(), DataValue::from(id))]))?;
         rows.rows
             .iter()
-            .map(|row| decode_note_row(row, 0))
+            .map(|row| decode_note_row(row, 0).map(NoteRecord::into_portable))
             .collect()
     }
 
@@ -258,7 +258,7 @@ impl Store {
         )?;
         rows.rows
             .iter()
-            .map(|row| decode_note_row(row, 0))
+            .map(|row| decode_note_row(row, 0).map(NoteRecord::into_portable))
             .collect()
     }
 
@@ -293,6 +293,8 @@ impl Store {
 
     fn accept_note_unlocked(&self, record: &NoteRecord) -> Result<NoteReceive> {
         record.verify_signature()?;
+        let portable = record.clone().into_portable();
+        let record = &portable;
         let dependencies = self.note_dependencies(record)?;
         if dependencies == Dependencies::Removed {
             self.discard_pending(&record.id, &record.revision_id)?;
@@ -311,7 +313,7 @@ impl Store {
             ]),
         )?;
         if let Some(row) = existing.rows.first() {
-            if decode_note_row(row, 0)? != *record {
+            if decode_note_row(row, 0)?.into_portable() != *record {
                 return Err(StoreError::InvalidInput {
                     context: "note revision",
                     message: "immutable revision differs from an existing record".into(),

@@ -90,6 +90,17 @@ pub struct NoteRevision {
 }
 
 impl NoteRevision {
+    /// Remove unsigned legacy ancestry from the portable signed record.
+    ///
+    /// Migration links vary between partial copies and cannot authorize a
+    /// successor. Stored diagnostic history may retain them separately.
+    pub fn into_portable(mut self) -> Self {
+        if self.signature_version < 3 {
+            self.parents.clear();
+        }
+        self
+    }
+
     /// Verify the content, signature, and content-addressed revision identity.
     pub fn verify_signature(&self) -> Result<(), NoteRevisionError> {
         self.validate_content()?;
@@ -144,7 +155,7 @@ impl NoteRevision {
     /// Encode a verified revision as bounded canonical CBOR for private sync.
     pub fn to_bytes(&self) -> Result<Vec<u8>, NoteRevisionError> {
         self.verify_signature()?;
-        let bytes = canonical_bytes(self)?;
+        let bytes = canonical_bytes(&self.clone().into_portable())?;
         if bytes.len() > MAX_NOTE_REVISION_BYTES {
             return Err(NoteRevisionError::TooLarge);
         }
@@ -163,7 +174,7 @@ impl NoteRevision {
             return Err(NoteRevisionError::TrailingData);
         }
         revision.verify_signature()?;
-        Ok(revision)
+        Ok(revision.into_portable())
     }
 
     fn validate_content(&self) -> Result<(), NoteRevisionError> {
@@ -492,6 +503,19 @@ mod tests {
             note.verify_signature().unwrap();
             assert_eq!(note.computed_revision_id().unwrap(), before);
             assert_eq!(note.signature, signature);
+            let portable = note.clone().into_portable();
+            assert!(portable.parents.is_empty());
+            assert_eq!(
+                NoteRevision::from_bytes(&note.to_bytes().unwrap()).unwrap(),
+                portable
+            );
+            // Older peers may still encode migration links. They have no
+            // authority even when the signed legacy payload is valid.
+            assert_eq!(
+                NoteRevision::from_bytes(&canonical_bytes(&note).unwrap()).unwrap(),
+                portable
+            );
+            assert_eq!(note.to_bytes().unwrap(), portable.to_bytes().unwrap());
         }
     }
 

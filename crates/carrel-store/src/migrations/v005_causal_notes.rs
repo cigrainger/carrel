@@ -194,7 +194,10 @@ mod tests {
                 store.current_schema_version().unwrap(),
                 crate::CURRENT_SCHEMA_VERSION
             );
-            assert_eq!(store.get_note("old").unwrap(), Some(records[2].clone()));
+            assert_eq!(
+                store.get_note("old").unwrap(),
+                Some(records[2].clone().into_portable())
+            );
             let history = store.note_revisions("old").unwrap();
             assert_eq!(history.len(), 3);
             for record in &records {
