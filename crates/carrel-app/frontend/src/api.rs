@@ -6,6 +6,63 @@ use serde::{Deserialize, Serialize};
 pub use carrel_core::annotation::{AnnotationCursor, AnnotationPage};
 pub use carrel_core::library::{ItemCursor, ItemFilter, ItemPage, ItemView};
 
+/// Quiet private-sync state; no reading contents or counts cross this boundary.
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SyncSnapshot {
+    pub enabled: bool,
+    pub active: bool,
+    pub can_invite: bool,
+    pub revision: u64,
+    pub error: Option<String>,
+    pub devices: Vec<SyncDevice>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SyncDevice {
+    pub key: String,
+    pub name: String,
+    pub local: bool,
+    pub revoked: bool,
+}
+
+#[cfg(target_arch = "wasm32")]
+pub(crate) async fn sync_status() -> Result<SyncSnapshot, ApiError> {
+    let value = tauri_invoke("sync_status", wasm_bindgen::JsValue::UNDEFINED)
+        .await
+        .map_err(api_error_from_js)?;
+    serde_wasm_bindgen::from_value(value).map_err(|error| ApiError::new(error.to_string()))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) async fn sync_status() -> Result<SyncSnapshot, ApiError> {
+    Ok(SyncSnapshot::default())
+}
+
+#[cfg(target_arch = "wasm32")]
+pub(crate) async fn sync_action(
+    command: &str,
+    args: serde_json::Value,
+) -> Result<Option<String>, ApiError> {
+    // Dynamic argument maps must be plain objects for Tauri's JSON transport.
+    let args = args
+        .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+        .map_err(|error| ApiError::new(error.to_string()))?;
+    let result = tauri_invoke(command, args)
+        .await
+        .map_err(api_error_from_js)?;
+    serde_wasm_bindgen::from_value(result).map_err(|error| ApiError::new(error.to_string()))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) async fn sync_action(
+    _command: &str,
+    _args: serde_json::Value,
+) -> Result<Option<String>, ApiError> {
+    Ok(None)
+}
+
 /// Operational state of locally derived cached-text search.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -432,27 +489,29 @@ pub async fn mark_item_unread(_request: ItemStateRequest) -> Result<(), ApiError
     Ok(())
 }
 
-/// Toggle the local starred state and return the new value.
+/// Save the explicit star intent captured when the user acted.
 #[cfg(target_arch = "wasm32")]
-pub async fn toggle_item_star(request: ItemStateRequest) -> Result<bool, ApiError> {
+pub async fn set_item_star(item_id: String, starred: bool) -> Result<bool, ApiError> {
     #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
     struct Args {
-        request: ItemStateRequest,
+        item_id: String,
+        starred: bool,
     }
 
-    let args = serde_wasm_bindgen::to_value(&Args { request })
+    let args = serde_wasm_bindgen::to_value(&Args { item_id, starred })
         .map_err(|error| ApiError::new(error.to_string()))?;
-    let value = tauri_invoke("toggle_item_star", args)
+    let value = tauri_invoke("set_item_star", args)
         .await
         .map_err(api_error_from_js)?;
 
     serde_wasm_bindgen::from_value(value).map_err(|error| ApiError::new(error.to_string()))
 }
 
-/// Toggle the local starred state for SSR tests and non-wasm builds.
+/// Preserve the same explicit intent for SSR tests and non-wasm builds.
 #[cfg(not(target_arch = "wasm32"))]
-pub async fn toggle_item_star(_request: ItemStateRequest) -> Result<bool, ApiError> {
-    Ok(false)
+pub async fn set_item_star(_item_id: String, starred: bool) -> Result<bool, ApiError> {
+    Ok(starred)
 }
 
 /// Create a highlight.

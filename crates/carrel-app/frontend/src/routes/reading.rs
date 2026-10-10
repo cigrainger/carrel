@@ -230,6 +230,44 @@ pub fn ReadingView() -> impl IntoView {
         let requests = Requests::default();
         let cleanup = requests.clone();
         on_cleanup(move || cleanup.invalidate());
+        let remote_requests = Requests::default();
+        let cleanup = remote_requests.clone();
+        on_cleanup(move || cleanup.invalidate());
+        Effect::new(move |_| {
+            let _ = feeds.sync_revision.get();
+            let Some(previous) = item.get_untracked() else {
+                return;
+            };
+            let id = previous.id;
+            let generation = remote_requests.begin();
+            let guard = remote_requests.clone();
+            let action_revision = actions.state.with_untracked(|state| state.revision());
+            let scroll_y = scroll_ref
+                .get_untracked()
+                .map(|element| f64::from(element.scroll_top()));
+            spawn_local(async move {
+                let Ok(detail) = api::get_item(id.clone()).await else {
+                    return;
+                };
+                if !guard.accepts(generation) || item_id.get_untracked() != id {
+                    return;
+                }
+                actions
+                    .state
+                    .update(|state| state.rebase(action_revision, std::slice::from_ref(&id)));
+                // Replace backend data without clearing the reader, its local
+                // note draft, or the user's active scroll position.
+                item.set(detail);
+                restore_scroll(scroll_ref, scroll_y);
+                if let Ok(rows) = api::list_item_highlights(id.clone()).await
+                    && guard.accepts(generation)
+                    && item_id.get_untracked() == id
+                {
+                    highlights.set(rows);
+                    highlights_ready.set(true);
+                }
+            });
+        });
         Effect::new(move |_| {
             let id = item_id.get();
             let _ = reload.get();

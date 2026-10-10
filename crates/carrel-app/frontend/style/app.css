@@ -1426,3 +1426,20 @@ button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px soli
     grid-template-columns: minmax(4rem, 7rem) minmax(0, 1fr);
   }
 }
+.devices-link {
+    margin-top: 1rem;
+    width: 100%;
+    text-align: left;
+    color: var(--color-text-secondary);
+    background: transparent;
+    border: 0;
+    padding: .5rem 0;
+}
+
+.devices-dialog { max-width: 36rem; }
+.devices-dialog form { display: grid; gap: 1rem; }
+.devices-dialog label { display: grid; gap: .4rem; }
+.devices-dialog textarea { width: 100%; font: inherit; font-size: .8rem; resize: vertical; }
+.device-list { list-style: none; padding: 0; }
+.device-list li { padding: .7rem 0; border-bottom: 1px solid var(--color-rule); }
+.dialog-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; }

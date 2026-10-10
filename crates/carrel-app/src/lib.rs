@@ -9,6 +9,7 @@ mod config;
 mod error;
 mod feed_runner;
 mod state;
+mod sync;
 
 use std::str::FromStr;
 
@@ -46,6 +47,7 @@ pub fn run() -> Result<()> {
         .setup(move |_| {
             background::spawn_feed_loop(background_state.clone());
             background::spawn_search_rebuild(background_state.clone());
+            sync::spawn(background_state.clone());
             Ok(())
         })
         .manage(app_state)
@@ -76,11 +78,17 @@ pub fn run() -> Result<()> {
             commands::keymap::keymap_config,
             commands::items::mark_item_read,
             commands::items::mark_item_unread,
-            commands::items::toggle_item_star,
+            commands::items::set_item_star,
             commands::items::update_read_progress,
             commands::status::version,
             commands::status::search_status,
             commands::status::rebuild_search,
+            sync::sync_status,
+            sync::enable_sync,
+            sync::create_sync_invitation,
+            sync::cancel_sync_invitation,
+            sync::join_sync_invitation,
+            sync::revoke_sync_device,
         ])
         .build(tauri::generate_context!())?
         .run(close::on_run_event);

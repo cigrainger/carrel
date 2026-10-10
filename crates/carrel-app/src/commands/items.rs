@@ -63,15 +63,20 @@ pub fn mark_item_unread(state: State<'_, AppState>, request: ItemStateRequest) -
     write_read_intent(&state.store, &request.item_id, ReadIntent::Unread, &device)
 }
 
-/// Toggle the starred state for one item and return the new value.
+/// Save the explicit star intent displayed when the user acted.
 #[tauri::command]
-pub fn toggle_item_star(state: State<'_, AppState>, request: ItemStateRequest) -> Result<bool> {
+pub fn set_item_star(state: State<'_, AppState>, item_id: String, starred: bool) -> Result<bool> {
     let device = super::highlights::load_device_key(&state.paths)?;
-    Ok(state.store.toggle_private_star(
-        &request.item_id,
+    state.store.write_private_state(
+        carrel_core::private_state::StateKey {
+            kind: carrel_core::private_state::StateKind::Star,
+            target: item_id,
+        },
+        carrel_core::private_state::StateValue::Star(starred),
         unix_micros(OffsetDateTime::now_utc()),
         &device,
-    )?)
+    )?;
+    Ok(starred)
 }
 
 /// Generic item-state mutation request.
@@ -521,10 +526,13 @@ fn toggle_star_in_store(store: &carrel_store::Store, item_id: &str) -> Result<bo
 fn readable_html(blobs: &BlobStore, blob_id: &str) -> Result<String> {
     let blob_id = BlobId::from_str(blob_id)?;
     let bytes = blobs.get_blocking(&blob_id)?;
-    String::from_utf8(bytes.to_vec()).map_err(|source| AppError::InvalidData {
+    let html = String::from_utf8(bytes.to_vec()).map_err(|source| AppError::InvalidData {
         context: "item_content.blob",
         value: source.to_string(),
-    })
+    })?;
+    // A content hash proves integrity, and a peer signature proves authorship.
+    // Neither makes HTML safe to render inside the application's webview.
+    Ok(carrel_feeds::sanitize_cached_html(&html))
 }
 
 fn rewrite_blob_uris_for_webview(html: &str) -> String {
@@ -1121,6 +1129,27 @@ mod tests {
         assert_eq!(detail.readable_blob_id.as_deref(), Some(blob_id.as_str()));
         assert_eq!(detail.shape_tags, vec!["long form", "code"]);
         assert_eq!(detail.content_html, "<p>Cached body.</p>");
+    }
+
+    #[test]
+    fn cached_html_is_sanitized_at_the_rendering_boundary_without_rewriting_its_blob() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let blobs = BlobStore::open(tempdir.path());
+        let raw = br#"<p onclick="steal()">Readable text</p><script>steal()</script>
+            <a href="javascript:steal()">Unsafe link</a>
+            <img src="blob://cached-image" onerror="steal()">
+            <math><mi>x</mi><mo>+</mo><mn>1</mn></math>"#;
+        let id = blobs.put_blocking(raw).unwrap();
+        let rendered = readable_html(&blobs, &id.to_string()).unwrap();
+        assert!(rendered.contains("Readable text"));
+        assert!(rendered.contains("blob://cached-image"));
+        assert!(rendered.contains("<math>"));
+        assert!(!rendered.contains("steal"));
+        assert!(!rendered.contains("<script"));
+        assert!(!rendered.contains("onclick"));
+        assert!(!rendered.contains("onerror"));
+        assert!(!rendered.contains("javascript:"));
+        assert_eq!(blobs.get_blocking(&id).unwrap().as_ref(), raw);
     }
 
     #[test]

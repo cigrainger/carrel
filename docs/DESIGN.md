@@ -480,6 +480,21 @@ The note is the primary content; the item is the supporting context. This is the
 
 ## Keyboard
 
+The sidebar's quiet **Devices** control opens desktop sync management. Local
+reading requires no setup. The initial dialog offers **Set up sync** and **Use
+an invitation**, with a desktop name and either a confirmed recovery passphrase
+or pasted invitation. The desktop holding the encrypted master can create an
+invitation or remove another desktop after unlocking it. Invitation text stays
+selectable for ordinary copy/paste, expires after five minutes and is cancelled
+when the dialog closes. Pairing and network work may show a disabled action;
+local reading mutations retain their immediate optimistic behavior.
+
+Incoming sync changes update lists, filters and annotations in place. An open
+reader keeps its current scroll and unsaved note draft. Star actions capture
+the clicked state, so a concurrent incoming update cannot invert the user's
+request. Offline changes remain local until peers reconnect; there are no
+badges, notifications, article counts or automatic completion.
+
 The keymap is the primary input. Every action accessible via mouse must also be accessible via keyboard, ideally with a single keystroke or short sequence. Vim-style multi-key sequences where they make sense (`g g` for top, `g e` for end). Modifier keys reserved for global commands (`cmd-k` for command palette).
 
 ### Default keymap

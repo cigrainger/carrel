@@ -82,7 +82,7 @@ selection remains a manual check because macOS assistive access was unavailable;
 export formatting and filesystem paths are covered independently.
 `just check` passes 216 tests, formatting, native and CSR lint. Both full builds
 pass with the temporary inspection dependency removed. The local milestones
-are complete; two-device self-sync remains active and unimplemented.
+are complete; the implemented self-sync flow is described below.
 
 The self-sync identity foundation now binds one master and the installation's
 existing independent device key in a single transaction. Verified certificates
@@ -162,14 +162,47 @@ Independent local Iroh endpoints verify actual bidirectional document/blob
 transfer, reopened content and subsequent writes after reconnect, refusal of an
 outsider's stolen write capability and known blob hash, all private ALPNs,
 permanent revocation of live connections, and local revocation/startup recovery.
-This host is not yet connected to the app's private fact journal or pairing UI.
+The host now underlies the private fact bridge and native pairing flow described below.
 `just check` passes 293 tests, formatting, and native/CSR lint; full native and
 CSR builds pass. Transport tests use independent endpoints on one machine;
-physical two-machine and complete native pairing checks remain ahead.
+physical two-machine checks remain a manual follow-up.
 
-Pairing, cached-item/annotation replication, the app fact mirror, and
-transport verification remain outstanding; the goal stays active. These
-tests do not claim to verify the complete two-device application flow.
+The two-device milestone now has a durable typed fact bridge, verified reading
+cache transfer, and a Devices dialog with one-time copy/paste pairing. Master
+seeds remain on their originating desktop; each installation keeps its original
+independent operational key. Atomic recipient setup prevents partial binding to
+an unrelated document after a crash. Device removal closes live private access.
+
+Independent endpoint tests exercise article metadata, native cached HTML and
+images, subscriptions, reading intent, stars, highlights and original notes.
+Offline edits preserve both note drafts. Signed removals hide highlights and
+attached notes and remove subscription membership. Invalid signatures, unknown
+SDK authors, same-key shadowing, oversized headers, incorrect content lengths,
+corrupt cached bytes and revocations are rejected. Cozo retains original fact
+history, exact outbox acknowledgements and pending dependency/blob work. The
+same document can be reconstructed from its local binding after mirror loss.
+
+The native backend smoke test uses two isolated persistent app profiles and the
+actual pairing and background-worker code. It verifies distinct retained device
+keys, cache transfer, live invalidation, restart and further star changes without
+a master file on the recipient. It caught a reconnect gap: the worker now retries
+SDK reconciliation while gossip rebuilds. Store tests cover atomic setup rollback,
+immutable document binding, pre-certificate revocation, resumed migration stages
+and rejection of cross-article ancestry without starving valid work.
+
+Workspace formatting, native and CSR lint, and all 319 tests pass. Full native and
+Trunk CSR builds pass. The planned local milestones and two-instance self-sync
+flow are implemented and verified. Physical two-machine networking and a manual
+pass over the new Devices dialog remain useful release checks; the in-process
+and native backend tests do not claim to verify those environments.
+
+To try it, run `just dev` and open **Devices** in the sidebar. Choose **Set up
+sync**, enter a desktop name and confirm a recovery passphrase. Then choose
+**Pair another desktop**, unlock the recovery key and copy the invitation.
+On the other installation, open **Devices → Use an invitation**, paste it and
+name that desktop. Keep the invitation window open until pairing finishes.
+Ordinary reading and subsequent sync do not require the passphrase. The desktop
+holding the encrypted master can remove another desktop from this same dialog.
 
 ## Decisions already made
 
@@ -197,16 +230,15 @@ tests do not claim to verify the complete two-device application flow.
   actions keep it **removed**. An explicit action after observing both branches
   supersedes the conflict; replaying an unchanged snapshot cannot undo it.
 
-## Foundations to resolve before the sync milestone
+## Implementation boundaries
 
-The sync crate now hosts private Iroh protocols; fact mirroring and pairing
-remain to be implemented. The schema uses `Validity` values for
-several mutable relations rather than historical validity keys; replication
-must not assume that ordinary `:put` operations resolve concurrent writes.
-Document and migrate the required history/merge semantics before implementing
-them. Subscription settings must be distinguished from device-local HTTP
-fetch state. Device authorization and revocation already have signed core
-types; pairing must use those boundaries.
+Private state uses signed causal history, so ordinary projection `:put` operations
+never decide an offline conflict. Schema versions 4–8 retain original identity,
+annotation, state and item proofs, mirror work and local transport configuration.
+Portable subscriptions exclude device-local HTTP cache state. Incoming facts
+have an explicit allow-list and pass typed verification; only an explicit local
+setup action can choose the master. Friends, mobile pairing and master-key
+backup/recovery UI are separate follow-up work.
 
 The brief registry and current-documentation audit on 2026-10-10 found a
 compatible family: [Iroh 1.3.0](https://crates.io/crates/iroh/1.3.0),

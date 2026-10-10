@@ -106,6 +106,7 @@ pub fn Sidebar() -> impl IntoView {
                 </Show>
             </div>
             <SubscriptionFiles/>
+            <crate::components::devices::Devices/>
             <Show when=move || add_open.get()>
                 <Modal label="Add feed" class="feed-dialog" on_cancel=UnsyncCallback::new(move |()| {
                     add_error.set(None);

@@ -33,6 +33,7 @@ impl ItemAction {
 struct PendingAction {
     item_id: String,
     action: ItemAction,
+    starred: Option<bool>,
 }
 
 #[derive(Clone, Debug)]
@@ -53,6 +54,8 @@ impl ItemActionState {
     fn enqueue(&mut self, item_id: String, initial: ItemState, action: ItemAction) -> bool {
         self.revision += 1;
         let start = self.pending.is_empty();
+        let starred = matches!(action, ItemAction::Star)
+            .then(|| !self.project(&item_id, initial.clone()).starred);
         self.confirmed
             .entry(item_id.clone())
             .or_insert(ConfirmedState {
@@ -60,7 +63,11 @@ impl ItemActionState {
                 read_changed: false,
                 star_changed: false,
             });
-        self.pending.push_back(PendingAction { item_id, action });
+        self.pending.push_back(PendingAction {
+            item_id,
+            action,
+            starred,
+        });
         start
     }
 
@@ -79,7 +86,11 @@ impl ItemActionState {
             .iter()
             .filter(|pending| pending.item_id == item_id)
         {
-            pending.action.apply(&mut state);
+            if let Some(starred) = pending.starred {
+                state.starred = starred;
+            } else {
+                pending.action.apply(&mut state);
+            }
         }
         state
     }
@@ -163,7 +174,12 @@ impl ItemActions {
                 let result = match pending.action {
                     ItemAction::Read(true) => api::mark_item_read(request).await.map(|()| None),
                     ItemAction::Read(false) => api::mark_item_unread(request).await.map(|()| None),
-                    ItemAction::Star => api::toggle_item_star(request).await.map(Some),
+                    ItemAction::Star => api::set_item_star(
+                        request.item_id,
+                        pending.starred.expect("star action has explicit intent"),
+                    )
+                    .await
+                    .map(Some),
                 };
                 if result.is_err() {
                     status.warn("Could not save that change. Your previous state was restored.");
@@ -284,5 +300,49 @@ mod tests {
         let fresh_query = state.revision();
         state.rebase(fresh_query, &["one".into()]);
         assert_eq!(state.project("one", initial()).read, "unread");
+    }
+    #[test]
+    fn a_queued_star_keeps_the_clicked_intent_when_a_remote_snapshot_changes() {
+        let mut actions = ItemActionState::default();
+        actions.enqueue(
+            "article".into(),
+            ItemState {
+                read: "unread".into(),
+                starred: false,
+            },
+            ItemAction::Star,
+        );
+        assert_eq!(actions.pending.front().unwrap().starred, Some(true));
+        assert!(
+            actions
+                .project(
+                    "article",
+                    ItemState {
+                        read: "unread".into(),
+                        starred: true
+                    }
+                )
+                .starred
+        );
+        actions.enqueue(
+            "article".into(),
+            ItemState {
+                read: "unread".into(),
+                starred: true,
+            },
+            ItemAction::Star,
+        );
+        assert_eq!(actions.pending.back().unwrap().starred, Some(false));
+        assert!(
+            !actions
+                .project(
+                    "article",
+                    ItemState {
+                        read: "unread".into(),
+                        starred: true
+                    }
+                )
+                .starred
+        );
     }
 }

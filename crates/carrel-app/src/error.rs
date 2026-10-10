@@ -8,6 +8,9 @@ pub type Result<T> = std::result::Result<T, AppError>;
 /// Errors raised by the desktop shell.
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
+    /// Explicit desktop pairing or private synchronization failed.
+    #[error(transparent)]
+    Sync(#[from] carrel_sync::SyncError),
     /// Local configuration could not be resolved.
     #[error("{0}")]
     Config(String),
@@ -66,6 +69,7 @@ impl Serialize for AppError {
         S: serde::Serializer,
     {
         let kind = match self {
+            Self::Sync(_) => "sync",
             Self::Config(_) => "config",
             Self::Store(carrel_store::StoreError::AnnotationConflict { .. }) => {
                 "annotation_conflict"

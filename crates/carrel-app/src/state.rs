@@ -21,6 +21,7 @@ pub struct AppState {
     pub(crate) search_rebuilding: Arc<AtomicBool>,
     pub(crate) store: Store,
     pub(crate) paths: InstallPaths,
+    pub(crate) sync: Arc<AsyncMutex<crate::sync::SyncState>>,
 }
 
 impl AppState {
@@ -34,6 +35,7 @@ impl AppState {
             search_rebuilding: Arc::new(AtomicBool::new(false)),
             store,
             paths,
+            sync: Arc::new(AsyncMutex::new(crate::sync::SyncState::default())),
         }
     }
 }

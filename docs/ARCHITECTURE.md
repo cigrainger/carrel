@@ -113,8 +113,37 @@ its TLS endpoint identity. Endpoint hooks check the locally bound master and
 active device certificates before outgoing dials and after every incoming or
 outgoing handshake, across docs, blobs, and gossip. A copied document or blob
 ticket does not grant private access. This endpoint has no social protocols.
-The native pairing flow will use a separately bounded invitation protocol;
+The native pairing flow uses a separately bounded invitation protocol;
 receiving a certificate never chooses a local master identity.
+
+The Devices dialog explicitly creates or resumes a passphrase-protected master,
+or accepts a one-time copy/paste invitation. Invitations last five minutes and
+are cancelled when dismissed. Pairing endpoints are temporary and expose only
+the pairing ALPN. The recipient proves possession of its existing operational
+key by signing the invitation challenge and both temporary endpoint identities.
+This avoids running two network endpoints with the same operational identity
+during setup. The master signs the document grant and new device certificate;
+its seed never crosses the connection. The recipient commits identity, document
+capability, original certificates/revocations and peer hints atomically before
+starting private protocols, then confirms its private endpoint address.
+
+The app captures dirty source articles in bounded pages, retaining verified
+cached resources and older highlight content references. Signed metadata,
+original annotations and causal state enter a durable Cozo fact journal and
+outbox. The bridge publishes immutable typed records rather than database
+scripts. Retained SDK headers are replayed once at startup; live insert events
+drive subsequent work. SDK reconciliation retries reconnecting peers without
+scanning the article archive. Pending parents, targets and blob references
+survive restarts. Loss of the Iroh cache reconstructs the same document from
+its local capability and original Cozo journal.
+
+Automatic SDK downloads are disabled. The bridge checks the authenticated
+sender, certified header author, key, declared size and original signatures
+before accepting a fact. Reading blobs have a size-checked header and verified
+Bao/BLAKE3 body before atomic installation in the native cache. Cached HTML is
+sanitized again at the render boundary. Sync generations refresh existing views
+while preserving local selection, reader scroll and note drafts. Local search
+is rebuilt from verified cache content and remains a device-local projection.
 
 The store emits an authorization-change signal only after a successful typed
 identity write. The transport rechecks Cozo and closes existing connections for

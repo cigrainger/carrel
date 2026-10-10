@@ -47,10 +47,17 @@ pub(crate) fn cancel_app_close(state: State<'_, CloseState>) {
 }
 
 #[tauri::command]
-pub(crate) fn finish_app_close(app: AppHandle, state: State<'_, CloseState>) {
-    if state.0.lock().expect("close state poisoned").finish() {
+pub(crate) async fn finish_app_close(
+    app: AppHandle,
+    state: State<'_, CloseState>,
+    data: State<'_, crate::state::AppState>,
+) -> crate::Result<()> {
+    let allowed = state.0.lock().expect("close state poisoned").finish();
+    if allowed {
+        crate::sync::shutdown(&data).await;
         app.exit(0);
     }
+    Ok(())
 }
 
 fn request_close(app: &AppHandle) -> bool {

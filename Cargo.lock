@@ -854,8 +854,10 @@ dependencies = [
  "carrel-core",
  "carrel-feeds",
  "carrel-store",
+ "carrel-sync",
  "cozo",
  "html-escape",
+ "iroh",
  "kuchiki",
  "serde",
  "serde_json",
@@ -872,6 +874,7 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "wiremock",
+ "zeroize",
 ]
 
 [[package]]
@@ -883,6 +886,7 @@ dependencies = [
  "leptos_router",
  "serde",
  "serde-wasm-bindgen",
+ "serde_json",
  "time",
  "wasm-bindgen",
  "wasm-bindgen-futures",

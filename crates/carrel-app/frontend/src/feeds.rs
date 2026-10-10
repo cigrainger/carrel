@@ -18,6 +18,7 @@ pub(crate) struct FeedController {
     pub(crate) add_open: RwSignal<bool>,
     pub(crate) file_busy: RwSignal<bool>,
     pub(crate) search_status: RwSignal<crate::api::SearchStatus>,
+    pub(crate) sync_revision: RwSignal<u64>,
     #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
     writes: StoredValue<crate::writes::PendingWrites>,
     #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
@@ -58,6 +59,7 @@ pub(crate) fn provide_feed_controller() -> FeedController {
         add_open: RwSignal::new(false),
         file_busy: RwSignal::new(false),
         search_status: RwSignal::new(crate::api::SearchStatus::default()),
+        sync_revision: RwSignal::new(0),
         writes: StoredValue::new(crate::writes::use_pending_writes()),
         refresh_token: RwSignal::new(0),
     };
@@ -114,6 +116,14 @@ pub(crate) async fn subscription_file(
     _import: bool,
 ) -> Result<(), String> {
     Ok(())
+}
+
+/// Route path for a feed URL.
+pub(crate) async fn refresh_from_sync(controller: FeedController) {
+    #[cfg(target_arch = "wasm32")]
+    refresh(controller, true).await;
+    #[cfg(not(target_arch = "wasm32"))]
+    let _ = controller;
 }
 
 /// Route path for a feed URL.

@@ -15,6 +15,7 @@ cozo = { workspace = true }
 carrel-core = { workspace = true }
 carrel-feeds = { workspace = true }
 carrel-store = { workspace = true }
+carrel-sync = { workspace = true }
 html-escape = { workspace = true }
 kuchiki = { workspace = true }
 serde = { workspace = true }
@@ -30,10 +31,12 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 tempfile = { workspace = true }
 url = { workspace = true }
+zeroize = { workspace = true }
 
 [build-dependencies]
 tauri-build = { workspace = true }
 
 [dev-dependencies]
+iroh = { workspace = true }
 tempfile = { workspace = true }
 wiremock = { workspace = true }

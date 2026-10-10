@@ -1,5 +1,6 @@
 //! Shared application chrome components.
 
+mod devices;
 mod item_row;
 mod modal;
 mod sidebar;
