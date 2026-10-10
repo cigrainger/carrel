@@ -9,6 +9,9 @@ pub type Result<T> = std::result::Result<T, StoreError>;
 /// Errors raised by the Carrel store boundary.
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
+    /// A note's signed content or causal ancestry is invalid.
+    #[error("invalid note revision: {0}")]
+    NoteRevision(#[from] carrel_core::annotation::note::NoteRevisionError),
     /// A signed identity certificate failed verification or bounded decoding.
     #[error("invalid identity certificate: {0}")]
     IdentityCertificate(#[from] carrel_core::identity::CertError),

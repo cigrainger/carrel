@@ -2,6 +2,9 @@
 
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "identity")]
+pub mod note;
+
 /// Maximum prefix/suffix context length, counted in Unicode scalar values.
 pub const MAX_TEXT_CONTEXT_CHARS: usize = 256;
 

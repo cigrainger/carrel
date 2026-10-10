@@ -63,6 +63,9 @@ pub fn Highlights() -> impl IntoView {
     let actions = crate::annotation_actions::use_annotation_actions();
     let displayed = Signal::derive(move || actions.project_rows(rows.get()));
     let editor = RwSignal::new(None::<EditDraft>);
+    let edit_body = RwSignal::new(String::new());
+    let editor_epoch = RwSignal::new(0_u64);
+    let refreshing_note = RwSignal::new(false);
     let edit_error = RwSignal::new(None::<String>);
     let conflicted = RwSignal::new(false);
     let removal = RwSignal::new(None::<HighlightListRow>);
@@ -185,9 +188,13 @@ pub fn Highlights() -> impl IntoView {
         }
         edit_error.set(None);
         conflicted.set(false);
+        editor_epoch.update(|epoch| *epoch += 1);
+        refreshing_note.set(false);
+        edit_body.set(note.body.clone());
         editor.set(Some(EditDraft {
             quote: row.highlight.quoted_text,
             note,
+            latest_body: None,
         }));
     });
     let start_remove = UnsyncCallback::new(move |row: HighlightListRow| removal.set(Some(row)));
@@ -205,12 +212,27 @@ pub fn Highlights() -> impl IntoView {
             actions.edit(note.clone(), body.clone());
             edit_error.set(None);
             wasm_bindgen_futures::spawn_local(async move {
-                let result = api::edit_highlight_note(api::EditHighlightNoteRequest {
-                    note_id: note.id.clone(),
-                    body,
-                    expected_updated_at_micros: note.updated_at_micros,
-                })
-                .await;
+                let result = if note.conflicts.is_empty() {
+                    api::edit_highlight_note(api::EditHighlightNoteRequest {
+                        note_id: note.id.clone(),
+                        body,
+                        expected_revision_id: note.revision_id.clone(),
+                    })
+                    .await
+                } else {
+                    let mut expected_revision_ids = note
+                        .conflicts
+                        .iter()
+                        .map(|version| version.revision_id.clone())
+                        .collect::<Vec<_>>();
+                    expected_revision_ids.sort();
+                    api::resolve_highlight_note(api::ResolveHighlightNoteRequest {
+                        note_id: note.id.clone(),
+                        body,
+                        expected_revision_ids,
+                    })
+                    .await
+                };
                 drop(guard);
                 match result {
                     Ok(saved) => {
@@ -225,7 +247,7 @@ pub fn Highlights() -> impl IntoView {
                         actions.edit_failed(note);
                         if !editor.is_disposed() {
                             conflicted.set(error.is_annotation_conflict());
-                            edit_error.set(Some(if error.is_annotation_conflict() { "This note changed since you opened it. Your draft is still here; copy it before reloading the saved note.".into() } else { format!("Could not save this note. Your draft is still here. {}", error.message()) }));
+                            edit_error.set(Some(if error.is_annotation_conflict() { "Another version arrived while you were editing. Review the latest versions before saving; your draft will stay here.".into() } else { format!("Could not save this note. Your draft is still here. {}", error.message()) }));
                             reload.update(|token| *token += 1);
                         }
                         status.warn("Could not save note. Your draft is still in the editor.");
@@ -235,6 +257,48 @@ pub fn Highlights() -> impl IntoView {
         }
         #[cfg(not(target_arch = "wasm32"))]
         let _ = (body, draft);
+    });
+    let refresh_note = UnsyncCallback::new(move |()| {
+        let Some(draft) = editor.get_untracked() else {
+            return;
+        };
+        if refreshing_note.get_untracked() {
+            return;
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            let epoch = editor_epoch.get_untracked();
+            refreshing_note.set(true);
+            wasm_bindgen_futures::spawn_local(async move {
+                let result = api::review_highlight_note(draft.note.id.clone()).await;
+                if editor.is_disposed()
+                    || editor_epoch.get_untracked() != epoch
+                    || editor.get_untracked().is_none()
+                {
+                    return;
+                }
+                refreshing_note.set(false);
+                match result {
+                    Ok(note) => {
+                        let latest_body = note.conflicts.is_empty().then(|| note.body.clone());
+                        editor.set(Some(EditDraft {
+                            quote: draft.quote,
+                            note,
+                            latest_body,
+                        }));
+                        edit_error.set(None);
+                        conflicted.set(false);
+                        reload.update(|token| *token += 1);
+                    }
+                    Err(error) => edit_error.set(Some(format!(
+                        "Could not load the latest versions. Your draft is still here. {}",
+                        error.message()
+                    ))),
+                }
+            });
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        let _ = draft;
     });
     let confirm_remove = UnsyncCallback::new(move |()| {
         let Some(row) = removal.get_untracked() else {
@@ -439,15 +503,9 @@ pub fn Highlights() -> impl IntoView {
             </Show>
             {move || editor.get().map(|draft| {
                 let id = draft.note.id.clone();
-                view! { <EditNoteOverlay draft=draft error=edit_error conflicted=conflicted pending=Signal::derive(move || actions.pending(&id))
-                    on_save=save_note on_cancel=UnsyncCallback::new(move |()| editor.set(None))
-                    on_reload=UnsyncCallback::new(move |()| {
-                        let Some(draft) = editor.get_untracked() else {return;};
-                        if paging.get_untracked() {return;}
-                        let latest = displayed.get_untracked().into_iter().flat_map(|row| row.notes).find(|note| note.id == draft.note.id);
-                        if let Some(note) = latest {editor.set(Some(EditDraft {quote: draft.quote, note})); edit_error.set(None); conflicted.set(false);}
-                        else {edit_error.set(Some("The highlight or note is no longer available. Your draft is still here.".into()));}
-                    }) reload_pending=paging /> }
+                view! { <EditNoteOverlay draft=draft body=edit_body error=edit_error conflicted=conflicted pending=Signal::derive(move || actions.pending(&id))
+                    on_save=save_note on_cancel=UnsyncCallback::new(move |()| {editor_epoch.update(|epoch| *epoch += 1); refreshing_note.set(false); editor.set(None);})
+                    on_reload=refresh_note reload_pending=refreshing_note /> }
             })}
             {move || removal.get().map(|row| view! {
                 <Modal label="Remove highlight" class="note-dialog" on_cancel=UnsyncCallback::new(move |()| removal.set(None))>
@@ -540,12 +598,12 @@ fn HighlightRow(
                 <Show when=move || expanded.get()>
                     <div class="highlight-notes" on:click=move |event| event.stop_propagation()>
                         <For each=move || row.get().notes key=|note| note.id.clone() let:note>
-                            {let id = note.id.clone(); let edit_id = id.clone(); let pending_id = StoredValue::new(id.clone()); let click_id = StoredValue::new(id.clone());
+                            {let id = note.id.clone(); let edit_id = id.clone(); let pending_id = StoredValue::new(id.clone()); let click_id = StoredValue::new(id.clone()); let label_id = StoredValue::new(id.clone());
                             view! { <div class="highlight-note-full"><p>{move || row.get().notes.into_iter().find(|note| note.id == id).map(|note| note.body).unwrap_or_default()}</p>
-                                <Show when=move || row.get().notes.iter().any(|note| note.id == edit_id && note.can_edit)>
+                                <Show when=move || row.get().notes.iter().any(|note| note.id == edit_id && (note.can_edit || !note.conflicts.is_empty()))>
                                     <button type="button" disabled=move || pending_id.with_value(|id| actions.pending(id)) on:click=move |_| {
                                         let current = row.get_untracked(); if let Some(note) = current.notes.iter().find(|note| click_id.with_value(|id| &note.id == id)) {on_edit.run((current.clone(), note.clone()));}
-                                    }>"Edit note"</button>
+                                    }>{move || if row.get().notes.iter().any(|note| label_id.with_value(|id| &note.id == id) && !note.conflicts.is_empty()) {"Review conflict"} else {"Edit note"}}</button>
                                 </Show></div> }}
                         </For>
                     </div>
@@ -556,6 +614,13 @@ fn HighlightRow(
                         <span>{move || created_date_label(&row.get().highlight.created_at)}</span>
                     </p>
                     <div class="highlight-row-actions">
+                    <Show when=move || !expanded.get() && row.get().notes.iter().any(|note| !note.conflicts.is_empty())>
+                        <button type="button" on:click=move |event: ev::MouseEvent| {
+                            event.stop_propagation();
+                            let current = row.get_untracked();
+                            if let Some(note) = current.notes.iter().find(|note| !note.conflicts.is_empty()) {on_edit.run((current.clone(), note.clone()));}
+                        }>"Review conflict"</button>
+                    </Show>
                     <Show when=move || !row.get().notes.is_empty()><button type="button" aria-expanded=move || expanded.get().to_string() on:click=move |event: ev::MouseEvent| {event.stop_propagation(); on_toggle_notes.run(row.get_untracked().highlight.id);}>{move || if expanded.get() {"Hide notes"} else {"Notes"}}</button></Show>
                     <button type="button" class="highlight-open" on:click=move |event: ev::MouseEvent| { event.stop_propagation(); on_open.run(index.get_untracked()); }>"Open source"</button>
                     <Show when=move || row.get().can_remove><button type="button" on:click=move |event: ev::MouseEvent| {event.stop_propagation(); on_remove.run(row.get_untracked());}>"Remove"</button></Show>
@@ -570,11 +635,13 @@ fn HighlightRow(
 struct EditDraft {
     quote: String,
     note: NoteDetail,
+    latest_body: Option<String>,
 }
 
 #[component]
 fn EditNoteOverlay(
     draft: EditDraft,
+    body: RwSignal<String>,
     error: RwSignal<Option<String>>,
     conflicted: RwSignal<bool>,
     pending: Signal<bool>,
@@ -583,7 +650,15 @@ fn EditNoteOverlay(
     on_reload: UnsyncCallback<()>,
     reload_pending: RwSignal<bool>,
 ) -> impl IntoView {
-    let body = RwSignal::new(draft.note.body);
+    let resolution = !draft.note.conflicts.is_empty();
+    let can_edit = draft.note.can_edit;
+    let show_draft = can_edit || body.get_untracked() != draft.note.body;
+    let label = if resolution {
+        "Review note conflict"
+    } else {
+        "Edit note"
+    };
+    let versions = draft.note.conflicts;
     let textarea = NodeRef::<leptos::html::Textarea>::new();
     #[cfg(target_arch = "wasm32")]
     Effect::new(move |_| {
@@ -594,6 +669,7 @@ fn EditNoteOverlay(
     let submit = move || {
         if !pending.get_untracked()
             && !conflicted.get_untracked()
+            && can_edit
             && !body.with_untracked(|body| body.trim().is_empty())
         {
             on_save.run(body.get_untracked());
@@ -605,17 +681,32 @@ fn EditNoteOverlay(
         }
     });
     view! {
-        <Modal label="Edit note" class="note-dialog" on_cancel=cancel>
+        <Modal label=label class="note-dialog" on_cancel=cancel>
             <section on:keydown=move |event: ev::KeyboardEvent| {
                 if event.key() == "Enter" && (event.meta_key() || event.ctrl_key()) {event.prevent_default(); event.stop_propagation(); submit();}
             }>
-                <h2>"Edit note"</h2><blockquote>{draft.quote}</blockquote>
-                <textarea rows="8" aria-label="Note" node_ref=textarea autofocus=true readonly=move || pending.get() prop:value=move || body.get()
-                    on:input=move |event| body.set(event_target_value(&event))></textarea>
+                <h2>{label}</h2><blockquote>{draft.quote}</blockquote>
+                {resolution.then(|| view! {<p>{if can_edit {"These versions were edited independently. Keep one or combine them below."} else {"You can review these versions here. This device cannot change the note."}}</p>})}
+                <div class="note-conflict-versions">
+                    {versions.into_iter().map(|version| {
+                        let saved_body = StoredValue::new(version.body.clone());
+                        view! { <section class="note-conflict-version">
+                            <p class="note-version-source">{version.device_label}" · "{version.saved_at}</p>
+                            <p class="note-version-body">{version.body}</p>
+                            <Show when=move || can_edit><button type="button" disabled=move || pending.get() on:click=move |_| body.set(saved_body.get_value())>"Use this version"</button></Show>
+                        </section> }
+                    }).collect_view()}
+                </div>
+                {draft.latest_body.map(|latest| view! {<section class="note-conflict-version"><p class="note-version-source">"Latest saved note"</p><p class="note-version-body">{latest}</p></section>})}
+                <Show when=move || show_draft>
+                    <label for="note-edit-draft" class="note-version-source note-draft-label">"Your draft"</label>
+                    <textarea id="note-edit-draft" rows="8" aria-label="Note" node_ref=textarea autofocus=true readonly=move || pending.get() || !can_edit prop:value=move || body.get()
+                        on:input=move |event| body.set(event_target_value(&event))></textarea>
+                </Show>
                 {move || error.get().map(|message| view! {<p class="annotation-error" role="alert">{message}</p>})}
-                <Show when=move || conflicted.get()><button type="button" disabled=move || reload_pending.get() on:click=move |_| on_reload.run(())>"Reload saved note"</button></Show>
+                <Show when=move || conflicted.get()><button type="button" disabled=move || reload_pending.get() on:click=move |_| on_reload.run(())>"Review latest versions"</button></Show>
                 <div class="note-dialog-actions"><button type="button" disabled=move || pending.get() on:click=move |_| cancel.run(())>"Cancel"</button>
-                    <button type="button" disabled=move || pending.get() || conflicted.get() || body.with(|body| body.trim().is_empty()) on:click=move |_| submit()>"Save"</button></div>
+                    <Show when=move || can_edit><button type="button" disabled=move || pending.get() || conflicted.get() || body.with(|body| body.trim().is_empty()) on:click=move |_| submit()>{if resolution {"Save resolution"} else {"Save"}}</button></Show></div>
             </section>
         </Modal>
     }

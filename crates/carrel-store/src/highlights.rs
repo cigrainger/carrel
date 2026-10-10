@@ -2,9 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use carrel_core::annotation::{
-    AnnotationCursor, AnnotationPage, HighlightLocation, MAX_NOTE_BYTES, next_note_revision,
-};
+use carrel_core::annotation::{AnnotationCursor, AnnotationPage, HighlightLocation};
 use carrel_core::identity::{
     Keypair, PublicKey, Signature, canonical_bytes, sign_canonical, verify_canonical,
 };
@@ -13,43 +11,22 @@ use serde::Serialize;
 use time::OffsetDateTime;
 
 use crate::ids::id_for_authored;
+use crate::notes::decode_note_row;
 use crate::{Result, Store, StoreError};
 
 /// Removals dominate revision time and cascade to attached notes.
 pub(crate) const NOTE_ALIVE_RULES: &str = r#"
+    superseded[id, parent] := *note{id, parents}, parent in parents
+    note_head[id, revision] := *note{id, revision_id: revision}, not superseded[id, revision]
     live_item[id] := *item{id}, not *entity_tombstone{id}
     live_highlight[id] := *highlight{id, item_id}, live_item[item_id], not *entity_tombstone{id}
-    live_note[id] := *note{id, target_kind, target_id @ "END"},
+    live_note[id] := *note{id, target_kind, target_id},
         is_null(target_kind), is_null(target_id), not *entity_tombstone{id}
-    live_note[id] := *note{id, target_kind: 'item', target_id @ "END"},
+    live_note[id] := *note{id, target_kind: 'item', target_id},
         live_item[target_id], not *entity_tombstone{id}
-    live_note[id] := *note{id, target_kind: 'highlight', target_id @ "END"},
+    live_note[id] := *note{id, target_kind: 'highlight', target_id},
         live_highlight[target_id], not *entity_tombstone{id}
 "#;
-
-fn validate_note_body(body: &str) -> Result<()> {
-    if body.trim().is_empty() || body.len() > MAX_NOTE_BYTES {
-        return Err(StoreError::InvalidInput {
-            context: "note.body",
-            message: format!("note must contain text and be at most {MAX_NOTE_BYTES} bytes"),
-        });
-    }
-    Ok(())
-}
-
-fn validate_note_target(kind: Option<&str>, id: Option<&str>) -> Result<()> {
-    if !matches!(
-        (kind, id),
-        (None, None) | (Some("item" | "highlight"), Some(_))
-    ) || id.is_some_and(|id| id.is_empty())
-    {
-        return Err(StoreError::InvalidInput {
-            context: "note.target",
-            message: "target must be an existing item, highlight, or absent".into(),
-        });
-    }
-    Ok(())
-}
 
 /// Input for creating a highlight.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -170,81 +147,12 @@ pub struct AnnotationReview {
     pub site_name: Option<String>,
     /// All current attached notes, newest revision first.
     pub notes: Vec<NoteRecord>,
+    /// Every retained head for notes requiring explicit conflict review.
+    pub conflicts: BTreeMap<String, Vec<NoteRecord>>,
 }
 
-/// Input for creating a note.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PutNoteInput {
-    /// Note body.
-    pub body: String,
-    /// Optional target kind, for this brief usually `highlight`.
-    pub target_kind: Option<String>,
-    /// Optional target id matching `target_kind`.
-    pub target_id: Option<String>,
-    /// Optional timestamp override for deterministic tests.
-    pub created_at_micros: Option<i64>,
-}
-
-/// Stored note row.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct NoteRecord {
-    /// Stable authored-fact id.
-    pub id: String,
-    /// Note body.
-    pub body: String,
-    /// Optional target kind.
-    pub target_kind: Option<String>,
-    /// Optional target id.
-    pub target_id: Option<String>,
-    /// Device public key that created the fact.
-    pub created_by: PublicKey,
-    /// Creation time in Unix microseconds.
-    pub created_at_micros: i64,
-    /// Last update time in Unix microseconds.
-    pub updated_at_micros: i64,
-    /// Ed25519 signature over the canonical note payload.
-    pub signature: Signature,
-    /// Device that signed this revision.
-    pub updated_by: PublicKey,
-    /// Canonical payload format, preserving legacy signatures.
-    pub signature_version: i64,
-}
-
-/// An optimistic edit against a specific, previously read revision.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct EditNoteInput {
-    /// Stable note identity.
-    pub id: String,
-    /// Replacement Markdown body.
-    pub body: String,
-    /// Revision the editor originally read.
-    pub expected_updated_at_micros: i64,
-    /// Clock override for deterministic tests.
-    pub now_micros: Option<i64>,
-}
-
-impl NoteRecord {
-    /// Verify the stored revision with its recorded updating device.
-    pub fn verify_signature(&self) -> Result<()> {
-        if !matches!(self.signature_version, 1 | 2)
-            || (self.signature_version == 1 && self.updated_by != self.created_by)
-        {
-            return Err(StoreError::InvalidInput {
-                context: "note signature version",
-                message: "unsupported signature version or updater".into(),
-            });
-        }
-        verify_canonical(
-            &self.updated_by,
-            &note_signature_payload_from_record(self),
-            &self.signature,
-        )
-        .map_err(|error| StoreError::Signing {
-            context: "note verification",
-            message: error.to_string(),
-        })
-    }
-}
+/// Signed note persistence remains available here for existing callers.
+pub use crate::notes::{EditNoteInput, NoteRecord, PutNoteInput, ResolveNoteInput};
 
 impl Store {
     /// Browse the entire living highlight archive without truncating attached notes.
@@ -289,19 +197,19 @@ impl Store {
             {selection}
             publisher[item_id, site] := *item_article{{item_id, site_name: site}}
             publisher[item_id, site] := *item{{id: item_id}}, not *item_article{{item_id}}, site = null
-            note_rows[h, n, body, kind, target, author, created, updated, sig, updater, version] :=
-                selected[_, _, h], *note{{id: n, body, target_kind: kind, target_id: target, created_by: author, created_at: created, updated_at: updated, signature: sig, updated_by: updater, signature_version: version @ "END"}},
-                kind = 'highlight', target = h, live_note[n]
-            has_note[h] := note_rows[h, _, _, _, _, _, _, _, _, _, _]
-            attached[h, n, body, kind, target, author, created, updated, sig, updater, version] :=
-                note_rows[h, n, body, kind, target, author, created, updated, sig, updater, version]
-            attached[h, n, body, kind, target, author, created, updated, sig, updater, version] := selected[_, _, h], not has_note[h],
-                n = null, body = null, kind = null, target = null, author = null, created = null, updated = null, sig = null, updater = null, version = null
-            ?[id, item_id, quote, location, label, color, author, created, sig, title, url, site, n, body, kind, target, nauthor, ncreated, updated, nsig, updater, version] :=
+            note_rows[h, n, body, kind, target, author, created, updated, sig, updater, version, rev, parents] :=
+                selected[_, _, h], *note{{id: n, body, target_kind: kind, target_id: target, created_by: author, created_at: created, updated_at: updated, signature: sig, updated_by: updater, signature_version: version, revision_id: rev, parents}},
+                kind = 'highlight', target = h, live_note[n], note_head[n, rev]
+            has_note[h] := note_rows[h, _, _, _, _, _, _, _, _, _, _, _, _]
+            attached[h, n, body, kind, target, author, created, updated, sig, updater, version, rev, parents] :=
+                note_rows[h, n, body, kind, target, author, created, updated, sig, updater, version, rev, parents]
+            attached[h, n, body, kind, target, author, created, updated, sig, updater, version, rev, parents] := selected[_, _, h], not has_note[h],
+                n = null, body = null, kind = null, target = null, author = null, created = null, updated = null, sig = null, updater = null, version = null, rev = null, parents = null
+            ?[id, item_id, quote, location, label, color, author, created, sig, title, url, site, n, body, kind, target, nauthor, ncreated, updated, nsig, updater, version, rev, parents] :=
                 selected[_, _, id], *highlight{{id, item_id, quoted_text: quote, location, location_label: label, color, created_by: author, created_at: created, signature: sig}},
                 *item{{id: item_id, title, primary_url: url}}, publisher[item_id, site],
-                attached[id, n, body, kind, target, nauthor, ncreated, updated, nsig, updater, version]
-            :sort created, id, updated, n
+                attached[id, n, body, kind, target, nauthor, ncreated, updated, nsig, updater, version, rev, parents]
+            :sort created, id, updated, n, rev
         "#), BTreeMap::from([
             ("limit".into(), DataValue::from(i64::try_from(limit.unwrap_or(1)).expect("bounded page"))),
             ("has_after".into(), DataValue::Bool(after.is_some())),
@@ -309,12 +217,14 @@ impl Store {
             ("after_id".into(), DataValue::from(after.map_or("", |cursor| cursor.id.as_str()))),
         ]))?;
         let mut result: Vec<AnnotationReview> = Vec::new();
+        let mut note_positions: BTreeMap<String, usize> = BTreeMap::new();
         for row in &rows.rows {
             let id = value_as_string(required(row, 0, "highlight.id")?)?;
             if result
                 .last()
                 .is_none_or(|previous| previous.source.highlight.id != id)
             {
+                note_positions.clear();
                 result.push(AnnotationReview {
                     source: HighlightWithItem {
                         highlight: decode_highlight_row(row, 0)?,
@@ -323,14 +233,24 @@ impl Store {
                     },
                     site_name: optional_string(required(row, 11, "item_article.site_name")?)?,
                     notes: Vec::new(),
+                    conflicts: BTreeMap::new(),
                 });
             }
             if !matches!(required(row, 12, "note.id")?, DataValue::Null) {
-                result
-                    .last_mut()
-                    .expect("highlight added above")
-                    .notes
-                    .push(decode_note_row(row, 12)?);
+                let note = decode_note_row(row, 12)?;
+                let review = result.last_mut().expect("highlight added above");
+                if let Some(&index) = note_positions.get(&note.id) {
+                    let versions = review
+                        .conflicts
+                        .entry(note.id.clone())
+                        .or_insert_with(|| vec![review.notes[index].clone()]);
+                    versions.push(note.clone());
+                    versions.sort_by(|a, b| a.revision_id.cmp(&b.revision_id));
+                    review.notes[index] = versions[0].clone();
+                } else {
+                    note_positions.insert(note.id.clone(), review.notes.len());
+                    review.notes.push(note);
+                }
             }
         }
         Ok(result)
@@ -525,204 +445,6 @@ impl Store {
             .collect()
     }
 
-    /// Create a signed note, preserving identity on identical creation retries.
-    pub fn put_note(&self, input: PutNoteInput, signer: &Keypair) -> Result<NoteRecord> {
-        let _guard = self.annotation_lock.lock().expect("annotation write lock");
-        let _identity_guard = self.identity_lock.lock().expect("identity write lock");
-        if !self
-            .annotation_creator_permissions_unlocked(signer.public())?
-            .contains(signer.public())
-        {
-            return Err(StoreError::IdentityDeviceUnauthorized);
-        }
-        validate_note_body(&input.body)?;
-        if input.target_kind.is_some() != input.target_id.is_some() {
-            return Err(StoreError::InvalidInput {
-                context: "note.target",
-                message: "target kind and target id must be provided together".to_string(),
-            });
-        }
-        validate_note_target(input.target_kind.as_deref(), input.target_id.as_deref())?;
-
-        let created_at_micros = input.created_at_micros.unwrap_or_else(now_micros);
-        let created_by = *signer.public();
-        let id_payload = NoteIdPayload {
-            body: &input.body,
-            target_kind: input.target_kind.as_deref(),
-            target_id: input.target_id.as_deref(),
-        };
-        let id_content = canonical_bytes(&id_payload).map_err(|source| StoreError::Signing {
-            context: "note id payload",
-            message: source.to_string(),
-        })?;
-        let id = id_for_authored(
-            &id_content,
-            created_by.as_bytes(),
-            created_at_micros.div_euclid(1_000_000),
-        );
-        let unsigned = UnsignedNote {
-            id,
-            body: input.body,
-            target_kind: input.target_kind,
-            target_id: input.target_id,
-            created_by,
-            created_at_micros,
-            updated_at_micros: created_at_micros,
-            updated_by: created_by,
-            signature_version: 2,
-        };
-        if let Some(existing) = self.get_note(&unsigned.id)? {
-            return Ok(existing);
-        }
-        let signature = sign_note(&unsigned, signer)?;
-
-        self.query_with_params(
-            r#"
-            ?[id, body, target_kind, target_id, created_by, created_at, updated_at, updated_by, signature_version, signature] :=
-                id = $id,
-                body = $body,
-                target_kind = $target_kind,
-                target_id = $target_id,
-                created_by = $created_by,
-                created_at = $created_at,
-                updated_at = $updated_at,
-                updated_by = $created_by,
-                signature_version = 2,
-                signature = $signature
-            :insert note {id, updated_at => body, target_kind, target_id, created_by, created_at, updated_by, signature_version, signature}
-            "#,
-            BTreeMap::from([
-                ("id".to_string(), DataValue::from(unsigned.id.as_str())),
-                ("body".to_string(), DataValue::from(unsigned.body.as_str())),
-                (
-                    "target_kind".to_string(),
-                    option_string(unsigned.target_kind.as_deref()),
-                ),
-                (
-                    "target_id".to_string(),
-                    option_string(unsigned.target_id.as_deref()),
-                ),
-                (
-                    "created_by".to_string(),
-                    DataValue::Bytes(unsigned.created_by.as_bytes().to_vec()),
-                ),
-                (
-                    "created_at".to_string(),
-                    validity_micros(unsigned.created_at_micros),
-                ),
-                (
-                    "updated_at".to_string(),
-                    validity_micros(unsigned.updated_at_micros),
-                ),
-                (
-                    "signature".to_string(),
-                    DataValue::Bytes(signature.as_bytes().to_vec()),
-                ),
-            ]),
-        )?;
-
-        Ok(NoteRecord {
-            id: unsigned.id,
-            body: unsigned.body,
-            target_kind: unsigned.target_kind,
-            target_id: unsigned.target_id,
-            created_by: unsigned.created_by,
-            created_at_micros: unsigned.created_at_micros,
-            updated_at_micros: unsigned.updated_at_micros,
-            signature,
-            updated_by: unsigned.updated_by,
-            signature_version: unsigned.signature_version,
-        })
-    }
-
-    /// Read the latest known note revision, excluding removed targets.
-    pub fn get_note(&self, id: &str) -> Result<Option<NoteRecord>> {
-        let rows = self.query_with_params(&format!(r#"
-            {NOTE_ALIVE_RULES}
-            ?[id, body, target_kind, target_id, created_by, created_at, updated_at, signature, updated_by, signature_version] :=
-                *note{{id, body, target_kind, target_id, created_by, created_at, updated_at, signature, updated_by, signature_version @ "END"}},
-                id = $id, live_note[id]
-        "#), BTreeMap::from([("id".into(), DataValue::from(id))]))?;
-        rows.rows
-            .first()
-            .map(|row| decode_note_row(row, 0))
-            .transpose()
-    }
-
-    /// Append an edit without changing the note's identity or immutable metadata.
-    pub fn edit_note(&self, input: EditNoteInput, signer: &Keypair) -> Result<NoteRecord> {
-        let _guard = self.annotation_lock.lock().expect("annotation write lock");
-        let _identity_guard = self.identity_lock.lock().expect("identity write lock");
-        validate_note_body(&input.body)?;
-        let previous =
-            self.get_note(&input.id)?
-                .ok_or_else(|| StoreError::AnnotationUnavailable {
-                    id: input.id.clone(),
-                })?;
-        previous.verify_signature()?;
-        if !self
-            .annotation_creator_permissions_unlocked(signer.public())?
-            .contains(&previous.created_by)
-        {
-            return Err(StoreError::AnnotationUnauthorized { id: input.id });
-        }
-        if previous.updated_at_micros != input.expected_updated_at_micros {
-            return Err(StoreError::AnnotationConflict { id: input.id });
-        }
-        let at = next_note_revision(
-            input.now_micros.unwrap_or_else(now_micros),
-            previous.updated_at_micros,
-        )
-        .ok_or_else(|| StoreError::InvalidInput {
-            context: "note revision",
-            message: "revision timestamp overflow".into(),
-        })?;
-        let unsigned = UnsignedNote {
-            id: previous.id,
-            body: input.body,
-            target_kind: previous.target_kind,
-            target_id: previous.target_id,
-            created_by: previous.created_by,
-            created_at_micros: previous.created_at_micros,
-            updated_at_micros: at,
-            updated_by: *signer.public(),
-            signature_version: 2,
-        };
-        let signature = sign_note(&unsigned, signer)?;
-        let rows = self.query_with_params(&format!(r#"
-            {NOTE_ALIVE_RULES}
-            ?[id, updated_at, body, target_kind, target_id, created_by, created_at, updated_by, signature_version, signature] :=
-                *note{{id, updated_at: previous @ "END"}}, id = $id,
-                to_int(previous) == $expected, live_note[id],
-                updated_at = $at, body = $body, target_kind = $kind, target_id = $target,
-                created_by = $author, created_at = $created, updated_by = $updater,
-                signature_version = 2, signature = $signature
-            :insert note {{id, updated_at => body, target_kind, target_id, created_by, created_at, updated_by, signature_version, signature}}
-            :returning
-        "#), BTreeMap::from([
-            ("id".into(), DataValue::from(unsigned.id.as_str())), ("expected".into(), DataValue::from(input.expected_updated_at_micros)),
-            ("at".into(), validity_micros(at)), ("body".into(), DataValue::from(unsigned.body.as_str())),
-            ("kind".into(), option_string(unsigned.target_kind.as_deref())), ("target".into(), option_string(unsigned.target_id.as_deref())),
-            ("author".into(), DataValue::Bytes(unsigned.created_by.as_bytes().to_vec())), ("created".into(), validity_micros(unsigned.created_at_micros)),
-            ("updater".into(), DataValue::Bytes(unsigned.updated_by.as_bytes().to_vec())), ("signature".into(), DataValue::Bytes(signature.as_bytes().to_vec())),
-        ]))?;
-        if rows.rows.is_empty() {
-            return Err(StoreError::AnnotationConflict { id: unsigned.id });
-        }
-        Ok(NoteRecord {
-            id: unsigned.id,
-            body: unsigned.body,
-            target_kind: unsigned.target_kind,
-            target_id: unsigned.target_id,
-            created_by: unsigned.created_by,
-            created_at_micros: unsigned.created_at_micros,
-            updated_at_micros: at,
-            updated_by: unsigned.updated_by,
-            signature_version: 2,
-            signature,
-        })
-    }
-
     /// Return the latest signed removal of an annotation, if one exists.
     pub fn get_annotation_removal(&self, id: &str) -> Result<Option<AnnotationRemovalRecord>> {
         let rows = self.query_with_params(
@@ -788,33 +510,6 @@ impl Store {
         ]))?;
         Ok(removal)
     }
-
-    /// List notes for a target, newest first.
-    pub fn list_notes_for_target(
-        &self,
-        target_kind: &str,
-        target_id: &str,
-    ) -> Result<Vec<NoteRecord>> {
-        let rows = self.query_with_params(
-            &format!(r#"
-            {NOTE_ALIVE_RULES}
-            ?[id, body, target_kind, target_id, created_by, created_at, updated_at, signature, updated_by, signature_version] :=
-                *note{{id, body, target_kind, target_id, created_by, created_at, updated_at, signature, updated_by, signature_version @ "END"}},
-                target_kind = $target_kind,
-                target_id = $target_id, live_note[id]
-            :sort updated_at, id
-            "#),
-            BTreeMap::from([
-                ("target_kind".to_string(), DataValue::from(target_kind)),
-                ("target_id".to_string(), DataValue::from(target_id)),
-            ]),
-        )?;
-
-        rows.rows
-            .iter()
-            .map(|row| decode_note_row(row, 0))
-            .collect()
-    }
 }
 
 struct UnsignedHighlight {
@@ -826,18 +521,6 @@ struct UnsignedHighlight {
     color: Option<String>,
     created_by: PublicKey,
     created_at_micros: i64,
-}
-
-struct UnsignedNote {
-    id: String,
-    body: String,
-    target_kind: Option<String>,
-    target_id: Option<String>,
-    created_by: PublicKey,
-    created_at_micros: i64,
-    updated_at_micros: i64,
-    updated_by: PublicKey,
-    signature_version: i64,
 }
 
 #[derive(Serialize)]
@@ -860,42 +543,10 @@ struct HighlightSignaturePayload<'a> {
     created_at_micros: i64,
 }
 
-#[derive(Serialize)]
-struct NoteIdPayload<'a> {
-    body: &'a str,
-    target_kind: Option<&'a str>,
-    target_id: Option<&'a str>,
-}
-
-#[derive(Serialize)]
-struct NoteSignaturePayload<'a> {
-    relation: &'static str,
-    id: &'a str,
-    body: &'a str,
-    target_kind: Option<&'a str>,
-    target_id: Option<&'a str>,
-    created_by: PublicKey,
-    created_at_micros: i64,
-    updated_at_micros: i64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    updated_by: Option<PublicKey>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    signature_version: Option<i64>,
-}
-
 fn sign_highlight(unsigned: &UnsignedHighlight, signer: &Keypair) -> Result<Signature> {
     sign_canonical(signer, &highlight_signature_payload(unsigned)).map_err(|source| {
         StoreError::Signing {
             context: "highlight signature payload",
-            message: source.to_string(),
-        }
-    })
-}
-
-fn sign_note(unsigned: &UnsignedNote, signer: &Keypair) -> Result<Signature> {
-    sign_canonical(signer, &note_signature_payload(unsigned)).map_err(|source| {
-        StoreError::Signing {
-            context: "note signature payload",
             message: source.to_string(),
         }
     })
@@ -935,36 +586,6 @@ fn highlight_signature_payload_from_record(
     }
 }
 
-fn note_signature_payload(unsigned: &UnsignedNote) -> NoteSignaturePayload<'_> {
-    NoteSignaturePayload {
-        relation: "note",
-        id: &unsigned.id,
-        body: &unsigned.body,
-        target_kind: unsigned.target_kind.as_deref(),
-        target_id: unsigned.target_id.as_deref(),
-        created_by: unsigned.created_by,
-        created_at_micros: unsigned.created_at_micros,
-        updated_at_micros: unsigned.updated_at_micros,
-        updated_by: (unsigned.signature_version == 2).then_some(unsigned.updated_by),
-        signature_version: (unsigned.signature_version == 2).then_some(2),
-    }
-}
-
-fn note_signature_payload_from_record(record: &NoteRecord) -> NoteSignaturePayload<'_> {
-    NoteSignaturePayload {
-        relation: "note",
-        id: &record.id,
-        body: &record.body,
-        target_kind: record.target_kind.as_deref(),
-        target_id: record.target_id.as_deref(),
-        created_by: record.created_by,
-        created_at_micros: record.created_at_micros,
-        updated_at_micros: record.updated_at_micros,
-        updated_by: (record.signature_version == 2).then_some(record.updated_by),
-        signature_version: (record.signature_version == 2).then_some(2),
-    }
-}
-
 fn decode_highlight_row(row: &[DataValue], offset: usize) -> Result<HighlightRecord> {
     Ok(HighlightRecord {
         id: value_as_string(required(row, offset, "highlight.id")?)?,
@@ -980,24 +601,6 @@ fn decode_highlight_row(row: &[DataValue], offset: usize) -> Result<HighlightRec
             "highlight.created_at",
         )?)?,
         signature: value_as_signature(required(row, offset + 8, "highlight.signature")?)?,
-    })
-}
-
-fn decode_note_row(row: &[DataValue], offset: usize) -> Result<NoteRecord> {
-    Ok(NoteRecord {
-        id: value_as_string(required(row, offset, "note.id")?)?,
-        body: value_as_string(required(row, offset + 1, "note.body")?)?,
-        target_kind: optional_string(required(row, offset + 2, "note.target_kind")?)?,
-        target_id: optional_string(required(row, offset + 3, "note.target_id")?)?,
-        created_by: value_as_public_key(required(row, offset + 4, "note.created_by")?)?,
-        created_at_micros: value_as_validity_micros(required(row, offset + 5, "note.created_at")?)?,
-        updated_at_micros: value_as_validity_micros(required(row, offset + 6, "note.updated_at")?)?,
-        signature: value_as_signature(required(row, offset + 7, "note.signature")?)?,
-        updated_by: value_as_public_key(required(row, offset + 8, "note.updated_by")?)?,
-        signature_version: match required(row, offset + 9, "note.signature_version")? {
-            DataValue::Num(cozo::Num::Int(version)) => *version,
-            other => return Err(unexpected("note.signature_version", other)),
-        },
     })
 }
 
@@ -1186,12 +789,7 @@ mod tests {
                 .unwrap(),
             vec![note.clone()]
         );
-        verify_canonical(
-            signer.public(),
-            &note_signature_payload_from_record(&note),
-            &note.signature,
-        )
-        .unwrap();
+        note.verify_signature().unwrap();
     }
 
     #[test]

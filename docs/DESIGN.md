@@ -412,8 +412,23 @@ selected highlight, focus, and scroll. Full notes use a readable line length.
 Editing keeps the quote visible for context, preserves the note's identity, and
 uses the existing focus-contained note editor. Cmd+Enter saves; Escape cancels.
 A failed save restores the old note and retains the draft. A stale edit is
-explained in the editor so the user can keep or copy their draft and reload the
-current note. Local writes have no spinners.
+explained in the editor so the user can review the latest saved text while
+retaining their draft. Local writes have no spinners.
+
+Concurrent offline edits show **Review conflict** beside the note, without a
+badge or notification. The control also appears on a collapsed highlight row
+so conflicts remain discoverable without expanding every note. Review opens
+the same focus-contained editor with each
+retained version's full text, device label, and saved date. **Use this version**
+copies that body into the editable draft; the user can also merge the text.
+**Save resolution** creates a new version superseding the complete set being
+reviewed. Cancel leaves all versions intact. If another version arrives during
+review, saving retains the draft and explains that the versions changed; the
+user can refresh the versions without replacing their draft. Ordinary **Edit
+note** is available again after resolution. Markdown export labels every
+unresolved version and includes its full body and stable revision reference.
+Devices without editing permission can inspect every version but cannot save
+a resolution.
 
 Creating a highlight with a note also retains its draft on failure. If the
 highlight succeeded first, retrying the note uses that confirmed highlight

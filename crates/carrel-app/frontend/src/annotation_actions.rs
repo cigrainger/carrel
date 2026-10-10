@@ -9,6 +9,7 @@ struct Changes {
     removed: BTreeSet<String>,
     notes: BTreeMap<String, NoteDetail>,
     pending: BTreeSet<String>,
+    superseded: BTreeMap<String, BTreeSet<String>>,
 }
 
 #[derive(Clone, Copy)]
@@ -32,6 +33,24 @@ impl AnnotationActions {
     pub(crate) fn saved(self, note: NoteDetail) {
         self.0.update(|state| {
             state.pending.remove(&note.id);
+            let predecessors = note
+                .superseded_revision_ids
+                .iter()
+                .cloned()
+                .collect::<BTreeSet<_>>();
+            let linked = state
+                .notes
+                .get(&note.id)
+                .is_some_and(|previous| predecessors.contains(&previous.revision_id));
+            if linked {
+                state
+                    .superseded
+                    .entry(note.id.clone())
+                    .or_default()
+                    .extend(predecessors);
+            } else {
+                state.superseded.insert(note.id.clone(), predecessors);
+            }
             state.notes.insert(note.id.clone(), note);
         });
     }
@@ -64,13 +83,21 @@ impl AnnotationActions {
                 .filter(|row| !state.removed.contains(&row.highlight.id))
                 .map(|mut row| {
                     for note in &mut row.notes {
-                        if let Some(changed) = state.notes.get(&note.id)
-                            && (state.pending.contains(&note.id)
-                                || changed.updated_at_micros >= note.updated_at_micros)
-                        {
-                            let can_edit = note.can_edit;
-                            *note = changed.clone();
-                            note.can_edit = can_edit;
+                        if let Some(changed) = state.notes.get(&note.id) {
+                            let current_heads = head_ids(note);
+                            if state.pending.contains(&note.id)
+                                && current_heads == head_ids(changed)
+                            {
+                                note.body = changed.body.clone();
+                            } else if !state.pending.contains(&note.id)
+                                && state.superseded.get(&note.id).is_some_and(|retired| {
+                                    current_heads.iter().all(|id| retired.contains(id))
+                                })
+                            {
+                                let can_edit = note.can_edit;
+                                *note = changed.clone();
+                                note.can_edit = can_edit;
+                            }
                         }
                     }
                     if let Some(note) = row.notes.first() {
@@ -92,6 +119,17 @@ impl AnnotationActions {
                 .filter(|row| !state.removed.contains(&row.id))
                 .collect()
         })
+    }
+}
+
+fn head_ids(note: &NoteDetail) -> BTreeSet<String> {
+    if note.conflicts.is_empty() {
+        BTreeSet::from([note.revision_id.clone()])
+    } else {
+        note.conflicts
+            .iter()
+            .map(|version| version.revision_id.clone())
+            .collect()
     }
 }
 
@@ -134,6 +172,9 @@ mod tests {
             note_excerpt: Some("Original".into()),
             notes: vec![NoteDetail {
                 id: "note".into(),
+                revision_id: "original".into(),
+                superseded_revision_ids: Vec::new(),
+                conflicts: Vec::new(),
                 body: "Original".into(),
                 target_kind: Some("highlight".into()),
                 target_id: Some("highlight".into()),
@@ -167,6 +208,8 @@ mod tests {
                 note
             );
             let mut saved = note.clone();
+            saved.revision_id = "saved".into();
+            saved.superseded_revision_ids = vec![note.revision_id.clone()];
             saved.updated_at_micros = 2;
             saved.body = "Saved".into();
             actions.edit(note, saved.body.clone());
@@ -181,12 +224,66 @@ mod tests {
             assert_eq!(projected[0].notes[0].body, saved.body);
             assert!(!projected[0].notes[0].can_edit);
             let mut newer = original;
+            newer.notes[0].revision_id = "elsewhere".into();
             newer.notes[0].updated_at_micros = 3;
             newer.notes[0].body = "Newer elsewhere".into();
             assert_eq!(
                 actions.project_rows(vec![newer.clone()])[0].notes[0],
                 newer.notes[0]
             );
+        });
+    }
+
+    #[test]
+    fn equal_time_remote_branches_are_visible_during_and_after_a_local_save() {
+        Owner::new().with(|| {
+            let actions = use_annotation_actions();
+            let original = row();
+            let mut saved = original.notes[0].clone();
+            saved.revision_id = "local".into();
+            saved.superseded_revision_ids = vec!["original".into()];
+            saved.body = "Local draft".into();
+            saved.updated_at_micros = 2;
+            actions.edit(original.notes[0].clone(), saved.body.clone());
+            let mut conflict = original.clone();
+            conflict.notes[0].conflicts = vec![
+                crate::api::NoteConflictVersion {
+                    revision_id: "local".into(),
+                    body: "Local draft".into(),
+                    saved_at: String::new(),
+                    device_label: "A".into(),
+                },
+                crate::api::NoteConflictVersion {
+                    revision_id: "remote".into(),
+                    body: "Remote draft".into(),
+                    saved_at: String::new(),
+                    device_label: "B".into(),
+                },
+            ];
+            conflict.notes[0].revision_id = "local".into();
+            conflict.notes[0].body = "Local draft".into();
+            conflict.notes[0].updated_at_micros = 2;
+            assert_eq!(
+                actions.project_rows(vec![conflict.clone()])[0].notes,
+                conflict.notes
+            );
+            actions.saved(saved.clone());
+            assert_eq!(
+                actions.project_rows(vec![conflict.clone()])[0].notes,
+                conflict.notes
+            );
+            assert_eq!(
+                actions.project_rows(vec![original.clone()])[0].notes[0],
+                saved
+            );
+            let mut resolved = saved.clone();
+            resolved.revision_id = "resolution".into();
+            resolved.body = "Combined".into();
+            resolved.superseded_revision_ids = vec!["local".into(), "remote".into()];
+            actions.edit(conflict.notes[0].clone(), resolved.body.clone());
+            actions.saved(resolved.clone());
+            assert_eq!(actions.project_rows(vec![conflict])[0].notes[0], resolved);
+            assert_eq!(actions.project_rows(vec![original])[0].notes[0], resolved);
         });
     }
 

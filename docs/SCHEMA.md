@@ -150,8 +150,9 @@ under that master, including an annotation created by a now-revoked device.
 A revoked local device cannot write annotations. Before binding, the existing
 single-device ownership checks remain in effect. Authorization and annotation
 writes serialize with revocation, so a completed revocation prevents later
-writes. This foundation does not enable incoming note revisions: the version 3
-timestamp key still needs causal conflict storage before network imports begin.
+writes. Incoming private notes use the version 5 causal graph below; transport
+and pairing must provide the authenticated sender rather than infer trust from
+an incoming fact.
 
 **Trust:** signed. Cross-syncs to your own devices via `doc:self`. Visible to followers via `doc:public` so they can verify your facts.
 
@@ -437,15 +438,17 @@ Highlights are append-only. To "edit" a highlight, you make a new one. This matt
 ```
 :create note {
     id: String,
-    updated_at: Validity,     ;; revision key; query @ "END" for the current note
+    revision_id: String,      ;; BLAKE3 of the canonical signed revision
     =>
     body: String,             ;; markdown
     target_kind: String?,     ;; "item" | "highlight" | null (standalone)
     target_id: String?,
     created_by: Bytes,
     created_at: Validity,
+    updated_at: Validity,     ;; display metadata, never conflict resolution
     updated_by: Bytes,        ;; device signing this revision
-    signature_version: Int,  ;; 1 for legacy notes, 2 for current revision payloads
+    signature_version: Int,  ;; 1/2 preserve legacy payloads; 3 signs causal parents
+    parents: [String],       ;; sorted unique revision IDs, all for this note
     signature: Bytes
 }
 ```
@@ -453,21 +456,61 @@ Highlights are append-only. To "edit" a highlight, you make a new one. This matt
 Notes are markdown text. They can attach to an item, attach to a highlight, or stand alone (a thought you want to capture without anchoring to anything). The same operation — make a note — covers all three use cases; the target_kind/target_id fields just say where it points.
 
 Notes keep their original ID, target, creator, and creation time when edited.
-Revisions are append-only, keyed by `updated_at`, with Cozo validity reads
-at `"END"` selecting the latest known revision even after a backward clock
-change. An editor submits the revision it opened;
-a changed revision is a conflict, preserving the draft rather than silently
-overwriting it. Local timestamps advance monotonically even if the clock moves
-backward. The signature covers the body, immutable metadata, update time, and
-updating device. Version 1 signatures retain their original canonical payload;
-version 2 adds `updated_by` and a signature-version field. Migration preserves
-legacy signatures without needing the signing key.
+Version 5 stores immutable revisions by content hash rather than time, so two
+devices may save different bodies at the same timestamp without a collision.
+Each new revision signs the sorted IDs of the versions it supersedes. Current
+heads are revisions that no known child names as a parent. Parent references
+must exist, belong to the same note, and preserve its immutable metadata.
+Historical ancestors remain stored; tombstones still dominate the whole graph.
+
+Ordinary editing requires exactly the one head the editor opened. If the head
+changed, or multiple heads exist, saving preserves the draft and returns a
+conflict. Resolution submits the exact complete set of heads being reviewed,
+then appends a signed revision naming all of them as parents. A new branch
+arriving during review makes the resolution stale; it cannot silently erase
+that branch. Timestamps remain display metadata and advance after local parents
+despite clock rollback. Head queries and equality checks use revision IDs.
+Display time saturates at the representable maximum rather than preventing an
+edit or resolution; signed parents still distinguish successive versions.
+
+Version 1 signatures retain their original canonical payload; version 2 adds
+`updated_by` and a signature-version field. Version 3 also signs `parents`.
+A revision ID hashes a domain-separated canonical record containing the signed
+payload and its signature. Legacy IDs exclude their migration-derived parent
+metadata, so their existing signatures and identities remain portable. Migration
+5 copies every legacy revision in Cozo validity order and links its predecessor,
+without signing or changing any body or immutable metadata. Legacy parent
+metadata is accepted only in authenticated self-sync snapshots; it is not a
+standalone social claim. Every new note creation or edit uses signature version 3.
+
+`note_incoming {id: String, revision_id: String => encoded: Bytes,
+parents: [String], target_kind: String?, target_id: String?}` durably stages
+verified self revisions whose note parents or item/highlight target have not
+arrived yet. These pending rows never become visible heads. Repeated delivery is
+idempotent; after dependencies arrive they are promoted through the same typed
+validation and removed from staging. A removed note or target discards pending
+writes rather than resurrecting an entity. Invalid signatures, wrong identities,
+metadata changes, malformed parent lists, and conflicting immutable records are
+rejected before promotion. Indexed parent/target metadata is derived from the
+verified encoded record; it lets Cozo select ready rows anywhere in the queue
+without a blocked first page starving later work. This is private bridge staging,
+not another fact store.
+
+Review and export expose every unresolved head. A stable representative supplies
+the collapsed excerpt, with a quiet **Review conflict** control; it is never a
+winner and ordinary editing is disabled until resolution. Exports label each
+unresolved version and retain its revision ID, full body, and article context.
 
 Before choosing a self identity, the original device owns its notes. Once bound,
 an authorized local device can edit notes created by devices certified under
 the same master, with the original creator preserved and the editor signing
-as `updated_by`. Incoming cross-device revisions remain disabled until causal
-conflict storage replaces the single timestamp key.
+as `updated_by`. Cross-device revisions pass the typed causal validation before
+becoming visible; no transport can write the note relation directly.
+
+Private revisions arrive only through the authenticated self channel, with
+verified creator and updating-device certificates under the bound master. A
+currently authorized sender may forward previously accepted work by a revoked
+device; a revoked device cannot connect and submit new work itself.
 
 Removing a highlight writes a permanent `entity_tombstone` and a signed local
 removal record together. Its attached notes remain in history but are excluded
@@ -727,6 +770,12 @@ Version 4 adds an immutable local identity binding, verified device certificates
 signed revocation history, and local blocks for unproven legacy revocations.
 It preserves all legacy rows and annotation signatures, without selecting a
 master identity or enabling network synchronization automatically.
+
+Version 5 replaces the timestamp revision key with content-addressed causal
+revisions, retaining the old relation as `note_legacy_v3`. Staging creation, copy,
+and atomic rename are resumable; the schema version is written last. Existing
+version 1/2 signatures remain unchanged. It adds private pending-revision storage
+and guards for immutable records, stable note metadata, and removed targets.
 
 ## Invariants
 

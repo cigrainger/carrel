@@ -38,7 +38,58 @@ pub const RELATIONS: &[&str] = &[
     "device_certificate",
     "device_revocation",
     "device_local_block",
+    "note_legacy_v3",
+    "note_incoming",
 ];
+
+/// Staging table renamed to `note` after preserving every old signed revision.
+pub const CREATE_CAUSAL_NOTES: &str = r#"
+    :create note_v5 {
+        id: String, revision_id: String => body: String, target_kind: String?, target_id: String?,
+        created_by: Bytes, created_at: Validity, updated_at: Validity, updated_by: Bytes,
+        signature_version: Int, parents: [String], signature: Bytes
+    }
+"#;
+
+/// Verified private revisions waiting for parent or target dependencies.
+pub const CREATE_INCOMING_NOTES: &str = r#"
+    :create note_incoming {
+        id: String, revision_id: String => encoded: Bytes, parents: [String], target_kind: String?, target_id: String?
+    }
+"#;
+
+/// Reject replacement, missing parents, changed metadata, and resurrection.
+pub const CREATE_CAUSAL_NOTE_GUARDS: &str = r#"
+    ::set_triggers note on put {
+        alive_item[id] := *item{id}, not *entity_tombstone{id}
+        alive_highlight[id] := *highlight{id, item_id}, alive_item[item_id], not *entity_tombstone{id}
+        invalid[id] := _new[id, rev, body, kind, target, creator, created, updated, updater, version, parents, sig], *entity_tombstone{id}
+        invalid[id] := _new[id, rev, body, kind, target, creator, created, updated, updater, version, parents, sig], kind = 'item', not alive_item[target]
+        invalid[id] := _new[id, rev, body, kind, target, creator, created, updated, updater, version, parents, sig], kind = 'highlight', not alive_highlight[target]
+        invalid[id] := _new[id, rev, body, kind, target, creator, created, updated, updater, version, parents, sig],
+            (is_null(kind) != is_null(target) || (!is_null(kind) && kind != 'item' && kind != 'highlight'))
+        invalid[id] := _new[id, rev, body, kind, target, creator, created, updated, updater, version, parents, sig], parent in parents, parent == rev
+        invalid[id] := _new[id, rev, body, kind, target, creator, created, updated, updater, version, parents, sig], parent in parents, not *note{id, revision_id: parent}
+        invalid[id] := _new[id, rev, body, kind, target, creator, created, updated, updater, version, parents, sig],
+            *note{id, target_kind: old_kind, target_id: old_target, created_by: old_creator, created_at: old_created},
+            [kind, target, creator, created] != [old_kind, old_target, old_creator, old_created]
+        invalid[id] := _new[id, rev, body, kind, target, creator, created, updated, updater, version, parents, sig],
+            _old[id, rev, old_body, old_kind, old_target, old_creator, old_created, old_updated, old_updater, old_version, old_parents, old_sig],
+            [body, kind, target, creator, created, updated, updater, version, parents, sig] !=
+            [old_body, old_kind, old_target, old_creator, old_created, old_updated, old_updater, old_version, old_parents, old_sig]
+        ?[id] := invalid[id]
+        :assert none
+    } on rm { ?[id, rev] := _old[id, rev, body, kind, target, creator, created, updated, updater, version, parents, sig] :assert none }
+"#;
+
+/// Staging retries cannot replace an already verified immutable message.
+pub const CREATE_INCOMING_NOTE_GUARDS: &str = r#"
+    ::set_triggers note_incoming on put {
+        ?[id, rev] := _new[id, rev, encoded, parents, kind, target], _old[id, rev, old_encoded, old_parents, old_kind, old_target],
+            [encoded, parents, kind, target] != [old_encoded, old_parents, old_kind, old_target]
+        :assert none
+    }
+"#;
 
 /// Individually resumable relations for verified self-device trust.
 pub const SELF_IDENTITY_RELATIONS: &[(&str, &str)] = &[

@@ -130,7 +130,16 @@ pub struct CreateHighlightNoteRequest {
 pub struct EditHighlightNoteRequest {
     pub note_id: String,
     pub body: String,
-    pub expected_updated_at_micros: i64,
+    pub expected_revision_id: String,
+}
+
+/// Resolve only the complete set of versions actually reviewed.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResolveHighlightNoteRequest {
+    pub note_id: String,
+    pub body: String,
+    pub expected_revision_ids: Vec<String>,
 }
 
 /// Highlight payload returned by the native shell.
@@ -167,6 +176,9 @@ pub struct HighlightListRow {
 #[serde(rename_all = "camelCase")]
 pub struct NoteDetail {
     pub id: String,
+    pub revision_id: String,
+    pub superseded_revision_ids: Vec<String>,
+    pub conflicts: Vec<NoteConflictVersion>,
     pub body: String,
     pub target_kind: Option<String>,
     pub target_id: Option<String>,
@@ -176,6 +188,16 @@ pub struct NoteDetail {
     pub updated_at_micros: i64,
     pub signature: String,
     pub can_edit: bool,
+}
+
+/// A complete concurrent draft, never an excerpt.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NoteConflictVersion {
+    pub revision_id: String,
+    pub body: String,
+    pub saved_at: String,
+    pub device_label: String,
 }
 
 /// Item-state mutation request.
@@ -545,6 +567,39 @@ pub async fn edit_highlight_note(
     serde_wasm_bindgen::from_value(value).map_err(|error| ApiError::new(error.to_string()))
 }
 
+/// Read every current version directly for stale-editor recovery.
+#[cfg(target_arch = "wasm32")]
+pub async fn review_highlight_note(note_id: String) -> Result<NoteDetail, ApiError> {
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Args {
+        note_id: String,
+    }
+    let args = serde_wasm_bindgen::to_value(&Args { note_id })
+        .map_err(|error| ApiError::new(error.to_string()))?;
+    let value = tauri_invoke("review_highlight_note", args)
+        .await
+        .map_err(api_error_from_js)?;
+    serde_wasm_bindgen::from_value(value).map_err(|error| ApiError::new(error.to_string()))
+}
+
+/// Save an explicit resolution against every version shown in the editor.
+#[cfg(target_arch = "wasm32")]
+pub async fn resolve_highlight_note(
+    request: ResolveHighlightNoteRequest,
+) -> Result<NoteDetail, ApiError> {
+    #[derive(Serialize)]
+    struct Args {
+        request: ResolveHighlightNoteRequest,
+    }
+    let args = serde_wasm_bindgen::to_value(&Args { request })
+        .map_err(|error| ApiError::new(error.to_string()))?;
+    let value = tauri_invoke("resolve_highlight_note", args)
+        .await
+        .map_err(api_error_from_js)?;
+    serde_wasm_bindgen::from_value(value).map_err(|error| ApiError::new(error.to_string()))
+}
+
 /// Remove a highlight through the signed local store boundary.
 #[cfg(target_arch = "wasm32")]
 pub async fn remove_highlight(highlight_id: String) -> Result<(), ApiError> {
@@ -587,6 +642,9 @@ pub async fn create_highlight_note(
 ) -> Result<NoteDetail, ApiError> {
     Ok(NoteDetail {
         id: String::new(),
+        revision_id: String::new(),
+        superseded_revision_ids: Vec::new(),
+        conflicts: Vec::new(),
         body: request.body,
         target_kind: Some("highlight".to_string()),
         target_id: Some(request.highlight_id),

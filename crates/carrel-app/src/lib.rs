@@ -65,6 +65,8 @@ pub fn run() -> Result<()> {
             commands::highlights::create_highlight,
             commands::highlights::create_highlight_note,
             commands::highlights::edit_highlight_note,
+            commands::highlights::resolve_highlight_note,
+            commands::highlights::review_highlight_note,
             commands::highlights::remove_highlight,
             commands::annotation_export::export_annotations,
             commands::highlights::list_highlights,

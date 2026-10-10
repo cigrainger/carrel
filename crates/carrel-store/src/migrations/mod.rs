@@ -8,9 +8,10 @@ mod v001_initial;
 mod v002_search;
 mod v003_annotations;
 mod v004_identity;
+mod v005_causal_notes;
 
 /// The latest schema version known to this crate.
-pub const CURRENT_SCHEMA_VERSION: u32 = 4;
+pub const CURRENT_SCHEMA_VERSION: u32 = 5;
 
 /// Apply all migrations newer than `current_version`.
 pub fn migrate(db: &DbInstance, current_version: u32) -> Result<()> {
@@ -25,6 +26,9 @@ pub fn migrate(db: &DbInstance, current_version: u32) -> Result<()> {
     }
     if current_version < 4 {
         v004_identity::up(db)?;
+    }
+    if current_version < 5 {
+        v005_causal_notes::up(db)?;
     }
 
     Ok(())

@@ -100,14 +100,36 @@ permissions and no-clobber races, all interrupted migration relation stages,
 foreign/forged proofs, future timestamps, restart, permanent revocation under
 arbitrary replay, and certified annotation ownership in native command results.
 
-The timestamp-keyed note relation still needs causal conflict storage before
-incoming edits are enabled. Pairing, replication, and transport verification
-remain outstanding; the goal stays active.
+Schema 5 now stores content-addressed, signed note revisions with explicit
+parents. Equal-time offline drafts remain separate heads until the user chooses
+or combines them. An exact reviewed-head check prevents a newly arrived branch
+from disappearing during resolution. Legacy signatures and complete history
+survive every interrupted migration stage; permanent tombstones still dominate.
+Verified private revisions wait durably for missing parents or article/highlight
+targets, and promotion selects ready work before limiting the batch. Extreme
+display clocks cannot block an edit. Timestamp comparisons no longer decide
+which note the UI presents as current.
+
+Highlights provides quiet conflict review with every complete version, device
+label, and date. Stale recovery fetches the latest versions directly and retains
+the editor draft; failed saves can be retried. Optimistic projections respect
+new remote branches, and Markdown exports include every unresolved full body
+and revision reference. Read-only devices can inspect versions without write
+controls. Native QA exercised a third arriving draft, fresh review, failed-save
+retry, explicit resolution, and read-only review on isolated fixture data.
+`just check` passes 258 tests, formatting, and native/CSR lint. Full native and
+CSR builds pass with temporary inspection dependencies and commands removed.
+
+Pairing, private state history/outbox, replication, and transport verification
+remain outstanding; the goal stays active. These separate-store and native
+annotation checks do not claim to verify network synchronization.
 
 ## Decisions already made
 
 - Older articles extend the current list on demand with **Load older**. There
   is no automatic infinite scrolling and no article-count badge.
+- OPML adds new subscriptions and skips duplicates, preserving existing titles,
+  folders, and subscription settings.
 - Search stays within the current article view and carries its query across
   Library filters. Titles and cached text are searched locally without a
   relevance cutoff or remote service.
@@ -121,6 +143,8 @@ remain outstanding; the goal stays active.
   mobile shells are separate work.
 - Concurrent offline note edits retain both versions, with a quiet **Review
   conflict** control. Resolution explicitly chooses or merges the retained drafts.
+- Desktop pairing uses a one-time copy/paste invitation. QR pairing is deferred
+  until it supports a useful mobile flow.
 
 ## Foundations to resolve before the sync milestone
 

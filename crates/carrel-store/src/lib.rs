@@ -16,6 +16,7 @@ pub mod items;
 pub mod keystore;
 pub mod library;
 mod migrations;
+pub mod notes;
 pub mod schema;
 pub mod search;
 

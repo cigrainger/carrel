@@ -1,6 +1,6 @@
 //! Highlight and note commands for the desktop shell.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::str::FromStr;
 
@@ -11,6 +11,7 @@ use carrel_core::identity::{Keypair, PublicKey};
 use carrel_store::blobs::{BlobError, BlobId, BlobStore};
 use carrel_store::highlights::{
     AnnotationReview, EditNoteInput, HighlightRecord, NoteRecord, PutHighlightInput, PutNoteInput,
+    ResolveNoteInput,
 };
 use carrel_store::items::ItemDetail as StoreItemDetail;
 use carrel_store::keystore::{Keystore, KeystoreError};
@@ -92,14 +93,78 @@ pub(crate) fn list_highlights_from_store(
         .map(|device| store.annotation_creator_permissions(device))
         .transpose()?
         .unwrap_or_default();
+    let device_names = if store.self_identity()?.is_some() {
+        store.self_devices()?
+    } else {
+        Vec::new()
+    }
+    .into_iter()
+    .filter_map(|entry| {
+        entry
+            .certificate
+            .device_name
+            .map(|name| (entry.certificate.device_pubkey, name))
+    })
+    .collect();
     Ok(AnnotationPage {
         items: page
             .items
             .iter()
-            .map(|row| HighlightListRow::from_review(row, &permissions))
+            .map(|row| HighlightListRow::from_review(row, &permissions, &device_names, device))
             .collect::<Result<_>>()?,
         next_cursor: page.next_cursor,
     })
+}
+
+/// Read every current version directly for stale-editor recovery.
+#[tauri::command]
+pub fn review_highlight_note(state: State<'_, AppState>, note_id: String) -> Result<NoteDetail> {
+    let device = {
+        let _guard = state
+            .annotation_lock
+            .lock()
+            .expect("annotation command lock");
+        existing_device_key(&state.paths)?
+    };
+    review_note_from_store(&state.store, &note_id, device.as_ref().map(Keypair::public))
+}
+
+pub(crate) fn review_note_from_store(
+    store: &carrel_store::Store,
+    note_id: &str,
+    device: Option<&PublicKey>,
+) -> Result<NoteDetail> {
+    let heads = store.note_heads(note_id)?;
+    let first = heads
+        .first()
+        .ok_or_else(|| carrel_store::StoreError::AnnotationUnavailable { id: note_id.into() })?;
+    if first.target_kind.as_deref() != Some("highlight") {
+        return Err(AppError::InvalidData {
+            context: "note.target",
+            value: "expected highlight note".into(),
+        });
+    }
+    let permissions = device
+        .map(|key| store.annotation_creator_permissions(key))
+        .transpose()?
+        .unwrap_or_default();
+    let names = if store.self_identity()?.is_some() {
+        store.self_devices()?
+    } else {
+        Vec::new()
+    }
+    .into_iter()
+    .filter_map(|entry| {
+        entry
+            .certificate
+            .device_name
+            .map(|name| (entry.certificate.device_pubkey, name))
+    })
+    .collect();
+    Ok(
+        NoteDetail::from_record(first, permissions.contains(&first.created_by))
+            .with_conflicts(&heads, &names, device),
+    )
 }
 
 /// Create a note attached to a highlight.
@@ -142,7 +207,40 @@ pub fn edit_highlight_note(
         EditNoteInput {
             id: request.note_id,
             body: request.body,
-            expected_updated_at_micros: request.expected_updated_at_micros,
+            expected_revision_id: request.expected_revision_id,
+            now_micros: None,
+        },
+        &device,
+    )?;
+    Ok(NoteDetail::from_record(&record, true))
+}
+
+/// Resolve exactly the versions reviewed by the editor, preserving later arrivals.
+#[tauri::command]
+pub fn resolve_highlight_note(
+    state: State<'_, AppState>,
+    request: ResolveHighlightNoteRequest,
+) -> Result<NoteDetail> {
+    let _guard = state
+        .annotation_lock
+        .lock()
+        .expect("annotation command lock");
+    let device = load_device_key(&state.paths)?;
+    let heads = state.store.note_heads(&request.note_id)?;
+    if heads
+        .iter()
+        .any(|note| note.target_kind.as_deref() != Some("highlight"))
+    {
+        return Err(AppError::InvalidData {
+            context: "note.target",
+            value: "expected highlight note".into(),
+        });
+    }
+    let record = state.store.resolve_note(
+        ResolveNoteInput {
+            id: request.note_id,
+            body: request.body,
+            expected_revision_ids: request.expected_revision_ids,
             now_micros: None,
         },
         &device,
@@ -170,7 +268,16 @@ pub struct EditHighlightNoteRequest {
     /// Replacement Markdown body.
     pub body: String,
     /// Revision originally displayed to the editor.
-    pub expected_updated_at_micros: i64,
+    pub expected_revision_id: String,
+}
+
+/// Exact set of current versions acknowledged by conflict review.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResolveHighlightNoteRequest {
+    pub note_id: String,
+    pub body: String,
+    pub expected_revision_ids: Vec<String>,
 }
 
 /// Highlight creation request accepted by the webview.
@@ -249,6 +356,12 @@ pub struct HighlightListRow {
 pub struct NoteDetail {
     /// Stable note id.
     pub id: String,
+    /// Signed revision identity; clocks never determine the winning draft.
+    pub revision_id: String,
+    /// Immediate predecessors superseded by this revision.
+    pub superseded_revision_ids: Vec<String>,
+    /// Every unresolved current version, including the displayed representative.
+    pub conflicts: Vec<NoteConflictVersion>,
     /// Note body.
     pub body: String,
     /// Optional target kind.
@@ -267,6 +380,16 @@ pub struct NoteDetail {
     pub signature: String,
     /// Whether this device may edit the private note.
     pub can_edit: bool,
+}
+
+/// Complete version shown during conflict review.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NoteConflictVersion {
+    pub revision_id: String,
+    pub body: String,
+    pub saved_at: String,
+    pub device_label: String,
 }
 
 pub(crate) fn create_highlight_with_device(
@@ -462,7 +585,12 @@ impl HighlightDetail {
 }
 
 impl HighlightListRow {
-    fn from_review(review: &AnnotationReview, permissions: &BTreeSet<PublicKey>) -> Result<Self> {
+    fn from_review(
+        review: &AnnotationReview,
+        permissions: &BTreeSet<PublicKey>,
+        device_names: &BTreeMap<PublicKey, String>,
+        local_device: Option<&PublicKey>,
+    ) -> Result<Self> {
         let record = &review.source;
         Ok(Self {
             highlight: HighlightDetail::from_record(&record.highlight)?,
@@ -479,7 +607,19 @@ impl HighlightListRow {
             notes: review
                 .notes
                 .iter()
-                .map(|note| NoteDetail::from_record(note, permissions.contains(&note.created_by)))
+                .map(|note| {
+                    let detail =
+                        NoteDetail::from_record(note, permissions.contains(&note.created_by));
+                    detail.with_conflicts(
+                        review
+                            .conflicts
+                            .get(&note.id)
+                            .map(Vec::as_slice)
+                            .unwrap_or_default(),
+                        device_names,
+                        local_device,
+                    )
+                })
                 .collect(),
             can_remove: permissions.contains(&record.highlight.created_by),
         })
@@ -487,9 +627,42 @@ impl HighlightListRow {
 }
 
 impl NoteDetail {
+    fn with_conflicts(
+        mut self,
+        versions: &[NoteRecord],
+        device_names: &BTreeMap<PublicKey, String>,
+        local_device: Option<&PublicKey>,
+    ) -> Self {
+        if versions.len() > 1 {
+            self.conflicts = versions
+                .iter()
+                .map(|version| NoteConflictVersion {
+                    revision_id: version.revision_id.clone(),
+                    body: version.body.clone(),
+                    saved_at: iso8601_timestamp(version.updated_at_micros),
+                    device_label: device_names
+                        .get(&version.updated_by)
+                        .cloned()
+                        .unwrap_or_else(|| {
+                            if Some(&version.updated_by) == local_device {
+                                "This device"
+                            } else {
+                                "Another device"
+                            }
+                            .into()
+                        }),
+                })
+                .collect();
+        }
+        self
+    }
+
     fn from_record(record: &NoteRecord, can_edit: bool) -> Self {
         Self {
             id: record.id.clone(),
+            revision_id: record.revision_id.clone(),
+            superseded_revision_ids: record.parents.clone(),
+            conflicts: Vec::new(),
             body: record.body.clone(),
             target_kind: record.target_kind.clone(),
             target_id: record.target_id.clone(),

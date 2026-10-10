@@ -57,11 +57,11 @@ fn note(
         .unwrap()
 }
 
-fn edit(id: &str, expected: i64, body: &str) -> EditNoteInput {
+fn edit(id: &str, expected: &str, body: &str) -> EditNoteInput {
     EditNoteInput {
         id: id.into(),
         body: body.into(),
-        expected_updated_at_micros: expected,
+        expected_revision_id: expected.into(),
         now_micros: Some(TIME - 100),
     }
 }
@@ -140,7 +140,10 @@ fn all_note_targets_keep_identity_metadata_and_signed_history_on_edit() {
         let original = note(&store, &key, kind, target);
         original.verify_signature().unwrap();
         let edited = store
-            .edit_note(edit(&original.id, TIME, "Edited 日本語 note"), &key)
+            .edit_note(
+                edit(&original.id, &original.revision_id, "Edited 日本語 note"),
+                &key,
+            )
             .unwrap();
         edited.verify_signature().unwrap();
         assert_eq!(edited.id, original.id);
@@ -169,15 +172,18 @@ fn stale_unauthorized_empty_missing_and_oversized_edits_leave_note_intact() {
     let key = Keypair::generate();
     let original = note(&store, &key, Some("item"), Some("item"));
     assert!(matches!(
-        store.edit_note(edit(&original.id, TIME, "other"), &Keypair::generate()),
+        store.edit_note(
+            edit(&original.id, &original.revision_id, "other"),
+            &Keypair::generate()
+        ),
         Err(StoreError::AnnotationUnauthorized { .. })
     ));
     assert!(matches!(
-        store.edit_note(edit(&original.id, TIME - 1, "stale"), &key),
+        store.edit_note(edit(&original.id, &"f".repeat(64), "stale"), &key),
         Err(StoreError::AnnotationConflict { .. })
     ));
     assert!(matches!(
-        store.edit_note(edit("unknown", TIME, "missing"), &key),
+        store.edit_note(edit("unknown", &"f".repeat(64), "missing"), &key),
         Err(StoreError::AnnotationUnavailable { .. })
     ));
     for body in [
@@ -185,7 +191,7 @@ fn stale_unauthorized_empty_missing_and_oversized_edits_leave_note_intact() {
         "é".repeat(carrel_core::annotation::MAX_NOTE_BYTES),
     ] {
         assert!(matches!(
-            store.edit_note(edit(&original.id, TIME, &body), &key),
+            store.edit_note(edit(&original.id, &original.revision_id, &body), &key),
             Err(StoreError::InvalidInput { .. })
         ));
     }
@@ -203,10 +209,11 @@ fn concurrent_stale_editors_cannot_silently_overwrite_each_other() {
             let store = store.clone();
             let key = key.clone();
             let id = original.id.clone();
+            let revision = original.revision_id.clone();
             let barrier = barrier.clone();
             std::thread::spawn(move || {
                 barrier.wait();
-                store.edit_note(edit(&id, TIME, &format!("editor {i}")), &key)
+                store.edit_note(edit(&id, &revision, &format!("editor {i}")), &key)
             })
         })
         .collect::<Vec<_>>();
@@ -256,7 +263,7 @@ fn highlight_removal_is_signed_idempotent_and_dominates_notes_and_retries() {
     );
     assert!(
         store
-            .edit_note(edit(&note.id, TIME, "revive"), &key)
+            .edit_note(edit(&note.id, &note.revision_id, "revive"), &key)
             .is_err()
     );
     assert!(
@@ -320,9 +327,9 @@ fn raw_writes_cannot_change_a_highlight_or_replace_a_signed_note_revision() {
         :put highlight {id => item_id, quoted_text, location, location_label, color, created_by, created_at, signature}
     "#).is_err());
     assert!(store.query(r#"
-        ?[id, updated_at, body, target_kind, target_id, created_by, created_at, updated_by, signature_version, signature] :=
-            *note{id, updated_at, target_kind, target_id, created_by, created_at, updated_by, signature_version, signature}, body = 'changed body'
-        :put note {id, updated_at => body, target_kind, target_id, created_by, created_at, updated_by, signature_version, signature}
+        ?[id, revision_id, updated_at, body, target_kind, target_id, created_by, created_at, updated_by, signature_version, parents, signature] :=
+            *note{id, revision_id, updated_at, target_kind, target_id, created_by, created_at, updated_by, signature_version, parents, signature}, body = 'changed body'
+        :put note {id, revision_id => body, target_kind, target_id, created_by, created_at, updated_at, updated_by, signature_version, parents, signature}
     "#).is_err());
     assert_eq!(store.get_highlight(&original.id).unwrap(), Some(original));
     assert_eq!(store.get_note(&note.id).unwrap(), Some(note));
@@ -339,7 +346,10 @@ fn edited_notes_survive_persistent_store_restart() {
         store.migrate().unwrap();
         let original = note(&store, &key, None, None);
         expected = store
-            .edit_note(edit(&original.id, TIME, "Persistent edit"), &key)
+            .edit_note(
+                edit(&original.id, &original.revision_id, "Persistent edit"),
+                &key,
+            )
             .unwrap();
     }
     let store = Store::open(&path).unwrap();
@@ -387,7 +397,7 @@ fn review_pages_and_export_cover_the_archive_with_all_latest_notes() {
         .edit_note(
             edit(
                 &original.id,
-                TIME,
+                &original.revision_id,
                 "Full edited 日本語\n\nSecond paragraph.",
             ),
             &key,

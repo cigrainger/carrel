@@ -797,6 +797,7 @@ dependencies = [
 name = "carrel-core"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "ciborium",
  "ed25519-dalek",
  "getrandom 0.4.3",

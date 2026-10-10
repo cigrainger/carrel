@@ -943,7 +943,8 @@ button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px soli
 }
 
 .highlight-row-actions button:not(.highlight-open),
-.highlight-note-full button {
+.highlight-note-full button,
+.note-conflict-version button {
   padding: var(--space-1) 0;
   border: 0;
   background: transparent;
@@ -954,7 +955,8 @@ button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px soli
 }
 
 .highlight-row-actions button:hover,
-.highlight-note-full button:hover {
+.highlight-note-full button:hover,
+.note-conflict-version button:hover {
   color: var(--color-accent);
 }
 
@@ -1089,6 +1091,7 @@ button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px soli
   max-height: calc(100vh - var(--space-10));
   overflow: auto;
   font-family: var(--font-chrome);
+  color: var(--color-text);
 }
 
 .feed-dialog {
@@ -1182,6 +1185,27 @@ button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px soli
   justify-content: flex-end;
   gap: var(--space-2);
   margin-top: var(--space-4);
+}
+
+.note-conflict-version {
+  padding: var(--space-4) 0;
+  border-top: 1px solid var(--color-rule);
+}
+
+.note-version-source {
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.note-version-body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.note-draft-label {
+  display: block;
+  margin-bottom: var(--space-2);
 }
 
 .note-dialog-actions button {

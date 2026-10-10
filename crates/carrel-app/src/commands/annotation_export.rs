@@ -80,13 +80,30 @@ fn markdown(rows: &[AnnotationReview]) -> String {
             }
             let _ = writeln!(output, "\nReference: `{}`\n", highlight.id);
             for note in &row.notes {
-                let _ = writeln!(
-                    output,
-                    "#### Note · {}\n\n{}\n\nReference: `{}`\n",
-                    date(note.updated_at_micros),
-                    note.body,
-                    note.id
-                );
+                if let Some(versions) = row.conflicts.get(&note.id) {
+                    let _ = writeln!(
+                        output,
+                        "#### Note · unresolved versions\n\nReference: `{}`\n",
+                        note.id
+                    );
+                    for version in versions {
+                        let _ = writeln!(
+                            output,
+                            "##### Unresolved version · {}\n\n{}\n\nRevision: `{}`\n",
+                            date(version.updated_at_micros),
+                            version.body,
+                            version.revision_id
+                        );
+                    }
+                } else {
+                    let _ = writeln!(
+                        output,
+                        "#### Note · {}\n\n{}\n\nReference: `{}`\n",
+                        date(note.updated_at_micros),
+                        note.body,
+                        note.id
+                    );
+                }
             }
             output.push_str("---\n\n");
         }
@@ -181,7 +198,7 @@ mod tests {
                 EditNoteInput {
                     id: note.id.clone(),
                     body: body.clone(),
-                    expected_updated_at_micros: 2,
+                    expected_revision_id: note.revision_id.clone(),
                     now_micros: Some(3),
                 },
                 &key,
@@ -221,5 +238,150 @@ mod tests {
             safe_url("https://example.com/a b"),
             Some("https://example.com/a%20b".into())
         );
+    }
+
+    #[test]
+    fn unresolved_equal_time_versions_are_complete_in_review_and_exports() {
+        use carrel_core::identity::DeviceCert;
+        use carrel_store::notes::ResolveNoteInput;
+
+        let a = Store::open_in_memory().unwrap();
+        let b = Store::open_in_memory().unwrap();
+        let ka = Keypair::from_seed(&[71; 32]);
+        let kb = Keypair::from_seed(&[72; 32]);
+        let master = Keypair::from_seed(&[73; 32]);
+        let input = PutHighlightInput {
+            item_id: "item".into(),
+            location: HighlightLocation::HtmlText(HtmlTextSelector {
+                exact: "A quiet passage".into(),
+                content_blob_id: None,
+                prefix: String::new(),
+                suffix: String::new(),
+                start: 0,
+                end: 15,
+            }),
+            location_label: None,
+            color: None,
+            created_at_micros: Some(1),
+        };
+        for store in [&a, &b] {
+            store.migrate().unwrap();
+            store.query("?[id, kind, title, creators, primary_url, published_at, language, summary, discovered_at] <- [['item', 'article', 'Article', [], null, null, null, null, validity(1)]] :put item {id => kind, title, creators, primary_url, published_at, language, summary, discovered_at}").unwrap();
+            store.put_highlight(input.clone(), &ka).unwrap();
+        }
+        let ca = DeviceCert::new_at_micros(&master, ka.public(), 1, Some("Desktop".into()));
+        let cb = DeviceCert::new_at_micros(&master, kb.public(), 1, Some("Laptop".into()));
+        a.bind_self_identity(&ca, &ka).unwrap();
+        b.bind_self_identity(&cb, &kb).unwrap();
+        a.accept_self_device_certificate(&cb).unwrap();
+        b.accept_self_device_certificate(&ca).unwrap();
+        let highlight = a.list_item_highlights("item").unwrap().remove(0);
+        let root = a
+            .put_note(
+                PutNoteInput {
+                    body: "Original".into(),
+                    target_kind: Some("highlight".into()),
+                    target_id: Some(highlight.id.clone()),
+                    created_at_micros: Some(1),
+                },
+                &ka,
+            )
+            .unwrap();
+        b.accept_self_note_revision(&root, ka.public()).unwrap();
+        let mut versions = Vec::new();
+        for (store, key, body) in [
+            (&a, &ka, format!("Desktop draft\n\n{}", "café ".repeat(200))),
+            (
+                &b,
+                &kb,
+                format!("Laptop draft\n\n{}", "日本語 ".repeat(200)),
+            ),
+        ] {
+            versions.push(
+                store
+                    .edit_note(
+                        EditNoteInput {
+                            id: root.id.clone(),
+                            body,
+                            expected_revision_id: root.revision_id.clone(),
+                            now_micros: Some(2),
+                        },
+                        key,
+                    )
+                    .unwrap(),
+            );
+        }
+        a.accept_self_note_revision(&versions[1], kb.public())
+            .unwrap();
+        let snapshot = a.annotation_export_snapshot().unwrap();
+        assert_eq!(snapshot[0].notes.len(), 1);
+        assert_eq!(snapshot[0].conflicts[&root.id].len(), 2);
+        let document = markdown(&snapshot);
+        for version in &versions {
+            assert!(document.contains(&version.body));
+            assert!(document.contains(&version.revision_id));
+        }
+        assert!(document.contains("unresolved versions"));
+        assert!(!document.contains("Original"));
+        let row = crate::commands::highlights::list_highlights_from_store(
+            &a,
+            None,
+            None,
+            Some(ka.public()),
+        )
+        .unwrap()
+        .items
+        .remove(0);
+        assert_eq!(
+            crate::commands::highlights::review_note_from_store(&a, &root.id, Some(ka.public()))
+                .unwrap(),
+            row.notes[0]
+        );
+        assert!(
+            !crate::commands::highlights::review_note_from_store(
+                &a,
+                &root.id,
+                Some(Keypair::from_seed(&[74; 32]).public())
+            )
+            .unwrap()
+            .can_edit
+        );
+        assert!(row.notes[0].can_edit);
+        assert_eq!(row.notes[0].conflicts.len(), 2);
+        for (label, version) in ["Desktop", "Laptop"].into_iter().zip(&versions) {
+            let dto = row.notes[0]
+                .conflicts
+                .iter()
+                .find(|dto| dto.revision_id == version.revision_id)
+                .unwrap();
+            assert_eq!(dto.body, version.body);
+            assert_eq!(dto.device_label, label);
+            assert!(!dto.saved_at.is_empty());
+        }
+        a.resolve_note(
+            ResolveNoteInput {
+                id: root.id.clone(),
+                body: "Deliberately combined".into(),
+                expected_revision_ids: a
+                    .note_heads(&root.id)
+                    .unwrap()
+                    .into_iter()
+                    .map(|record| record.revision_id)
+                    .collect(),
+                now_micros: Some(3),
+            },
+            &ka,
+        )
+        .unwrap();
+        let document = markdown(&a.annotation_export_snapshot().unwrap());
+        assert!(
+            crate::commands::highlights::review_note_from_store(&a, &root.id, Some(ka.public()))
+                .unwrap()
+                .conflicts
+                .is_empty()
+        );
+        assert!(document.contains("Deliberately combined"));
+        assert!(!document.contains("unresolved versions"));
+        assert!(!document.contains("Desktop draft") && !document.contains("Laptop draft"));
     }
 }

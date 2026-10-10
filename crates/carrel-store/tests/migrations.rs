@@ -171,7 +171,7 @@ fn note_history_migration_preserves_legacy_signatures_and_resumes_each_stage() {
                 EditNoteInput {
                     id: legacy.id.into(),
                     body: "A new signed revision".into(),
-                    expected_updated_at_micros: legacy.updated_at_micros,
+                    expected_revision_id: preserved.revision_id.clone(),
                     now_micros: Some(legacy.updated_at_micros + 10),
                 },
                 &key,
@@ -179,7 +179,7 @@ fn note_history_migration_preserves_legacy_signatures_and_resumes_each_stage() {
             .unwrap();
         updated.verify_signature().unwrap();
         assert_eq!(updated.id, legacy.id);
-        assert_eq!(updated.signature_version, 2);
+        assert_eq!(updated.signature_version, 3);
         store.migrate().unwrap();
         assert_eq!(
             store

@@ -221,7 +221,7 @@ fn trusted_self_device_can_edit_a_revoked_creators_note_but_foreign_device_canno
     let input = EditNoteInput {
         id: original.id.clone(),
         body: "Changed on another installation".into(),
-        expected_updated_at_micros: 1,
+        expected_revision_id: original.revision_id.clone(),
         now_micros: Some(2),
     };
     assert!(matches!(
@@ -259,7 +259,7 @@ fn trusted_self_device_can_edit_a_revoked_creators_note_but_foreign_device_canno
     let input = EditNoteInput {
         id: edited.id.clone(),
         body: "forbidden".into(),
-        expected_updated_at_micros: 2,
+        expected_revision_id: edited.revision_id.clone(),
         now_micros: Some(3),
     };
     assert!(matches!(

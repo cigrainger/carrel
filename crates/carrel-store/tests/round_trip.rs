@@ -192,20 +192,6 @@ fn round_trips_one_row_through_each_schema_relation() {
                 :put highlight {id => item_id, quoted_text, location, location_label, color, created_by, created_at, signature}
             }
             {
-                ?[id, body, target_kind, target_id, created_by, created_at, updated_at, updated_by, signature_version, signature] :=
-                    id = 'note-1',
-                    body = 'note body',
-                    target_kind = 'item',
-                    target_id = 'item-1',
-                    created_by = $peer,
-                    created_at = 'ASSERT',
-                    updated_at = 'ASSERT',
-                    updated_by = $peer,
-                    signature_version = 2,
-                    signature = $signature
-                :put note {id, updated_at => body, target_kind, target_id, created_by, created_at, updated_by, signature_version, signature}
-            }
-            {
                 ?[id, source_id, target_id, relation, note, created_by, created_at, signature] :=
                     id = 'connection-1',
                     source_id = 'note-1',
@@ -311,6 +297,20 @@ fn round_trips_one_row_through_each_schema_relation() {
             ]),
         )
         .unwrap();
+
+    let note = store
+        .put_note(
+            carrel_store::notes::PutNoteInput {
+                body: "note body".into(),
+                target_kind: Some("item".into()),
+                target_id: Some("item-1".into()),
+                created_at_micros: Some(1),
+            },
+            &carrel_core::identity::Keypair::from_seed(&[7; 32]),
+        )
+        .unwrap();
+    assert_eq!(store.get_note(&note.id).unwrap(), Some(note.clone()));
+    note.verify_signature().unwrap();
 
     assert_single_value(&store, "item", "id", DataValue::from("item-1"));
     assert_single_value(&store, "share", "id", DataValue::from("share-1"));
