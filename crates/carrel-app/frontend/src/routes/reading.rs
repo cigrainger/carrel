@@ -13,7 +13,7 @@ use leptos_router::hooks::{use_navigate, use_params_map};
 #[cfg(target_arch = "wasm32")]
 use crate::api::{self, CreateHighlightNoteRequest, ReadProgressUpdate};
 use crate::api::{CreateHighlightRequest, HighlightDetail, ItemDetail};
-use crate::components::Modal;
+use crate::components::{Icon, IconName, Modal};
 use crate::feeds::{FeedController, use_feed_controller};
 #[cfg(target_arch = "wasm32")]
 use crate::highlights;
@@ -540,35 +540,46 @@ pub fn ReaderActions(
     view! {
         <nav class="reader-actions" aria-label="Reader controls">
             <div class="reader-action-group">
-                <button type="button" class="reader-action-primary" on:click=move |_| on_back.run(())>{back_label}</button>
+                <button type="button" class="reader-action-primary" on:click=move |_| on_back.run(())><Icon name=IconName::Back/>{back_label}</button>
                 <button type="button" aria-controls="reading-sidebar" aria-expanded=move || sidebar_visible.get().to_string()
-                    title="Toggle sidebar (⌘B)" on:click=move |_| on_toggle_sidebar.run(())>
-                    {move || if sidebar_visible.get() { "Hide sidebar" } else { "Show sidebar" }}
+                    title=move || if sidebar_visible.get() { "Hide sidebar (⌘B)" } else { "Show sidebar (⌘B)" }
+                    aria-label=move || if sidebar_visible.get() { "Hide sidebar" } else { "Show sidebar" }
+                    on:click=move |_| on_toggle_sidebar.run(())>
+                    {move || if sidebar_visible.get() { view! { <Icon name=IconName::SidebarClose/> } } else { view! { <Icon name=IconName::SidebarOpen/> } }}
                 </button>
-                <button type="button" disabled=move || !can_previous.get() aria-label="Previous item" on:click=move |_| on_previous.run(())>"Previous"</button>
-                <button type="button" disabled=move || !can_next.get() aria-label="Next item" on:click=move |_| on_next.run(())>"Next"</button>
+                <button type="button" disabled=move || !can_previous.get() aria-label="Previous item" title="Previous item (P)" on:click=move |_| on_previous.run(())><Icon name=IconName::Previous/></button>
+                <button type="button" disabled=move || !can_next.get() aria-label="Next item" title="Next item" on:click=move |_| on_next.run(())><Icon name=IconName::Next/></button>
             </div>
             <div class="reader-action-group">
                 <button type="button" disabled=move || item.with(Option::is_none)
                     aria-pressed=move || item.with(|item| item.as_ref().is_some_and(|detail| detail.starred).to_string())
+                    class="reader-star-action"
+                    aria-label=move || item.with(|item| star_action_label(item.as_ref().is_some_and(|detail| detail.starred)))
+                    title=move || item.with(|item| if item.as_ref().is_some_and(|detail| detail.starred) { "Unstar (S)" } else { "Star (S)" })
                     on:click=move |_| on_toggle_star.run(())>
-                    {move || item.with(|item| star_action_label(item.as_ref().is_some_and(|detail| detail.starred)))}
+                    <Icon name=IconName::Star/>
                 </button>
-                <button type="button" disabled=move || item.with(Option::is_none) on:click=move |_| on_toggle_read.run(())>
-                    {move || item.with(|item| read_action_label(item.as_ref().map_or("unread", |detail| detail.read_state.as_str())))}
+                <button type="button" class="reader-read-action" disabled=move || item.with(Option::is_none)
+                    aria-label=move || item.with(|item| read_action_label(item.as_ref().map_or("unread", |detail| detail.read_state.as_str())))
+                    title=move || item.with(|item| if item.as_ref().is_some_and(|detail| detail.read_state == "read") { "Mark unread (⇧M)" } else { "Mark read (M)" })
+                    aria-pressed=move || item.with(|item| item.as_ref().is_some_and(|detail| detail.read_state == "read").to_string())
+                    on:click=move |_| on_toggle_read.run(())>
+                    <Icon name=IconName::Read/>
                 </button>
                 <button type="button" disabled=move || item.with(Option::is_none)
+                    aria-label=move || if info_open.get() { "Hide info" } else { "Item info" }
+                    title=move || if info_open.get() { "Hide info (I)" } else { "Item info (I)" }
                     aria-pressed=move || info_open.get().to_string() on:click=move |_| on_toggle_info.run(())>
-                    {move || if info_open.get() { "Hide info" } else { "Item info" }}
+                    <Icon name=IconName::Info/>
                 </button>
             </div>
             <div class="reader-action-group">
                 <Show when=move || item.with(|item| item.as_ref().is_some_and(|detail| detail.primary_url.is_some()))
-                    fallback=|| view! { <button type="button" disabled=true>"Open original"</button> }>
-                    <a class="reader-action-link" href=move || item.with(|item| item.as_ref().and_then(|detail| detail.primary_url.clone()).unwrap_or_default()) target="_blank" rel="noreferrer"
+                    fallback=|| view! { <button type="button" disabled=true aria-label="Open original" title="Open original"><Icon name=IconName::Original/></button> }>
+                    <a class="reader-action-link" aria-label="Open original" title="Open original" href=move || item.with(|item| item.as_ref().and_then(|detail| detail.primary_url.clone()).unwrap_or_default()) target="_blank" rel="noreferrer"
                         on:click=move |event| { event.prevent_default(); if let Some(url) = item.with_untracked(|item| item.as_ref().and_then(|detail| detail.primary_url.clone())) { on_open_original.run(url); } }
                         on:auxclick=move |event| { if event.button() == 1 { event.prevent_default(); if let Some(url) = item.with_untracked(|item| item.as_ref().and_then(|detail| detail.primary_url.clone())) { on_open_original.run(url); } } }
-                    >"Open original"</a>
+                    ><Icon name=IconName::Original/></a>
                 </Show>
             </div>
         </nav>

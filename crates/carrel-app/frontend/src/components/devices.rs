@@ -3,7 +3,11 @@
 use leptos::prelude::*;
 use serde_json::json;
 
-use crate::{api, components::Modal, feeds};
+use crate::{
+    api,
+    components::{Icon, IconName, Modal},
+    feeds,
+};
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum Mode {
@@ -82,7 +86,7 @@ pub(crate) fn Devices() -> impl IntoView {
     };
 
     view! {
-        <button class="devices-link" type="button" on:click=move |_| {mode.set(Mode::Overview); open.set(true); poll();}>"Devices"</button>
+        <button class="devices-link" type="button" on:click=move |_| {mode.set(Mode::Overview); open.set(true); poll();}><Icon name=IconName::Devices/><span>"Devices"</span></button>
         <Show when=move || open.get()>
             <Modal label="Your desktops" class="feed-dialog devices-dialog" on_cancel=UnsyncCallback::new(dismiss)>
                 <div class="dialog-heading"><h2>"Your desktops"</h2><button type="button" aria-label="Close devices" on:click=move |_| dismiss(())>"Close"</button></div>

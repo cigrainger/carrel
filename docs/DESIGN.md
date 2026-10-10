@@ -49,11 +49,27 @@ are paper `#f5f2eb` and elevated paper `#faf8f3`, with ink `#252722`, secondary
 text `#62645d`, tertiary text `#65675f`, rules `#d2d0c5` / `#bdbbb0`, and accent
 `#9a462f`. Existing dark, sepia, and black themes remain available.
 
+Navigation uses Lucide icons beside labels, a compact 36px row, and a small
+square rust marker for the active destination. Active text remains ink rather
+than turning the whole row into an accent-colored card. Subscriptions form the
+next group; Devices and OPML actions share a ruled utility group at the bottom.
+Icons use the maintained `lucide-leptos` integration, with only the required
+categories enabled, 16–18px sizes and a 1.5px stroke. Icons inside named controls
+are decorative. Read, star and compact reader controls are icon-only native
+buttons with current action labels, tooltips and keyboard hints. Star fills when
+saved; pressed read/star state remains available to assistive technology.
+
 Publisher titles take precedence. Genuinely untitled posts use a short opening
 excerpt, using up to 120 Unicode source characters at a word boundary when available,
 instead of the URL. The remaining text can appear underneath without repeating
 the heading. This is a display fallback, including for older saved entries;
 the original article metadata remains intact.
+
+The application mark is a page sheltered by an architectural frame, using
+paper, charcoal and rust. Its editable source is
+`crates/carrel-app/icons/app-icon.svg`; native PNG, ICNS and ICO assets are
+derived with `cargo tauri icon`. The app tile follows native rounded icon
+conventions while application controls retain square corners.
 
 Typography is the most important visual decision in a reading app. The user spends the majority of their time looking at body text; the body text deserves real care.
 

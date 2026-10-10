@@ -1,6 +1,7 @@
 //! Item-list rendering with native, keyboard-accessible controls.
 
 use crate::api::ItemSummary;
+use crate::components::{Icon, IconName};
 use leptos::prelude::*;
 
 #[component]
@@ -65,11 +66,18 @@ pub fn ItemRow(
                 </p>
                 <p class="item-excerpt">{move || item.get().summary.unwrap_or_default()}</p>
                 <div class="item-row-actions">
-                    <button class="item-state-action" type="button" on:click=move |_| on_read.run(index.get_untracked())>
-                        {move || if item.get().read_state == "read" { "Mark unread" } else { "Mark read" }}
+                    <button class="item-state-action" type="button"
+                        aria-label=move || if item.get().read_state == "read" { "Mark unread" } else { "Mark read" }
+                        aria-pressed=move || (item.get().read_state == "read").to_string()
+                        title=move || if item.get().read_state == "read" { "Mark unread (⇧M)" } else { "Mark read (M)" }
+                        on:click=move |_| on_read.run(index.get_untracked())>
+                        <Icon name=IconName::Read/>
                     </button>
-                    <button class="item-star-action" type="button" aria-pressed=move || item.get().starred.to_string() on:click=move |_| on_star.run(index.get_untracked())>
-                        {move || if item.get().starred { "Unstar" } else { "Star" }}
+                    <button class="item-star-action" type="button"
+                        aria-label=move || if item.get().starred { "Unstar" } else { "Star" }
+                        title=move || if item.get().starred { "Unstar (S)" } else { "Star (S)" }
+                        aria-pressed=move || item.get().starred.to_string() on:click=move |_| on_star.run(index.get_untracked())>
+                        <Icon name=IconName::Star/>
                     </button>
                 </div>
             </div>
@@ -138,8 +146,10 @@ mod tests {
             />
         }.to_html());
         assert!(html.contains("The shape of a small reader</button>"));
-        assert!(html.contains("Mark read</button>"));
-        assert!(html.contains("Unstar</button>"));
+        assert!(html.contains("aria-label=\"Mark read\""));
+        assert!(html.contains("aria-label=\"Unstar\""));
+        assert!(html.contains("<svg"));
+        assert!(html.contains("aria-hidden=\"true\""));
         assert!(html.contains("aria-pressed=\"true\""));
         assert!(html.contains("A compact summary."));
     }

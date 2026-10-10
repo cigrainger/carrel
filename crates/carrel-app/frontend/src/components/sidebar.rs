@@ -8,7 +8,7 @@ use leptos_router::components::A;
 use leptos_router::hooks::use_location;
 
 use crate::api::FeedSummary;
-use crate::components::Modal;
+use crate::components::{Icon, IconName, Modal};
 use crate::feeds::{self, use_feed_controller};
 
 /// Sidebar navigation root.
@@ -31,10 +31,10 @@ pub fn Sidebar() -> impl IntoView {
         <aside class="sidebar" id="reading-sidebar" aria-label="Primary">
             <div class="sidebar-brand">"carrel"<span>"."</span></div>
             <nav class="sidebar-nav">
-                <A href="/today" attr:class=move || if location.pathname.get() == "/" { "is-active" } else { "" }>"Today"</A>
-                <A href="/reading">"Reading"</A>
-                <A href="/library" attr:class=move || if matches!(location.pathname.get().as_str(), "/unread" | "/starred") { "is-active" } else { "" }>"Library"</A>
-                <A href="/highlights">"Highlights"</A>
+                <A href="/today" attr:class=move || if location.pathname.get() == "/" { "is-active" } else { "" }><Icon name=IconName::Today/><span>"Today"</span></A>
+                <A href="/reading"><Icon name=IconName::Reading/><span>"Reading"</span></A>
+                <A href="/library" attr:class=move || if matches!(location.pathname.get().as_str(), "/unread" | "/starred") { "is-active" } else { "" }><Icon name=IconName::Library/><span>"Library"</span></A>
+                <A href="/highlights"><Icon name=IconName::Highlights/><span>"Highlights"</span></A>
             </nav>
             <div class="sidebar-section">
                 <div class="sidebar-section-header">
@@ -43,6 +43,7 @@ pub fn Sidebar() -> impl IntoView {
                         <button
                             type="button"
                             aria-label="Fetch feeds"
+                            title="Fetch feeds"
                             disabled=move || status.get().is_fetching || fetch_busy.get()
                             on:click=move |_| {
                                 fetch_busy.set(true);
@@ -55,17 +56,18 @@ pub fn Sidebar() -> impl IntoView {
                                 });
                             }
                         >
-                            "Fetch"
+                            <Icon name=IconName::Refresh/>
                         </button>
                         <button
                             type="button"
                             aria-label="Add feed"
+                            title="Add feed"
                             on:click=move |_| {
                                 add_error.set(None);
                                 add_open.set(true);
                             }
                         >
-                            "+"
+                            <Icon name=IconName::Add/>
                         </button>
                     </div>
                 </div>
@@ -96,7 +98,7 @@ pub fn Sidebar() -> impl IntoView {
                                             title="Remove feed"
                                             on:click=move |_| remove_target.set(current.get_untracked())
                                         >
-                                            "x"
+                                            <Icon name=IconName::Close/>
                                         </button>
                                     </li>
                                 }
@@ -105,8 +107,10 @@ pub fn Sidebar() -> impl IntoView {
                     </ul>
                 </Show>
             </div>
-            <SubscriptionFiles/>
-            <crate::components::devices::Devices/>
+            <div class="sidebar-utilities">
+                <crate::components::devices::Devices/>
+                <SubscriptionFiles/>
+            </div>
             <Show when=move || add_open.get()>
                 <Modal label="Add feed" class="feed-dialog" on_cancel=UnsyncCallback::new(move |()| {
                     add_error.set(None);
@@ -229,8 +233,8 @@ pub(crate) fn SubscriptionFiles(#[prop(default = true)] export: bool) -> impl In
         });
     };
     view! { <div class="subscription-files">
-        <button type="button" disabled=move || controller.file_busy.get() on:click=move |_| run(true)>"Import OPML"</button>
-        <Show when=move || export><button type="button" disabled=move || controller.file_busy.get() on:click=move |_| run(false)>"Export OPML"</button></Show>
+        <button type="button" disabled=move || controller.file_busy.get() on:click=move |_| run(true)><Icon name=IconName::Import/><span>"Import OPML"</span></button>
+        <Show when=move || export><button type="button" disabled=move || controller.file_busy.get() on:click=move |_| run(false)><Icon name=IconName::Export/><span>"Export OPML"</span></button></Show>
     </div> }
 }
 
