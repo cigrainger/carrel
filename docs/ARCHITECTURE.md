@@ -371,6 +371,12 @@ return path, rows, selected identity/index, and scroll offset. The reader sideba
 is one session signal; toggling it changes the shell grid without replacing the
 article. These are presentation caches; Cozo remains authoritative.
 
+Field's destination band remains mounted across list and article routes. Its
+active destination follows the list that opened the reader. The source signal
+controls a drawer in list views and a left sidebar in the desktop reader.
+Calendar DTOs are derived from publication metadata, with explicitly labelled
+arrival dates for undated posts; the webview only renders and groups them.
+
 Newly saved subscriptions enter the sidebar in the same URL order returned by
 the store. Background fetch metadata therefore cannot reposition a row after
 the add dialog closes.

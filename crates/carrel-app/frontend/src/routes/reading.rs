@@ -419,8 +419,6 @@ pub fn ReadingView() -> impl IntoView {
                             on_toggle_read=read_click
                             on_toggle_info=info_click
                             on_open_original=UnsyncCallback::new(move |url| crate::links::open_original(url, status))
-                            sidebar_visible=sidebar.0
-                            on_toggle_sidebar=UnsyncCallback::new(move |()| sidebar.toggle())
                             back_label=list_navigation.get().map(|context| format!("Back to {}", context.return_label)).unwrap_or_else(|| "Back to Today".into())
                         />
                 }
@@ -532,8 +530,6 @@ pub fn ReaderActions(
     on_toggle_star: UnsyncCallback<()>,
     on_toggle_read: UnsyncCallback<()>,
     on_toggle_info: UnsyncCallback<()>,
-    #[prop(into, default = Signal::stored(false))] sidebar_visible: Signal<bool>,
-    #[prop(default = UnsyncCallback::new(|()| {}))] on_toggle_sidebar: UnsyncCallback<()>,
     #[prop(default = String::from("Back"))] back_label: String,
     #[prop(default = UnsyncCallback::new(|_: String| {}))] on_open_original: UnsyncCallback<String>,
 ) -> impl IntoView {
@@ -541,12 +537,6 @@ pub fn ReaderActions(
         <nav class="reader-actions" aria-label="Reader controls">
             <div class="reader-action-group">
                 <button type="button" class="reader-action-primary" on:click=move |_| on_back.run(())><Icon name=IconName::Back/>{back_label}</button>
-                <button type="button" aria-controls="reading-sidebar" aria-expanded=move || sidebar_visible.get().to_string()
-                    title=move || if sidebar_visible.get() { "Hide sidebar (⌘B)" } else { "Show sidebar (⌘B)" }
-                    aria-label=move || if sidebar_visible.get() { "Hide sidebar" } else { "Show sidebar" }
-                    on:click=move |_| on_toggle_sidebar.run(())>
-                    {move || if sidebar_visible.get() { view! { <Icon name=IconName::SidebarClose/> } } else { view! { <Icon name=IconName::SidebarOpen/> } }}
-                </button>
                 <button type="button" disabled=move || !can_previous.get() aria-label="Previous item" title="Previous item (P)" on:click=move |_| on_previous.run(())><Icon name=IconName::Previous/></button>
                 <button type="button" disabled=move || !can_next.get() aria-label="Next item" title="Next item" on:click=move |_| on_next.run(())><Icon name=IconName::Next/></button>
             </div>

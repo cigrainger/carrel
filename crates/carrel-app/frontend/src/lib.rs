@@ -47,6 +47,7 @@ pub fn App() -> impl IntoView {
             <KeymapProvider>
                 <GlobalKeymapActions/>
                 <div class="app-shell" class:reader-sidebar-open=move || reading_sidebar.0.get() data-theme=move || theme.current().get().as_str()>
+                    <components::FieldNavigation/>
                     <Sidebar/>
                     <main class="main-content" id="main-content" aria-label="Main content">
                         <Routes fallback=|| view! { <routes::NotFound/> }>

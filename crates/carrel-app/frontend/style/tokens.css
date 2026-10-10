@@ -25,6 +25,7 @@
 :root {
   --font-body: "Source Serif 4", Georgia, serif;
   --font-chrome: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-display: "Helvetica Neue", "Inter", Arial, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 
   --text-xs: 0.75rem;
@@ -36,21 +37,28 @@
   --text-3xl: 1.875rem;
   --text-display: 3rem;
   --text-reader-title: 2.25rem;
+  --text-list-title: 1.8125rem;
+  --text-nav-label: 1.375rem;
+  --text-nav-active: 2rem;
+  --text-calendar: 3.5rem;
 
   --reading-size: 1.125rem;
   --reading-line-height: 1.65;
   --reading-measure: 68ch;
   --reading-paragraph-indent: 1.5em;
 
-  --color-text: #252722;
-  --color-text-secondary: #62645d;
-  --color-text-tertiary: #65675f;
-  --color-bg: #f5f2eb;
-  --color-bg-elevated: #faf8f3;
+  --color-text: #153c32;
+  --color-text-secondary: #466257;
+  --color-text-tertiary: #466257;
+  --color-bg: #eaf0d8;
+  --color-bg-elevated: #f1f5e3;
   --color-media-bg: #faf8f3;
-  --color-rule: #d2d0c5;
-  --color-rule-strong: #bdbbb0;
-  --color-accent: #9a462f;
+  --color-rule: #b5c8a9;
+  --color-rule-strong: #8ba585;
+  --color-accent: #17694e;
+  --color-nav-bg: #153c32;
+  --color-nav-text: #eaf0d8;
+  --color-source-bg: #d2dfbb;
   --color-highlight: #fff3a8;
   --color-highlight-friend: #b8d4e8;
   --color-selected: color-mix(in srgb, var(--color-accent) 8%, transparent);
@@ -67,17 +75,21 @@
   --radius-sm: 0;
   --sidebar-width: 216px;
   --status-strip-height: 28px;
+  --navigation-height: 142px;
 }
 
 [data-theme="dark"] {
   --color-text: #e8e6e0;
   --color-text-secondary: #a8a6a0;
   --color-text-tertiary: #929088;
-  --color-bg: #1a1a18;
-  --color-bg-elevated: #242422;
-  --color-rule: #2a2a28;
-  --color-rule-strong: #3a3a36;
-  --color-accent: #d97a52;
+  --color-bg: #1c211b;
+  --color-bg-elevated: #242b22;
+  --color-rule: #384734;
+  --color-rule-strong: #52604b;
+  --color-accent: #b5d99b;
+  --color-nav-bg: #132e24;
+  --color-nav-text: #eaf0d8;
+  --color-source-bg: #263422;
   --color-highlight: #5a4d1a;
   --color-highlight-friend: #2d4659;
 }
@@ -91,6 +103,9 @@
   --color-rule: #d8cdb3;
   --color-rule-strong: #c9b990;
   --color-accent: #8a4a2a;
+  --color-nav-bg: #463923;
+  --color-nav-text: #f4ecd8;
+  --color-source-bg: #e6dcc2;
   --color-highlight: #d8c878;
   --color-highlight-friend: #b8c8a8;
 }
@@ -103,7 +118,10 @@
   --color-bg-elevated: #0e0e0c;
   --color-rule: #1a1a18;
   --color-rule-strong: #2a2a28;
-  --color-accent: #d97a52;
+  --color-accent: #b5d99b;
+  --color-nav-bg: #0e1911;
+  --color-nav-text: #d4d2cc;
+  --color-source-bg: #111a10;
   --color-highlight: #4a3d10;
   --color-highlight-friend: #1d2e3d;
 }

@@ -7,65 +7,80 @@ use leptos::prelude::*;
 use leptos_router::components::A;
 use leptos_router::hooks::use_location;
 
-use crate::api::FeedSummary;
+use crate::api::{self, FeedCandidate, FeedSummary};
 use crate::components::{Icon, IconName, Modal};
 use crate::feeds::{self, use_feed_controller};
 
-/// Sidebar navigation root.
+/// Field's destination band contracts into a compact toolbar while reading.
+#[component]
+pub(crate) fn FieldNavigation() -> impl IntoView {
+    let location = use_location();
+    let navigation = crate::navigation::use_list_navigation_context();
+    let sources = crate::navigation::use_reading_sidebar();
+    let controller = use_feed_controller();
+    let fetch_busy = RwSignal::new(false);
+    let destination = Memo::new(move |_| {
+        let path = location.pathname.get();
+        let origin = if path.starts_with("/item/") {
+            navigation
+                .get()
+                .map(|list| list.return_path)
+                .unwrap_or_else(|| "/library".into())
+        } else {
+            path
+        };
+        match origin.as_str() {
+            "/" | "/today" => "today",
+            "/reading" => "reading",
+            "/highlights" => "highlights",
+            _ => "library",
+        }
+    });
+    view! {
+        <header class="field-navigation">
+            <div class="field-brand"><span class="field-mark" aria-hidden="true"></span><span>"carrel"</span></div>
+            <nav class="field-destinations" aria-label="Primary">
+                <A href="/today" attr:class=move || if destination.get() == "today" { "is-active" } else { "" }><Icon name=IconName::Today/><span>"Today"</span></A>
+                <A href="/reading" attr:class=move || if destination.get() == "reading" { "is-active" } else { "" }><Icon name=IconName::Reading/><span>"Reading"</span></A>
+                <A href="/library" attr:class=move || if destination.get() == "library" { "is-active" } else { "" }><Icon name=IconName::Library/><span>"Library"</span></A>
+                <A href="/highlights" attr:class=move || if destination.get() == "highlights" { "is-active" } else { "" }><Icon name=IconName::Highlights/><span>"Highlights"</span></A>
+            </nav>
+            <div class="field-tools">
+                <button type="button" class:active=move || sources.0.get() aria-label="Show or hide sources" title="Show or hide sources (⌘B in reader)" aria-controls="reading-sidebar" aria-expanded=move || sources.0.get().to_string() on:click=move |_| sources.toggle()>{move || view! { <Icon name=if sources.0.get() { IconName::SidebarClose } else { IconName::SidebarOpen }/> }}</button>
+                <button type="button" aria-label="Refresh feeds" title="Refresh feeds" disabled=move || fetch_busy.get() || controller.status().get().is_fetching on:click=move |_| {
+                    fetch_busy.set(true);
+                    spawn_feed_task(async move {
+                        if let Err(message) = feeds::fetch_all(controller).await { controller.error().try_set(Some(message)); }
+                        fetch_busy.try_set(false);
+                    });
+                }><Icon name=IconName::Refresh/></button>
+                <button type="button" aria-label="Add source" title="Add source" on:click=move |_| controller.add_open.set(true)><Icon name=IconName::Add/></button>
+            </div>
+        </header>
+    }
+}
+
+/// Source drawer, with subscription dialogs mounted outside its hidden surface.
 #[component]
 pub fn Sidebar() -> impl IntoView {
     let feed_controller = use_feed_controller();
     let feeds = feed_controller.feeds();
-    let status = feed_controller.status();
     let controller_error = feed_controller.error();
     let add_open = feed_controller.add_open;
-    let location = use_location();
-    let add_busy = RwSignal::new(false);
-    let add_error = RwSignal::new(None::<String>);
-    let add_input = NodeRef::<html::Input>::new();
     let remove_target = RwSignal::new(None::<FeedSummary>);
     let remove_busy = RwSignal::new(false);
-    let fetch_busy = RwSignal::new(false);
 
     view! {
-        <aside class="sidebar" id="reading-sidebar" aria-label="Primary">
-            <div class="sidebar-brand">"carrel"<span>"."</span></div>
-            <nav class="sidebar-nav">
-                <A href="/today" attr:class=move || if location.pathname.get() == "/" { "is-active" } else { "" }><Icon name=IconName::Today/><span>"Today"</span></A>
-                <A href="/reading"><Icon name=IconName::Reading/><span>"Reading"</span></A>
-                <A href="/library" attr:class=move || if matches!(location.pathname.get().as_str(), "/unread" | "/starred") { "is-active" } else { "" }><Icon name=IconName::Library/><span>"Library"</span></A>
-                <A href="/highlights"><Icon name=IconName::Highlights/><span>"Highlights"</span></A>
-            </nav>
+        <aside class="sidebar" id="reading-sidebar" aria-label="Sources">
             <div class="sidebar-section">
                 <div class="sidebar-section-header">
-                    <h2>"Subscriptions"</h2>
+                    <h2>"Sources"</h2>
                     <div class="sidebar-section-actions">
                         <button
                             type="button"
-                            aria-label="Fetch feeds"
-                            title="Fetch feeds"
-                            disabled=move || status.get().is_fetching || fetch_busy.get()
-                            on:click=move |_| {
-                                fetch_busy.set(true);
-                                let controller = feed_controller;
-                                spawn_feed_task(async move {
-                                    if let Err(message) = feeds::fetch_all(controller).await {
-                                        controller.error().set(Some(message));
-                                    }
-                                    fetch_busy.set(false);
-                                });
-                            }
-                        >
-                            <Icon name=IconName::Refresh/>
-                        </button>
-                        <button
-                            type="button"
-                            aria-label="Add feed"
-                            title="Add feed"
-                            on:click=move |_| {
-                                add_error.set(None);
-                                add_open.set(true);
-                            }
+                            aria-label="Add source"
+                            title="Add source"
+                            on:click=move |_| add_open.set(true)
                         >
                             <Icon name=IconName::Add/>
                         </button>
@@ -111,71 +126,9 @@ pub fn Sidebar() -> impl IntoView {
                 <crate::components::devices::Devices/>
                 <SubscriptionFiles/>
             </div>
+        </aside>
             <Show when=move || add_open.get()>
-                <Modal label="Add feed" class="feed-dialog" on_cancel=UnsyncCallback::new(move |()| {
-                    add_error.set(None);
-                    add_open.set(false);
-                })>
-                    <form
-                        on:submit=move |event| {
-                            event.prevent_default();
-                            let url = add_input
-                                .get_untracked()
-                                .map(|input| input.value())
-                                .unwrap_or_default()
-                                .trim()
-                                .to_string();
-                            if url.is_empty() {
-                                add_error.set(Some("Enter a feed URL".to_string()));
-                                return;
-                            }
-
-                            add_busy.set(true);
-                            add_error.set(None);
-                            let controller = feed_controller;
-                            spawn_feed_task(async move {
-                                match feeds::add_and_fetch(controller, url).await {
-                                    Ok(()) => {
-                                        if let Some(input) = add_input.get_untracked() {
-                                            input.set_value("");
-                                        }
-                                        add_open.set(false);
-                                    }
-                                    Err(message) => add_error.set(Some(message)),
-                                }
-                                add_busy.set(false);
-                            });
-                        }
-                    >
-                        <h3>"Add Feed"</h3>
-                        <input
-                            node_ref=add_input
-                            type="url"
-                            name="feed-url"
-                            placeholder="https://example.com/feed.xml"
-                            autocomplete="url"
-                            aria-label="Feed URL"
-                            autofocus=true
-                        />
-                        {move || add_error.get().map(|message| {
-                            view! { <p class="feed-error">{message}</p> }
-                        })}
-                        <div class="feed-dialog-actions">
-                            <button
-                                type="button"
-                                on:click=move |_| {
-                                    add_error.set(None);
-                                    add_open.set(false);
-                                }
-                            >
-                                "Cancel"
-                            </button>
-                            <button type="submit" disabled=move || add_busy.get()>
-                                "Add"
-                            </button>
-                        </div>
-                    </form>
-                </Modal>
+                <AddSource/>
             </Show>
             <Show when=move || remove_target.get().is_some()>
                 {move || remove_target.get().map(|feed| {
@@ -214,7 +167,89 @@ pub fn Sidebar() -> impl IntoView {
                     }
                 })}
             </Show>
-        </aside>
+    }
+}
+
+#[component]
+fn AddSource() -> impl IntoView {
+    let controller = use_feed_controller();
+    let sources = crate::navigation::use_reading_sidebar();
+    let input = NodeRef::<html::Input>::new();
+    let busy = RwSignal::new(false);
+    let error = RwSignal::new(None::<String>);
+    let candidates = RwSignal::new(Vec::<FeedCandidate>::new());
+    let selected = RwSignal::new(String::new());
+    let requests = StoredValue::new(crate::requests::Requests::default());
+    let cleanup = requests.get_value();
+    on_cleanup(move || cleanup.invalidate());
+    let cancel = UnsyncCallback::new(move |()| {
+        requests.get_value().invalidate();
+        controller.add_open.set(false);
+    });
+    view! {
+        <Modal label="Add a source" class="feed-dialog" on_cancel=cancel>
+            <form on:submit=move |event| {
+                event.prevent_default();
+                if busy.get_untracked() { return; }
+                let url = input.get_untracked().map(|input| input.value()).unwrap_or_default().trim().to_string();
+                if url.is_empty() { error.set(Some("Enter a website or feed address".into())); return; }
+                let chosen = selected.get_untracked();
+                let guard = requests.get_value();
+                let request = guard.begin();
+                busy.set(true);
+                error.set(None);
+                spawn_feed_task(async move {
+                    let result = if chosen.is_empty() {
+                        api::discover_feeds(url).await.map_err(|error| error.message().to_string())
+                    } else { Ok(vec![FeedCandidate { url: chosen, title: String::new() }]) };
+                    // The dialog may have closed or its address may have changed during HTTP.
+                    if !guard.accepts(request) { return; }
+                    match result {
+                        Ok(found) if found.len() == 1 => {
+                            let saved = feeds::add_and_fetch(controller, found[0].url.clone()).await;
+                            if !guard.accepts(request) {
+                                if let Err(message) = saved { controller.error().try_set(Some(message)); }
+                                return;
+                            }
+                            match saved {
+                                Ok(()) => { sources.0.try_set(true); controller.add_open.try_set(false); }
+                                Err(message) => { error.try_set(Some(message)); }
+                            }
+                        }
+                        Ok(found) if !found.is_empty() => {
+                            selected.try_set(found[0].url.clone());
+                            candidates.try_set(found);
+                        }
+                        Ok(_) => { error.try_set(Some("No feed was advertised at this address".into())); }
+                        Err(message) => { error.try_set(Some(message)); }
+                    }
+                    busy.try_set(false);
+                });
+            }>
+                <h3>"Add a source"</h3>
+                <label for="feed-url">"Website or feed address"</label>
+                <input node_ref=input id="feed-url" name="feed-url" type="text" inputmode="url" autocomplete="url" placeholder="example.org/blog" autofocus=true on:input=move |_| {
+                    requests.get_value().invalidate();
+                    candidates.set(Vec::new()); selected.set(String::new()); error.set(None); busy.set(false);
+                }/>
+                <Show when=move || !candidates.get().is_empty()>
+                    <fieldset class="feed-chooser"><legend>"Choose a feed"</legend>
+                        <For each=move || candidates.get() key=|feed| feed.url.clone() let:feed>
+                            {
+                                let value = feed.url.clone();
+                                let check = feed.url.clone();
+                                view! { <label><input type="radio" name="discovered-feed" value=value.clone() checked=move || selected.get() == check on:change=move |_| selected.set(value.clone())/><span><strong>{feed.title}</strong><small>{feed.url}</small></span></label> }
+                            }
+                        </For>
+                    </fieldset>
+                </Show>
+                {move || error.get().map(|message| view! { <p class="feed-error" role="alert">{message}</p> })}
+                <div class="feed-dialog-actions">
+                    <button type="button" on:click=move |_| cancel.run(())>"Cancel"</button>
+                    <button type="submit" disabled=move || busy.get()>{move || if busy.get() { if selected.get().is_empty() { "Finding feeds…" } else { "Saving…" } } else if candidates.get().is_empty() { "Add source" } else { "Subscribe" }}</button>
+                </div>
+            </form>
+        </Modal>
     }
 }
 

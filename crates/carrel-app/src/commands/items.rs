@@ -111,8 +111,10 @@ pub struct ItemSummary {
     pub source_name: String,
     /// Human-readable length label.
     pub length_label: String,
-    /// Human-readable relative discovery time.
+    /// Human-readable publication time, falling back to arrival for undated posts.
     pub time_label: String,
+    /// Calendar presentation with an explicit publication or arrival label.
+    pub date: Option<ItemDate>,
     /// Local read state, defaulting to unread.
     pub read_state: String,
     /// Whether the item is starred locally.
@@ -123,6 +125,23 @@ pub struct ItemSummary {
     pub summary: Option<String>,
     /// Discovery timestamp in Unix microseconds.
     pub discovered_at_micros: i64,
+}
+
+/// Calendar date supplied to the list without exposing timestamp selection to UI code.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ItemDate {
+    /// ISO calendar date for the time element and grouping adjacent rows.
+    pub iso: String,
+    /// Day of month, without padding.
+    pub day: String,
+    /// Short month name.
+    pub month: String,
+    /// Calendar year.
+    pub year: String,
+    /// Visible provenance for undated posts; absent when the publisher supplied a date.
+    pub caption: Option<String>,
+    /// Full accessible label, distinguishing undated arrivals from publication.
+    pub label: String,
 }
 
 /// Fuller item metadata for the reading route.
@@ -238,6 +257,7 @@ pub(crate) fn list_item_page_from_store(
                             .unwrap_or(item.discovered_at_micros),
                         now,
                     ),
+                    date: item_date(item.published_at_micros, item.discovered_at_micros),
                     summary,
                     id: item.id,
                     title,
@@ -670,6 +690,7 @@ fn summary_from_parts(
                 .unwrap_or(item.discovered_at_micros),
             now,
         ),
+        date: item_date(item.published_at_micros, item.discovered_at_micros),
         read_state,
         starred,
         primary_url: item.primary_url.clone(),
@@ -747,6 +768,39 @@ fn length_label(article: &ArticleMetadata) -> String {
     }
 
     "unknown length".to_string()
+}
+
+fn item_date(published: Option<i64>, arrived: i64) -> Option<ItemDate> {
+    let date =
+        OffsetDateTime::from_unix_timestamp_nanos(i128::from(published.unwrap_or(arrived)) * 1_000)
+            .ok()?
+            .date();
+    let months = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+    let month = months[usize::from(u8::from(date.month())) - 1];
+    Some(ItemDate {
+        iso: format!(
+            "{:04}-{:02}-{:02}",
+            date.year(),
+            u8::from(date.month()),
+            date.day()
+        ),
+        day: date.day().to_string(),
+        month: month.into(),
+        year: date.year().to_string(),
+        caption: published.is_none().then(|| "Saved".into()),
+        label: format!(
+            "{} {} {month} {}",
+            if published.is_some() {
+                "Published"
+            } else {
+                "Saved"
+            },
+            date.day(),
+            date.year()
+        ),
+    })
 }
 
 fn time_label(timestamp_micros: i64, now: OffsetDateTime) -> String {
@@ -1071,12 +1125,37 @@ mod tests {
             .unwrap();
             let row = page.items.iter().find(|item| item.id == id).unwrap();
             assert_eq!(row.time_label, expected);
+            assert_eq!(row.date.as_ref().unwrap().iso, expected);
+            assert_eq!(
+                row.date.as_ref().unwrap().caption.as_deref(),
+                published_at.is_none().then_some("Saved")
+            );
+            assert!(
+                row.date
+                    .as_ref()
+                    .unwrap()
+                    .label
+                    .starts_with(if published_at.is_some() {
+                        "Published"
+                    } else {
+                        "Saved"
+                    })
+            );
             assert_eq!(row.discovered_at_micros, 1_609_459_200_000_000);
             let detail = get_item_from_parts(&store, &blobs, id).unwrap().unwrap();
             assert_eq!(detail.time_label, expected);
             assert_eq!(detail.published_at.is_some(), published_at.is_some());
             assert_eq!(detail.discovered_at, "2021-01-01T00:00:00Z");
         }
+    }
+
+    #[test]
+    fn calendar_dates_keep_subsecond_boundaries_and_do_not_invent_dates() {
+        let date = item_date(Some(-1), 1_609_459_200_000_000).unwrap();
+        assert_eq!(date.iso, "1969-12-31");
+        assert_eq!(date.label, "Published 31 Dec 1969");
+        assert_eq!(item_date(None, 0).unwrap().label, "Saved 1 Jan 1970");
+        assert!(item_date(Some(i64::MAX), 0).is_none());
     }
 
     #[test]

@@ -34,9 +34,9 @@ These commitments are non-negotiable for the v1 product. Subsequent sections ope
 
 ## Typography
 
-### Design reset under review
+### Field direction
 
-The current Editorial implementation is being reconsidered from first principles.
+Field replaces the previous Editorial implementation following a design reset.
 The new references emphasize dramatic scale contrasts, asymmetrical grids,
 confident grotesk typography, structural color fields, and geometric rhythm.
 Those principles must organize the reading task rather than decorate it.
@@ -54,33 +54,45 @@ alternatives using the same archive content and reader interactions:
   an expressive navigation band with 22px labels / a 32px active destination,
   and 29px grotesk article titles. The band contracts in the reader.
 
-These are proposals, not replacement production tokens. Their names describe
-layout choices, not user-selectable app themes. The reader keeps the user's
-body font, a comfortable measure, and restrained chrome. All alternatives
+Field is the selected production direction; Index and Fold remain comparison
+proposals. Their names describe layout choices, not user-selectable app themes.
+The reader keeps the user's body font, a comfortable measure, and restrained
+chrome. All alternatives
 retain Today / Reading / Library / Highlights, explicit read and star actions,
 publisher dates, square controls, Lucide icons, and the sidebar toggle. They
-introduce no unread counts or rankings. Selecting a direction will replace the
-Editorial specification below before production components change.
+introduce no unread counts or rankings.
 
-### Editorial direction
+### Layout and type
 
-The first complete reading loop uses an Editorial layout: warm paper, charcoal,
-a restrained rust accent, asymmetric alignment, generous row spacing, and serif
-article titles with short excerpts. Inter remains the navigation face and Source
-Serif 4 the reading face. Long titles wrap. Structural rules and typography carry
-the hierarchy; controls are square and lightly ruled. Dense mode is a later
-addition, not a second interface in this pass.
+The primary navigation is a forest color field with four typographic columns:
+Today, Reading, Library, Highlights. Labels use a Helvetica-style grotesk at
+22px, with the selected destination at 32px and a square-ended underline. The
+band contracts to compact icon-and-label navigation in the reader. Sources are
+tucked away until the user opens the drawer; in the reader they form a left
+sidebar. Cmd+B and the sidebar button toggle the same source presentation.
 
-The display heading is 3rem, the reader title 2.25rem, and list titles 1.5rem.
-The fixed sidebar is 216px wide. Control radius is zero. Default light surfaces
-are paper `#f5f2eb` and elevated paper `#faf8f3`, with ink `#252722`, secondary
-text `#62645d`, tertiary text `#65675f`, rules `#d2d0c5` / `#bdbbb0`, and accent
-`#9a462f`. Existing dark, sepia, and black themes remain available.
+Lists occupy the full available width. A chronological gutter shows a prominent
+56px day at each new date and a quieter date on subsequent rows from that day.
+The backend supplies calendar labels, explicitly distinguishing publication
+from saved dates when the publisher provides none. Article titles use a 29px
+grotesk; metadata precedes them, excerpts follow, and read/star icons sit at the
+right. Long titles wrap. Source Serif 4 remains the default reader face.
+Controls remain square. Dense mode is a later addition.
 
-Navigation uses Lucide icons beside labels, a compact 36px row, and a small
-square rust marker for the active destination. Active text remains ink rather
-than turning the whole row into an accent-colored card. Subscriptions form the
-next group; Devices and OPML actions share a ruled utility group at the bottom.
+Section headings are 18px; the navigation carries the primary hierarchy.
+The reader title is 2.25rem. The optional reader sidebar is 216px wide.
+Default light surfaces are pale mint `#eaf0d8` and elevated mint `#f1f5e3`,
+with forest ink `#153c32`, secondary text `#466257`, rules `#b5c8a9` /
+`#8ba585`, and accent `#17694e`. The navigation field uses `#153c32` with
+`#eaf0d8` text; the source drawer uses `#d2dfbb`. Dark surfaces use `#1c211b`
+with pale text and a quieter `#132e24` navigation field. Sepia and black remain
+available, retaining readable navigation pairs. These additions are production
+tokens: `--font-display`, `--text-list-title`, `--text-nav-label`,
+`--text-nav-active`, `--text-calendar`, `--navigation-height`,
+`--color-nav-bg`, `--color-nav-text`, and `--color-source-bg`.
+
+Navigation uses Lucide icons with labels and an underline for the active
+destination. Sources, Devices, and OPML actions belong to the source drawer.
 Icons use the maintained `lucide-leptos` integration, with only the required
 categories enabled, 16–18px sizes and a 1.5px stroke. Icons inside named controls
 are decorative. Read, star and compact reader controls are icon-only native
@@ -115,7 +127,9 @@ The user picks one of these. We do not offer a free font picker; that's a rabbit
 
 For users who really want sans-serif body, we offer **Inter** (Rasmus Andersson, OFL). One option. No second sans.
 
-For chrome (sidebars, menus, settings labels) we use **Inter** universally. This creates a coherent visual hierarchy: the body is "the document," the chrome is "the application," and they are distinct.
+For menus and settings labels we use **Inter**. Field's navigation and article
+headings use `--font-display` (Helvetica Neue, with bundled Inter as fallback).
+Article prose retains its independently chosen reading font.
 
 For code blocks within articles we use **JetBrains Mono** (OFL), with programming ligatures off (this is a reading context, not editing).
 
@@ -131,8 +145,12 @@ For code blocks within articles we use **JetBrains Mono** (OFL), with programmin
   --text-xl: 1.25rem;      /* 20px */
   --text-2xl: 1.5rem;      /* 24px */
   --text-3xl: 1.875rem;    /* 30px */
-  --text-display: 3rem;   /* list page heading */
+  --text-display: 3rem;
   --text-reader-title: 2.25rem;
+  --text-list-title: 1.8125rem; /* article heading */
+  --text-nav-label: 1.375rem;
+  --text-nav-active: 2rem;
+  --text-calendar: 3.5rem;
   
   /* Reading view - separate scale, user-configurable */
   --reading-size: 1.125rem;       /* default 18px, user can adjust */
@@ -227,21 +245,26 @@ Color is functional, not decorative. The accent color appears sparingly and only
 
 ```css
 :root {
-  --color-text: #252722;
-  --color-text-secondary: #62645d;
-  --color-text-tertiary: #65675f;
-  --color-bg: #f5f2eb;
-  --color-bg-elevated: #faf8f3;
+  --color-text: #153c32;
+  --color-text-secondary: #466257;
+  --color-text-tertiary: #466257;
+  --color-bg: #eaf0d8;
+  --color-bg-elevated: #f1f5e3;
   --color-media-bg: #faf8f3;    /* paper backing for source images in every theme */
-  --color-rule: #d2d0c5;
-  --color-rule-strong: #bdbbb0;
-  --color-accent: #9a462f;
+  --color-rule: #b5c8a9;
+  --color-rule-strong: #8ba585;
+  --color-accent: #17694e;
+  --color-nav-bg: #153c32;
+  --color-nav-text: #eaf0d8;
+  --color-source-bg: #d2dfbb;
   --color-highlight: #fff3a8;    /* highlight yellow, low saturation */
   --color-highlight-friend: #b8d4e8;  /* friend's highlights - distinguishable */
 }
 ```
 
-The paper background (`#f5f2eb`) and rust accent (`#9a462f`) establish the Editorial direction. Accent is reserved for active navigation, selection, and small action affordances.
+The mint field and forest destination band establish Field's composition.
+Selection and action affordances use the green accent sparingly. Publisher
+images keep a neutral paper backing across themes.
 
 ### Dark theme
 
@@ -250,16 +273,21 @@ The paper background (`#f5f2eb`) and rust accent (`#9a462f`) establish the Edito
   --color-text: #e8e6e0;
   --color-text-secondary: #a8a6a0;
   --color-text-tertiary: #929088;
-  --color-bg: #1a1a18;
-  --color-bg-elevated: #242422;
-  --color-rule: #2a2a28;
-  --color-accent: #d97a52;       /* warmer accent for dark mode */
+  --color-bg: #1c211b;
+  --color-bg-elevated: #242b22;
+  --color-rule: #384734;
+  --color-rule-strong: #52604b;
+  --color-accent: #b5d99b;
+  --color-nav-bg: #132e24;
+  --color-nav-text: #eaf0d8;
+  --color-source-bg: #263422;
   --color-highlight: #5a4d1a;
   --color-highlight-friend: #2d4659;
 }
 ```
 
-Same warm bias as light mode — `#1a1a18` rather than pure neutral. Text is `#e8e6e0` rather than `#ffffff` to reduce contrast slightly.
+Dark mode retains a forest band and pale type; it does not invert the band into
+a light block. Text is `#e8e6e0` rather than pure white.
 
 ### Sepia theme
 
@@ -272,6 +300,9 @@ Same warm bias as light mode — `#1a1a18` rather than pure neutral. Text is `#e
   --color-bg-elevated: #ede4cd;
   --color-rule: #d8cdb3;
   --color-accent: #8a4a2a;
+  --color-nav-bg: #463923;
+  --color-nav-text: #f4ecd8;
+  --color-source-bg: #e6dcc2;
   --color-highlight: #d8c878;
   --color-highlight-friend: #b8c8a8;
 }
@@ -289,7 +320,10 @@ For users who like the e-reader feel.
   --color-bg: #000000;            /* true black for OLED */
   --color-bg-elevated: #0e0e0c;
   --color-rule: #1a1a18;
-  --color-accent: #d97a52;
+  --color-accent: #b5d99b;
+  --color-nav-bg: #0e1911;
+  --color-nav-text: #d4d2cc;
+  --color-source-bg: #111a10;
   --color-highlight: #4a3d10;
   --color-highlight-friend: #1d2e3d;
 }
@@ -307,32 +341,33 @@ We do not auto-switch based on system theme by default. Some users want their re
 
 ### Application chrome
 
-The desktop layout has three primary regions: a sidebar (destinations and subscriptions), a main content area (lists or reading view), and a status strip. The sidebar can collapse; in a reading view, the sidebar should be hidden by default to maximize reading focus.
+The desktop layout has a destination band, main content area, and status strip.
+Sources are a deliberate drawer, hidden by default. The destination band
+contracts while reading; sources then occupy an optional left sidebar.
 
 ```
-┌─ Sidebar ───────┬──── Main content ──────────┐
-│ carrel.         │                             │
-│                 │                             │
-│ Today           │                             │
-│ Reading         │     [list or article]       │
-│ Library         │                             │
-│ Highlights      │                             │
-│                 │                             │
-│ Subscriptions   │                             │
-│ …               │                             │
-└─────────────────┴─────────────────────────────┘
-   ↑ status strip (sync, errors, system status, optional)
+┌───────────────────────────────────────────────────┐
+│ carrel   Today  Reading  Library  Highlights   +   │
+├───────────────────────────────────────────────────┤
+│ [optional sources drawer and utilities]            │
+├───────────────────────────────────────────────────┤
+│ date       source · length                actions │
+│            article heading                        │
+│            excerpt                                │
+├───────────────────────────────────────────────────┤
+│ status                                 Appearance │
+└───────────────────────────────────────────────────┘
 ```
 
-The sidebar has four primary destinations: Today, Reading, Library, and
+The band has four primary destinations: Today, Reading, Library, and
 Highlights. All, Unread, and Starred are filters inside Library, with their
 existing routes retained. Friends and Lists appear when their first useful flows
-work. Subscriptions sit below the primary destinations. There are no counts or
+work. Subscriptions and utilities live in Sources. There are no counts or
 badges. Today means posts published in the past 24 hours, with first arrival as
 the fallback for undated posts. Its subtitle states the publication window
 explicitly. Older posts remain in Library and individual feed views.
 
-There is one reader layout with a collapsible navigation sidebar. It starts
+There is one reader layout with a collapsible source sidebar. It starts
 hidden. Cmd+B and a visible reader control show or hide it without remounting
 the article or losing its scroll position. The choice carries across articles
 for the session. Returning to a list restores its filter, selected item, and
@@ -394,8 +429,9 @@ The reading view is the application's most important screen and the one that sho
 The header is small and quiet: title, byline, source/length/date in muted secondary text. No related-articles strip, no engagement bar, no recommended-for-you. Just the article.
 
 The reader has a slim persistent action rail above the scrolling article area.
-It exposes a named return destination, plain Previous/Next navigation, sidebar
-visibility, star/unstar, mark read/unread, open original, and item info. Previous
+It exposes a named return destination, plain Previous/Next navigation,
+star/unstar, mark read/unread, open original, and item info. Source visibility
+is controlled from the compact destination band or Cmd+B. Previous
 and Next only navigate. A separately labeled “Mark read & next” action and `n`
 explicitly complete the current article. At the final item, completion returns
 to the originating list. `p` browses backward without marking read. Existing
@@ -702,14 +738,25 @@ Small lowercase labels with a subtle background tint, separated from titles. Cli
 
 ### Feed management
 
-The sidebar Feeds section lists subscribed feed titles, falling back to host or URL when the feed has not been fetched yet. Feed rows are plain navigation rows with a small explicit remove affordance. Selecting a feed opens a normal item list filtered to that feed. No unread counts, badges, or freshness counters appear beside feeds.
+The Sources drawer lists subscribed feed titles, falling back to host or URL
+when the feed has not been fetched yet. Feed rows are plain navigation rows
+with a small explicit remove affordance. Selecting a feed opens a normal item
+list filtered to that feed. No unread counts, badges, or freshness counters
+appear beside feeds.
 
 Subscriptions use canonical URL order from their first appearance, matching the
 store's list order. Fetching a title or updating fetch status does not reorder
 the rows after the add dialog closes.
 
-Adding a feed uses a compact user-initiated overlay with one URL input. Saving
-the subscription closes the dialog and exposes the subscribed feed immediately.
+Adding a feed uses a compact user-initiated overlay accepting a website or feed
+URL, including a bare website address. Discovery runs locally, first parsing a
+direct feed, then inspecting standard alternate RSS, Atom, or JSON feed links.
+Relative links resolve against the final page URL and its HTML base. Every
+candidate is fetched politely and parsed before it is offered. One valid feed
+is selected automatically; several valid feeds produce an explicit title-and-URL
+chooser. An error leaves the input intact for correction or retry. Closing or
+editing the form during discovery invalidates the pending result. Saving
+the subscription closes the dialog and reveals Sources with the subscribed feed immediately.
 Its first fetch runs independently; a fetch failure does not undo or disguise a
 successful subscription. Removing a feed makes clear that saved items remain in
 Carrel; removal only stops future fetches.
@@ -728,7 +775,8 @@ Async list/article/highlight results apply only to the request and item that
 started them. A failed optimistic action restores the affected state and reports
 the failure quietly, preserving the working list or article.
 
-Feed fetch progress and non-fatal errors surface in the status strip. The sidebar may expose a small explicit "Fetch" command, but it never animates or prompts for attention.
+Feed fetch progress and non-fatal errors surface in the status strip. The band
+exposes an explicit refresh icon; it never animates or prompts for attention.
 
 An explicit **Fetch** obtains the feed body again so failed article caching can
 recover even when the publisher's feed has not changed. Scheduled polling keeps
@@ -789,7 +837,10 @@ These are design moves that conflict with the principles and that we explicitly 
 
 **Animation as decoration.** Every animation must convey something. "It looks nice" is not enough.
 
-**Variable-width chrome.** The sidebar is a fixed width; the reading measure is a fixed width. We do not try to fluidly resize chrome to "match the user's window." Users with extremely narrow or wide monitors get different defaults; we don't reflow continuously.
+**Variable-width chrome.** The desktop source sidebar is a fixed width; the
+reading measure has a fixed maximum. At narrow widths sources become a drawer
+above the content and the destination band uses compact labels. Reading text
+does not continuously scale to fill the window.
 
 **Onboarding tutorials.** The first run shows OPML import (or skip) and that's it. Discovery happens through use. The keymap reference (`?`) is the user's reference, not a forced walkthrough.
 

@@ -511,11 +511,11 @@ pub(crate) fn list_route_view(
                 <label for="article-search">{move || search_label(&spec.get())}</label>
                 <div class="list-search-control">
                     <input id="article-search" type="search" node_ref=search_input autocomplete="off" spellcheck="false" maxlength="512"
-                        aria-describedby="article-search-help" placeholder="Title or cached text" prop:value=move || draft.get()
+                        aria-describedby="article-search-help" placeholder=move || search_label(&spec.get()) prop:value=move || draft.get()
                         on:input=move |event| change_search.run(event_target_value(&event))/>
                     <Show when=move || !draft.get().is_empty()><button type="button" on:click=move |_| clear_search.run(())>"Clear"</button></Show>
                 </div>
-                <p id="article-search-help">"Each word matches a word beginning in the title or cached text."</p>
+                <p id="article-search-help" class="search-help">"Each word matches a word beginning in the title or cached text."</p>
                 <Show when=move || query.get().is_some()>
                     <p class="search-status" role="status">{move || match search_status.get() {
                         crate::api::SearchStatus::Preparing => "Preparing cached text. Titles are searchable now.",

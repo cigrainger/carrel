@@ -26,8 +26,12 @@ pub fn ItemList(
                     let id = item.id.clone();
                     let index = Memo::new(move |_| items.with(|items| items.iter().position(|item| item.id == id).unwrap_or(initial_index)));
                     let selected = Signal::derive(move || selected_index.get() == index.get());
+                    let repeated = Signal::derive(move || items.with(|items| {
+                        let current = index.get();
+                        current > 0 && items.get(current).and_then(|item| item.date.as_ref()).zip(items.get(current - 1).and_then(|item| item.date.as_ref())).is_some_and(|(date, previous)| date.iso == previous.iso)
+                    }));
                     let item = row_data(items, item);
-                    view! { <ItemRow index=index item=item selected=selected on_open=on_open on_read=on_read on_star=on_star on_select=on_select/> }
+                    view! { <ItemRow index=index item=item selected=selected repeated=repeated on_open=on_open on_read=on_read on_star=on_star on_select=on_select/> }
                 }
             </For>
         </ul>
@@ -51,6 +55,7 @@ pub fn ItemRow(
     #[prop(into)] index: Signal<usize>,
     #[prop(into)] item: Signal<ItemSummary>,
     #[prop(into)] selected: Signal<bool>,
+    #[prop(into)] repeated: Signal<bool>,
     on_open: UnsyncCallback<usize>,
     on_read: UnsyncCallback<usize>,
     on_star: UnsyncCallback<usize>,
@@ -58,13 +63,19 @@ pub fn ItemRow(
 ) -> impl IntoView {
     view! {
         <li class="item-row" class:is-selected=move || selected.get() data-item-id=move || item.get().id on:focusin=move |_| on_select.run(index.get_untracked())>
-            <span class="read-indicator" aria-hidden="true">{move || if item.get().read_state == "unread" { "●" } else { "○" }}</span>
+            {move || item.get().date.map(|date| view! {
+                <time class="item-date" class:is-repeat=move || repeated.get() datetime=date.iso aria-label=date.label.clone() title=date.label>
+                    <span class="calendar-day">{date.day}</span><span class="calendar-month">{date.caption.map(|caption| view! { <span class="calendar-origin">{caption}</span> })}{date.month}<br/>{date.year}</span>
+                </time>
+            }.into_any()).unwrap_or_else(|| view! { <span class="item-date date-unavailable">"Date unknown"</span> }.into_any())}
             <div class="item-row-body">
-                <h2><button class="item-open" type="button" on:click=move |_| on_open.run(index.get_untracked())>{move || item.get().title}</button></h2>
                 <p class="item-meta">
-                    <span>{move || item.get().source_name}</span><span>{move || item.get().length_label}</span><span>{move || item.get().time_label}</span>
+                    <span class="read-indicator" role="img" aria-label=move || if item.get().read_state == "unread" { "Unread" } else { "Read" }>{move || if item.get().read_state == "unread" { "●" } else { "○" }}</span>
+                    <span>{move || item.get().source_name}</span><span>{move || item.get().length_label}</span>
                 </p>
+                <h2><button class="item-open" type="button" on:click=move |_| on_open.run(index.get_untracked())>{move || item.get().title}</button></h2>
                 <p class="item-excerpt">{move || item.get().summary.unwrap_or_default()}</p>
+            </div>
                 <div class="item-row-actions">
                     <button class="item-state-action" type="button"
                         aria-label=move || if item.get().read_state == "read" { "Mark unread" } else { "Mark read" }
@@ -80,7 +91,6 @@ pub fn ItemRow(
                         <Icon name=IconName::Star/>
                     </button>
                 </div>
-            </div>
         </li>
     }
 }
@@ -98,6 +108,7 @@ mod tests {
                 source_name: "Example".into(),
                 length_label: "5 min".into(),
                 time_label: "Now".into(),
+                date: None,
                 read_state: "unread".into(),
                 starred: false,
                 primary_url: None,
@@ -134,7 +145,7 @@ mod tests {
             <ItemList
                 items=Signal::stored(vec![ItemSummary {
                     id: "item-1".into(), title: "The shape of a small reader".into(), source_name: "Example".into(),
-                    length_label: "5 min".into(), time_label: "2h ago".into(), read_state: "unread".into(), starred: true,
+                    length_label: "5 min".into(), time_label: "2h ago".into(), date: None, read_state: "unread".into(), starred: true,
                     primary_url: None, summary: Some("A compact summary.".into()), discovered_at_micros: 1,
                 }])
                 selected_index=Signal::stored(0)

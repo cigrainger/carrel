@@ -125,11 +125,25 @@ pub struct ItemSummary {
     pub source_name: String,
     pub length_label: String,
     pub time_label: String,
+    #[serde(default)]
+    pub date: Option<ItemDate>,
     pub read_state: String,
     pub starred: bool,
     pub primary_url: Option<String>,
     pub summary: Option<String>,
     pub discovered_at_micros: i64,
+}
+
+/// Native calendar presentation for an article row.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ItemDate {
+    pub iso: String,
+    pub day: String,
+    pub month: String,
+    pub year: String,
+    #[serde(default)]
+    pub caption: Option<String>,
+    pub label: String,
 }
 
 /// Full item payload returned by the native shell for the reading route.
@@ -289,6 +303,13 @@ pub struct KeymapBindingOverride {
     pub layer: String,
     pub key: String,
     pub action: String,
+}
+
+/// Validated feed choice returned without changing subscriptions.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct FeedCandidate {
+    pub url: String,
+    pub title: String,
 }
 
 /// Feed subscription returned by the native shell.
@@ -749,6 +770,27 @@ pub async fn list_feeds() -> Result<Vec<FeedSummary>, ApiError> {
 /// Load feed subscriptions for SSR tests and non-wasm builds.
 #[cfg(not(target_arch = "wasm32"))]
 pub async fn list_feeds() -> Result<Vec<FeedSummary>, ApiError> {
+    Ok(Vec::new())
+}
+
+/// Discover validated feeds at a website or feed address.
+#[cfg(target_arch = "wasm32")]
+pub async fn discover_feeds(url: String) -> Result<Vec<FeedCandidate>, ApiError> {
+    #[derive(Serialize)]
+    struct Args {
+        url: String,
+    }
+    let args = serde_wasm_bindgen::to_value(&Args { url })
+        .map_err(|error| ApiError::new(error.to_string()))?;
+    let feeds = tauri_invoke("discover_feeds", args)
+        .await
+        .map_err(api_error_from_js)?;
+    serde_wasm_bindgen::from_value(feeds).map_err(|error| ApiError::new(error.to_string()))
+}
+
+/// Discovery placeholder for non-webview builds.
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn discover_feeds(_url: String) -> Result<Vec<FeedCandidate>, ApiError> {
     Ok(Vec::new())
 }
 
