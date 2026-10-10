@@ -359,6 +359,10 @@ return path, rows, selected identity/index, and scroll offset. The reader sideba
 is one session signal; toggling it changes the shell grid without replacing the
 article. These are presentation caches; Cozo remains authoritative.
 
+Newly saved subscriptions enter the sidebar in the same URL order returned by
+the store. Background fetch metadata therefore cannot reposition a row after
+the add dialog closes.
+
 Archive filters and pagination contracts live in `carrel-core::library`.
 `carrel-store::library` filters before limiting and joins article metadata,
 read state, and stars in one query per page. Cursors use descending publication

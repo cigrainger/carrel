@@ -163,6 +163,8 @@ fn publish_subscription(controller: FeedController, feed: FeedSummary) {
         } else {
             feeds.push(feed);
         }
+        // Match the store before closing Add, so the first fetch cannot move a row.
+        feeds.sort_unstable_by(|left, right| left.url.cmp(&right.url));
     });
     controller.bump_refresh();
 }
@@ -377,6 +379,42 @@ mod tests {
     fn decode_feed_path_rejects_bad_escapes() {
         assert_eq!(decode_feed_path("https%3A%2"), None);
         assert_eq!(decode_feed_path("https%3X"), None);
+    }
+
+    #[test]
+    fn newly_added_subscriptions_keep_the_store_order_before_and_after_fetch() {
+        Owner::new().with(|| {
+            let controller = provide_feed_controller();
+            let json = FeedSummary {
+                url: "https://json.blog/feed.xml".into(),
+                title: None,
+                description: None,
+                display_name: "json.blog".into(),
+                last_fetched_label: "Never".into(),
+                fetch_interval_seconds: 3600,
+                consecutive_failures: 0,
+                folder: None,
+                auto_mark_read: false,
+            };
+            let mut elixir = FeedSummary {
+                url: "https://elixir-lang.org/blog".into(),
+                display_name: "elixir-lang.org".into(),
+                ..json.clone()
+            };
+            publish_subscription(controller, json.clone());
+            publish_subscription(controller, elixir.clone());
+            let before_fetch = controller.feeds.get_untracked();
+            // The native store returns subscriptions in canonical URL order.
+            assert_eq!(before_fetch, vec![elixir.clone(), json.clone()]);
+            controller.feeds.set(vec![elixir.clone(), json.clone()]);
+            assert_eq!(controller.feeds.get_untracked(), before_fetch);
+
+            elixir.title = Some("The Elixir Blog".into());
+            elixir.display_name = "The Elixir Blog".into();
+            elixir.consecutive_failures = 1;
+            publish_subscription(controller, elixir.clone());
+            assert_eq!(controller.feeds.get_untracked(), vec![elixir, json]);
+        });
     }
 
     #[test]

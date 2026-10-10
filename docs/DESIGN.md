@@ -676,6 +676,10 @@ Small lowercase labels with a subtle background tint, separated from titles. Cli
 
 The sidebar Feeds section lists subscribed feed titles, falling back to host or URL when the feed has not been fetched yet. Feed rows are plain navigation rows with a small explicit remove affordance. Selecting a feed opens a normal item list filtered to that feed. No unread counts, badges, or freshness counters appear beside feeds.
 
+Subscriptions use canonical URL order from their first appearance, matching the
+store's list order. Fetching a title or updating fetch status does not reorder
+the rows after the add dialog closes.
+
 Adding a feed uses a compact user-initiated overlay with one URL input. Saving
 the subscription closes the dialog and exposes the subscribed feed immediately.
 Its first fetch runs independently; a fetch failure does not undo or disguise a
