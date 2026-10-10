@@ -108,6 +108,16 @@ These are the load-bearing flows. Understanding them is the fastest way to under
 
 The principle: a fact is written exactly once at the source of truth (Cozo), and all other consumers learn about it via emitted events. The bridge to Iroh is asynchronous and observational; the user's action does not block on sync.
 
+Private reading intent, position, star, and subscription actions use signed,
+content-addressed causal records in Cozo. Each action commits its immutable
+history, query projection, and durable mirror queue entry in one transaction.
+Events may wake the bridge; they are not the durable record of work. The bridge
+acknowledges an exact revision only after persisting it to the Iroh mirror.
+Verified incoming history waits in Cozo for missing parents or article targets;
+dependency promotion filters for readiness before bounding its batch. A device's
+HTTP cache state is excluded from portable subscription records. The concrete
+conflict rules and migration/adoption boundaries are in `SCHEMA.md`.
+
 ### 2. Fetching and ingesting a feed
 
 ```

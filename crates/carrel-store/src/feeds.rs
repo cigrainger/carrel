@@ -91,9 +91,26 @@ impl Store {
     /// keep their first imported outline. HTTP cache state and personal reading
     /// facts are untouched; new subscriptions start with default fetch settings.
     pub fn import_feed_subscriptions(&self, subscriptions: &[FeedSubscription]) -> Result<()> {
+        let _guard = self
+            .private_state_lock
+            .lock()
+            .expect("private state write lock");
         let mut unique = BTreeMap::new();
         for subscription in subscriptions {
             let url = canonical_feed_url(&subscription.url)?;
+            if self.get_feed(&url)?.is_none()
+                && !self
+                    .private_state_heads(&carrel_core::private_state::StateKey {
+                        kind: carrel_core::private_state::StateKind::Subscription,
+                        target: url.clone(),
+                    })?
+                    .is_empty()
+            {
+                return Err(StoreError::InvalidInput {
+                    context: "feed subscription",
+                    message: "signed membership requires an explicit signed resubscription".into(),
+                });
+            }
             unique.entry(url).or_insert(subscription);
         }
         let rows = unique
@@ -133,7 +150,23 @@ impl Store {
 
     /// Remove a feed subscription by URL.
     pub fn remove_feed(&self, url: &str) -> Result<bool> {
+        let _guard = self
+            .private_state_lock
+            .lock()
+            .expect("private state write lock");
         let url = canonical_feed_url(url)?;
+        if !self
+            .private_state_heads(&carrel_core::private_state::StateKey {
+                kind: carrel_core::private_state::StateKind::Subscription,
+                target: url.clone(),
+            })?
+            .is_empty()
+        {
+            return Err(StoreError::InvalidInput {
+                context: "feed subscription",
+                message: "signed membership requires an explicit signed removal".into(),
+            });
+        }
         let existed = self.get_feed(&url)?.is_some();
         self.query_with_params(
             r#"
@@ -200,6 +233,10 @@ impl Store {
         url: &str,
         metadata: &FeedFetchMetadata,
     ) -> Result<FeedRecord> {
+        let _guard = self
+            .private_state_lock
+            .lock()
+            .expect("private state write lock");
         let mut feed = self.ensure_feed(url)?;
         feed.last_fetched_micros = Some(now_micros());
         if let Some(etag) = &metadata.etag_header {
@@ -221,6 +258,10 @@ impl Store {
         url: &str,
         metadata: &FeedFetchMetadata,
     ) -> Result<FeedRecord> {
+        let _guard = self
+            .private_state_lock
+            .lock()
+            .expect("private state write lock");
         let mut feed = self.ensure_feed(url)?;
         feed.last_fetched_micros = Some(now_micros());
         feed.consecutive_failures = feed.consecutive_failures.saturating_add(1);
@@ -247,7 +288,12 @@ impl Store {
         metadata: &FeedFetchMetadata,
         contents: &[ExtractedEntryContent],
     ) -> Result<IngestStats> {
+        let _guard = self
+            .private_state_lock
+            .lock()
+            .expect("private state write lock");
         let feed_url = canonical_feed_url(feed_url)?;
+        let mut feed = self.ensure_feed(&feed_url)?;
         let mut stats = IngestStats::default();
         let contents_by_guid = contents
             .iter()
@@ -266,8 +312,16 @@ impl Store {
             }
         }
 
-        let mut feed = self.ensure_feed(&feed_url)?;
-        feed.title = parsed.title.clone().or(feed.title);
+        let portable = self.private_state_value(&carrel_core::private_state::StateKey {
+            kind: carrel_core::private_state::StateKind::Subscription,
+            target: feed_url.clone(),
+        })?;
+        feed.title = match portable {
+            Some(carrel_core::private_state::StateValue::Subscription(value)) => {
+                value.title.or_else(|| parsed.title.clone()).or(feed.title)
+            }
+            _ => parsed.title.clone().or(feed.title),
+        };
         feed.description = parsed.description.clone().or(feed.description);
         feed.last_fetched_micros = Some(now_micros());
         if let Some(etag) = &metadata.etag_header {
@@ -373,7 +427,30 @@ impl Store {
     fn ensure_feed(&self, url: &str) -> Result<FeedRecord> {
         match self.get_feed(url)? {
             Some(feed) => Ok(feed),
-            None => self.add_feed(url),
+            None => {
+                let url = canonical_feed_url(url)?;
+                if !self
+                    .private_state_heads(&carrel_core::private_state::StateKey {
+                        kind: carrel_core::private_state::StateKind::Subscription,
+                        target: url.clone(),
+                    })?
+                    .is_empty()
+                {
+                    return Err(StoreError::InvalidInput {
+                        context: "feed subscription",
+                        message: "fetch completed after subscription removal".into(),
+                    });
+                }
+                // The caller owns the membership lock. The legacy convenience
+                // API takes it too, so insert defaults directly for untracked
+                // developer imports rather than re-entering that lock.
+                self.query_with_params("?[url, title, description, last_fetched, last_modified_header, etag_header, fetch_interval_seconds, consecutive_failures, folder, auto_mark_read] <- [[$url, null, null, null, null, null, $interval, 0, null, false]] :put feed {url => title, description, last_fetched, last_modified_header, etag_header, fetch_interval_seconds, consecutive_failures, folder, auto_mark_read}", BTreeMap::from([("url".into(), DataValue::from(url.as_str())), ("interval".into(), DataValue::from(DEFAULT_FETCH_INTERVAL_SECONDS))]))?;
+                self.get_feed(&url)?
+                    .ok_or_else(|| StoreError::InvalidInput {
+                        context: "feed subscription",
+                        message: "new subscription unavailable".into(),
+                    })
+            }
         }
     }
 
@@ -571,7 +648,7 @@ impl Store {
     }
 }
 
-fn canonical_feed_url(url: &str) -> Result<String> {
+pub(crate) fn canonical_feed_url(url: &str) -> Result<String> {
     let parsed = url::Url::parse(url).map_err(|source| StoreError::InvalidUrl {
         url: url.to_string(),
         source,

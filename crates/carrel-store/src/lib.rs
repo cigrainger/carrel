@@ -17,6 +17,7 @@ pub mod keystore;
 pub mod library;
 mod migrations;
 pub mod notes;
+pub mod private_state;
 pub mod schema;
 pub mod search;
 
@@ -45,6 +46,8 @@ pub struct Store {
     annotation_lock: Arc<Mutex<()>>,
     // Orders authorization changes against local annotation writes.
     identity_lock: Arc<Mutex<()>>,
+    // Serializes private register writes and their derived query projections.
+    private_state_lock: Arc<Mutex<()>>,
 }
 
 impl Store {
@@ -60,6 +63,7 @@ impl Store {
             db,
             annotation_lock: Arc::new(Mutex::new(())),
             identity_lock: Arc::new(Mutex::new(())),
+            private_state_lock: Arc::new(Mutex::new(())),
         })
     }
 
@@ -70,6 +74,7 @@ impl Store {
             db,
             annotation_lock: Arc::new(Mutex::new(())),
             identity_lock: Arc::new(Mutex::new(())),
+            private_state_lock: Arc::new(Mutex::new(())),
         })
     }
 

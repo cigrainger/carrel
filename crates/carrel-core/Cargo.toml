@@ -14,6 +14,7 @@ identity = [
     "dep:hex",
     "dep:getrandom",
     "dep:time",
+    "dep:serde_json",
     "dep:zeroize",
 ]
 
@@ -24,6 +25,7 @@ ed25519-dalek = { workspace = true, optional = true }
 hex = { workspace = true, optional = true }
 getrandom = { workspace = true, optional = true }
 serde = { workspace = true }
+serde_json = { workspace = true, optional = true }
 thiserror = { workspace = true }
 time = { workspace = true, optional = true }
 zeroize = { workspace = true, optional = true }

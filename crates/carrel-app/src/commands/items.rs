@@ -3,7 +3,9 @@
 use std::collections::BTreeMap;
 use std::str::FromStr;
 
+use carrel_core::identity::Keypair;
 use carrel_core::library::{ItemFilter, ItemPage};
+use carrel_core::private_state::{ReadIntent, StateKey, StateKind, StateValue};
 use carrel_core::shape::Shape;
 use carrel_store::blobs::{BlobId, BlobStore};
 use cozo::{DataValue, JsonData, Num};
@@ -36,41 +38,40 @@ pub fn get_item(state: State<'_, AppState>, id: String) -> Result<Option<ItemDet
 /// Persist reading progress for one item.
 #[tauri::command]
 pub fn update_read_progress(state: State<'_, AppState>, update: ReadProgressUpdate) -> Result<()> {
-    let _guard = state
-        .item_state_lock
-        .lock()
-        .expect("item state lock poisoned");
-    update_read_progress_in_store(&state.store, update)
+    let device = super::highlights::load_device_key(&state.paths)?;
+    state.store.record_read_progress(
+        &update.item_id,
+        update.progress,
+        update.scroll_y,
+        unix_micros(OffsetDateTime::now_utc()),
+        &device,
+    )?;
+    Ok(())
 }
 
 /// Mark one item as read.
 #[tauri::command]
 pub fn mark_item_read(state: State<'_, AppState>, request: ItemStateRequest) -> Result<()> {
-    let _guard = state
-        .item_state_lock
-        .lock()
-        .expect("item state lock poisoned");
-    write_read_state(&state.store, &request.item_id, "read", Some(1.0), None)
+    let device = super::highlights::load_device_key(&state.paths)?;
+    write_read_intent(&state.store, &request.item_id, ReadIntent::Read, &device)
 }
 
 /// Mark one item as unread.
 #[tauri::command]
 pub fn mark_item_unread(state: State<'_, AppState>, request: ItemStateRequest) -> Result<()> {
-    let _guard = state
-        .item_state_lock
-        .lock()
-        .expect("item state lock poisoned");
-    write_read_state(&state.store, &request.item_id, "unread", None, None)
+    let device = super::highlights::load_device_key(&state.paths)?;
+    write_read_intent(&state.store, &request.item_id, ReadIntent::Unread, &device)
 }
 
 /// Toggle the starred state for one item and return the new value.
 #[tauri::command]
 pub fn toggle_item_star(state: State<'_, AppState>, request: ItemStateRequest) -> Result<bool> {
-    let _guard = state
-        .item_state_lock
-        .lock()
-        .expect("item state lock poisoned");
-    toggle_star_in_store(&state.store, &request.item_id)
+    let device = super::highlights::load_device_key(&state.paths)?;
+    Ok(state.store.toggle_private_star(
+        &request.item_id,
+        unix_micros(OffsetDateTime::now_utc()),
+        &device,
+    )?)
 }
 
 /// Generic item-state mutation request.
@@ -194,6 +195,7 @@ struct ArticleMetadata {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 struct ReadStateRecord {
+    #[cfg(test)]
     exists: bool,
     state: String,
     progress: Option<f64>,
@@ -352,6 +354,7 @@ fn read_state(store: &carrel_store::Store, item_id: &str) -> Result<ReadStateRec
 
     let Some(row) = rows.rows.first() else {
         return Ok(ReadStateRecord {
+            #[cfg(test)]
             exists: false,
             state: "unread".to_string(),
             progress: None,
@@ -360,6 +363,7 @@ fn read_state(store: &carrel_store::Store, item_id: &str) -> Result<ReadStateRec
     };
 
     Ok(ReadStateRecord {
+        #[cfg(test)]
         exists: true,
         state: value_as_string(required(row, 0, "read_state.state")?)?,
         progress: optional_f64(required(row, 1, "read_state.progress")?)?,
@@ -422,35 +426,40 @@ fn shape_tag_labels(shape: &Shape) -> Vec<&'static str> {
     tags
 }
 
+#[cfg(test)]
 fn update_read_progress_in_store(
     store: &carrel_store::Store,
     update: ReadProgressUpdate,
 ) -> Result<()> {
-    if !update.progress.is_finite() || !update.scroll_y.is_finite() {
-        return Err(AppError::InvalidData {
-            context: "read_progress",
-            value: "progress and position must be finite".into(),
-        });
-    }
-    let current = read_state(store, &update.item_id)?;
-    let state = if current.exists {
-        current.state.as_str()
-    } else {
-        "reading"
-    };
-    write_read_state(
-        store,
+    store.record_read_progress(
         &update.item_id,
-        state,
-        Some(if state == "read" {
-            1.0
-        } else {
-            update.progress.clamp(0.0, 1.0)
-        }),
-        Some(update.scroll_y.max(0.0)),
-    )
+        update.progress,
+        update.scroll_y,
+        unix_micros(OffsetDateTime::now_utc()),
+        &Keypair::from_seed(&[21; 32]),
+    )?;
+    Ok(())
 }
 
+fn write_read_intent(
+    store: &carrel_store::Store,
+    item_id: &str,
+    intent: ReadIntent,
+    signer: &Keypair,
+) -> Result<()> {
+    store.write_private_state(
+        StateKey {
+            kind: StateKind::Read,
+            target: item_id.into(),
+        },
+        StateValue::Read(intent),
+        unix_micros(OffsetDateTime::now_utc()),
+        signer,
+    )?;
+    Ok(())
+}
+
+#[cfg(test)]
 fn write_read_state(
     store: &carrel_store::Store,
     item_id: &str,
@@ -500,30 +509,13 @@ fn write_read_state(
     Ok(())
 }
 
+#[cfg(test)]
 fn toggle_star_in_store(store: &carrel_store::Store, item_id: &str) -> Result<bool> {
-    let starred = !starred_state(store, item_id)?;
-    store.query_with_params(
-        r#"
-        ?[item_id, starred, updated_at] :=
-            item_id = $item_id,
-            starred = $starred,
-            updated_at = $updated_at
-        :put item_star {item_id => starred, updated_at}
-        "#,
-        BTreeMap::from([
-            ("item_id".to_string(), DataValue::from(item_id)),
-            ("starred".to_string(), DataValue::Bool(starred)),
-            (
-                "updated_at".to_string(),
-                DataValue::Validity(cozo::Validity::from((
-                    unix_micros(OffsetDateTime::now_utc()),
-                    true,
-                ))),
-            ),
-        ]),
-    )?;
-
-    Ok(starred)
+    Ok(store.toggle_private_star(
+        item_id,
+        unix_micros(OffsetDateTime::now_utc()),
+        &Keypair::from_seed(&[21; 32]),
+    )?)
 }
 
 fn readable_html(blobs: &BlobStore, blob_id: &str) -> Result<String> {
@@ -1279,6 +1271,7 @@ mod tests {
         let store = carrel_store::Store::open_in_memory().unwrap();
         store.migrate().unwrap();
         for state in ["read", "unread", "reading", "abandoned", "skimmed"] {
+            insert_state_item(&store, state);
             write_read_state(&store, state, state, None, Some(640.0)).unwrap();
             update_read_progress_in_store(
                 &store,
@@ -1303,6 +1296,7 @@ mod tests {
     fn marking_read_or_unread_keeps_the_saved_position() {
         let store = carrel_store::Store::open_in_memory().unwrap();
         store.migrate().unwrap();
+        insert_state_item(&store, "one");
         update_read_progress_in_store(
             &store,
             ReadProgressUpdate {
@@ -1312,12 +1306,24 @@ mod tests {
             },
         )
         .unwrap();
-        write_read_state(&store, "one", "read", Some(1.0), None).unwrap();
+        write_read_intent(
+            &store,
+            "one",
+            ReadIntent::Read,
+            &Keypair::from_seed(&[21; 32]),
+        )
+        .unwrap();
         assert_eq!(
             read_state(&store, "one").unwrap().last_scroll_y,
             Some(640.0)
         );
-        write_read_state(&store, "one", "unread", None, None).unwrap();
+        write_read_intent(
+            &store,
+            "one",
+            ReadIntent::Unread,
+            &Keypair::from_seed(&[21; 32]),
+        )
+        .unwrap();
         assert_eq!(
             read_state(&store, "one").unwrap().last_scroll_y,
             Some(640.0)
@@ -1328,6 +1334,7 @@ mod tests {
     fn progress_clamps_bounds_and_rejects_nonfinite_values_without_writing() {
         let store = carrel_store::Store::open_in_memory().unwrap();
         store.migrate().unwrap();
+        insert_state_item(&store, "bounded");
         for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
             for (progress, scroll_y) in [(value, 0.0), (0.0, value)] {
                 assert!(
@@ -1366,6 +1373,22 @@ mod tests {
         )
         .unwrap();
         assert_eq!(read_state(&store, "bounded").unwrap().progress, Some(0.0));
+    }
+
+    fn insert_state_item(store: &carrel_store::Store, id: &str) {
+        insert_item(
+            store,
+            InsertItem {
+                id,
+                title: "Article",
+                url: None,
+                summary: None,
+                discovered_at_micros: 1,
+                read_state: None,
+                site_name: None,
+                minutes: None,
+            },
+        );
     }
 
     struct InsertItem<'a> {

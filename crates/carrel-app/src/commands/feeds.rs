@@ -22,7 +22,10 @@ pub fn list_feeds(state: State<'_, AppState>) -> Result<Vec<FeedSummary>> {
 /// Subscribe to a feed URL.
 #[tauri::command]
 pub fn add_feed(state: State<'_, AppState>, url: String) -> Result<FeedSummary> {
-    let feed = state.store.add_feed(&url)?;
+    let device = super::highlights::load_device_key(&state.paths)?;
+    let feed = state
+        .store
+        .add_private_feed(&url, feed_runner::now_micros(), &device)?;
     state.feed_status.set_idle(
         format!("Subscribed to {}", display_name(&feed)),
         FeedStatusCounts::default(),
@@ -33,7 +36,10 @@ pub fn add_feed(state: State<'_, AppState>, url: String) -> Result<FeedSummary> 
 /// Remove a feed subscription. Existing items remain in the local library.
 #[tauri::command]
 pub fn remove_feed(state: State<'_, AppState>, url: String) -> Result<bool> {
-    let removed = state.store.remove_feed(&url)?;
+    let device = super::highlights::load_device_key(&state.paths)?;
+    let removed = state
+        .store
+        .remove_private_feed(&url, feed_runner::now_micros(), &device)?;
     if removed {
         state.feed_status.set_idle(
             "Feed removed; saved items remain",

@@ -9,6 +9,9 @@ pub type Result<T> = std::result::Result<T, StoreError>;
 /// Errors raised by the Carrel store boundary.
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
+    /// Invalid signed private action or incompatible causal ancestry.
+    #[error("invalid private state revision: {0}")]
+    StateRevision(#[from] carrel_core::private_state::StateRevisionError),
     /// A note's signed content or causal ancestry is invalid.
     #[error("invalid note revision: {0}")]
     NoteRevision(#[from] carrel_core::annotation::note::NoteRevisionError),

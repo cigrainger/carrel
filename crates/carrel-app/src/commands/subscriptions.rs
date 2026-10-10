@@ -29,9 +29,12 @@ pub async fn import_subscriptions(window: Window, state: State<'_, AppState>) ->
     };
     let path = file.into_path().map_err(file_error)?;
     let store = state.store.clone();
-    tauri::async_runtime::spawn_blocking(move || import_from_path(&store, &path))
-        .await
-        .map_err(file_error)??;
+    let device = super::highlights::load_device_key(&state.paths)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        import_from_path_with_signer(&store, &path, &device)
+    })
+    .await
+    .map_err(file_error)??;
     state.feed_status.set_idle(
         "Subscriptions imported; existing settings kept",
         FeedStatusCounts::default(),
@@ -67,7 +70,20 @@ pub async fn export_subscriptions(window: Window, state: State<'_, AppState>) ->
     Ok(true)
 }
 
+#[cfg(test)]
 fn import_from_path(store: &Store, path: &Path) -> Result<()> {
+    import_from_path_with_signer(
+        store,
+        path,
+        &carrel_core::identity::Keypair::from_seed(&[22; 32]),
+    )
+}
+
+fn import_from_path_with_signer(
+    store: &Store,
+    path: &Path,
+    signer: &carrel_core::identity::Keypair,
+) -> Result<()> {
     let file = std::fs::File::open(path).map_err(file_error)?;
     let mut bytes = Vec::new();
     file.take(u64::try_from(MAX_OPML_BYTES + 1).expect("fixed byte limit"))
@@ -79,7 +95,7 @@ fn import_from_path(store: &Store, path: &Path) -> Result<()> {
             "This OPML file contains no feed subscriptions".into(),
         ));
     }
-    store.import_feed_subscriptions(&subscriptions)?;
+    store.import_private_subscriptions(&subscriptions, crate::feed_runner::now_micros(), signer)?;
     Ok(())
 }
 

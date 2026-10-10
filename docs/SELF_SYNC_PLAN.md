@@ -120,9 +120,32 @@ retry, explicit resolution, and read-only review on isolated fixture data.
 `just check` passes 258 tests, formatting, and native/CSR lint. Full native and
 CSR builds pass with temporary inspection dependencies and commands removed.
 
-Pairing, private state history/outbox, replication, and transport verification
-remain outstanding; the goal stays active. These separate-store and native
-annotation checks do not claim to verify network synchronization.
+Schema 6 now journals signed read intent, position, star, and subscription actions
+with explicit parents and a durable mirror queue. Equal-time or reversed-clock
+branches follow the selected conflict policies; an action observing all heads
+can reverse them. Reading and Starred query rows, including ordering timestamps,
+converge independently of delivery order. Repeated scrolling never becomes an
+explicit completion intent. Generic legacy cursors and negative states survive
+local adoption, and rejected cursors retain the original data. Migration only
+adds resumable relations/guards and never invents legacy signatures.
+
+Native reading controls, feed actions, OPML import, and CLI subscription actions
+use the journal. Imports remain atomic and preserve existing settings. HTTP
+cache metadata stays local, chosen feed titles survive refresh, and late fetches
+cannot resurrect removed membership. Verified deliveries wait durably for
+parents/items, ready work cannot be starved by a blocked queue prefix, and mirror
+acknowledgement removes only the exact revision. Separate-store tests cover all
+delivery orders, duplicate replay, restart, clock boundaries, explicit reversal,
+revocation/forwarding, forgery, raw immutability, and transactional failure.
+`just check` passes 279 tests, formatting, and native/CSR lint. Full native and
+CSR builds pass.
+
+Pairing, cached-item/annotation replication, the Iroh mirror/transport, and
+transport verification remain outstanding; the goal stays active. These
+separate-store tests do not claim to verify network synchronization. Before
+enabling the bridge, legacy note ancestry must also be checked across partial
+copies: migration-derived parents are unsigned metadata and must neither
+override a modern draft nor cause a collision between identical signed versions.
 
 ## Decisions already made
 
@@ -145,6 +168,10 @@ annotation checks do not claim to verify network synchronization.
   conflict** control. Resolution explicitly chooses or merges the retained drafts.
 - Desktop pairing uses a one-time copy/paste invitation. QR pairing is deferred
   until it supports a useful mobile flow.
+- Concurrent explicit read/unread actions keep the article **unread**. Concurrent
+  star/unstar actions keep it **starred**. Concurrent subscription add/remove
+  actions keep it **removed**. An explicit action after observing both branches
+  supersedes the conflict; replaying an unchanged snapshot cannot undo it.
 
 ## Foundations to resolve before the sync milestone
 

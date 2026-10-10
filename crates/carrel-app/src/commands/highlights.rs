@@ -451,7 +451,7 @@ fn existing_device_key(paths: &InstallPaths) -> Result<Option<Keypair>> {
     }
 }
 
-fn load_device_key(paths: &InstallPaths) -> Result<Keypair> {
+pub(crate) fn load_device_key(paths: &InstallPaths) -> Result<Keypair> {
     load_device_key_from_path(&paths.keys)
 }
 

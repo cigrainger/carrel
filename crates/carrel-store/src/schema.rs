@@ -40,6 +40,53 @@ pub const RELATIONS: &[&str] = &[
     "device_local_block",
     "note_legacy_v3",
     "note_incoming",
+    "self_state",
+    "self_state_incoming",
+    "self_state_outbox",
+];
+
+/// Individually resumable private history and mirror work-queue relations.
+pub const PRIVATE_STATE_RELATIONS: &[(&str, &str)] = &[
+    (
+        "self_state",
+        ":create self_state {register: String, revision_id: String => encoded: Bytes, parents: [String], kind: String, target: String}",
+    ),
+    (
+        "self_state_incoming",
+        ":create self_state_incoming {register: String, revision_id: String => encoded: Bytes, parents: [String], kind: String, target: String}",
+    ),
+    (
+        "self_state_outbox",
+        ":create self_state_outbox {register: String, revision_id: String}",
+    ),
+];
+
+/// Journal ancestry and signed bytes cannot be replaced or erased.
+pub const PRIVATE_STATE_GUARDS: &[&str] = &[
+    r#"::set_triggers self_state on put {
+        invalid[reg, rev] := _new[reg, rev, encoded, parents, kind, target],
+            _old[reg, rev, old_encoded, old_parents, old_kind, old_target],
+            [encoded, parents, kind, target] != [old_encoded, old_parents, old_kind, old_target]
+        invalid[reg, rev] := _new[reg, rev, encoded, parents, kind, target], parent in parents,
+            not *self_state{register: reg, revision_id: parent}
+        invalid[reg, rev] := _new[reg, rev, encoded, parents, kind, target], parent in parents, parent == rev
+        invalid[reg, rev] := _new[reg, rev, encoded, parents, kind, target], kind != 'subscription', not *item{id: target}
+        invalid[reg, rev] := _new[reg, rev, encoded, parents, kind, target], kind != 'subscription', *entity_tombstone{id: target @ "END"}
+        ?[reg, rev] := invalid[reg, rev]
+        :assert none
+    } on rm { ?[reg, rev] := _old[reg, rev, encoded, parents, kind, target] :assert none }"#,
+    r#"::set_triggers self_state_incoming on put {
+        ?[reg, rev] := _new[reg, rev, encoded, parents, kind, target],
+            _old[reg, rev, old_encoded, old_parents, old_kind, old_target],
+            [encoded, parents, kind, target] != [old_encoded, old_parents, old_kind, old_target]
+        :assert none
+    }"#,
+    r#"::set_triggers read_state on put {
+        managed[id] := *self_state{target: id, kind}, (kind == 'read' || kind == 'position')
+        ?[id] := _new[id, state, progress, label, position, at], _old[id, old_state, old_progress, old_label, old_position, old_at],
+            to_int(at) < to_int(old_at), not managed[id]
+        :assert none
+    }"#,
 ];
 
 /// Staging table renamed to `note` after preserving every old signed revision.

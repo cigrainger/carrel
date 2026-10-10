@@ -27,3 +27,7 @@ pub mod shape;
 
 /// Portable subscription metadata used by import and export.
 pub mod subscription;
+
+/// Signed private registers and deterministic concurrent-intent resolution.
+#[cfg(feature = "identity")]
+pub mod private_state;

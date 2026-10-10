@@ -10,6 +10,7 @@ use carrel_feeds::{detect_shape, extract_embedded_html, extract_from_url, rewrit
 use carrel_store::Store;
 use carrel_store::blobs::BlobStore;
 use carrel_store::feeds::{EntryError, FeedFetchMetadata, FeedRecord, IngestStats};
+use carrel_store::keystore::Keystore;
 
 use crate::config::Context;
 use crate::error::{CliError, Result};
@@ -59,7 +60,8 @@ pub async fn run(context: &Context, command: &FeedCommand) -> Result<()> {
 }
 
 fn add_feed(context: &Context, store: &Store, url: &str) -> Result<()> {
-    let feed = store.add_feed(url)?;
+    let device = Keystore::open(&context.paths.keys).load_device()?;
+    let feed = store.add_private_feed(url, now_micros(), &device)?;
     if context.json {
         output::print_json(&feed_json(&feed))
     } else {
@@ -91,7 +93,8 @@ fn list_feeds(context: &Context, store: &Store) -> Result<()> {
 }
 
 fn remove_feed(context: &Context, store: &Store, url: &str) -> Result<()> {
-    let removed = store.remove_feed(url)?;
+    let device = Keystore::open(&context.paths.keys).load_device()?;
+    let removed = store.remove_private_feed(url, now_micros(), &device)?;
     if context.json {
         output::print_json(&json!({ "removed": removed }))
     } else if removed {

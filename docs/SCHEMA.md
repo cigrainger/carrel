@@ -45,7 +45,10 @@ Tombstones are entity-scoped. Once an entity ID is tombstoned, future writes for
 
 Facts that may cross trust boundaries — that may be sent to or received from another peer — carry a cryptographic signature by the originating author. The bridge layer (`carrel-sync`) verifies every incoming signed fact against the claimed author's public key before writing it to Cozo.
 
-Facts that are purely local (your read state, your private tags, your application configuration) do not carry signatures. The sync channel between your own devices is already authenticated; signing each fact would be wasted work.
+Private state that crosses devices carries a device signature as well as using an
+authenticated self channel. This preserves provenance when an authorized device
+forwards another device's history. Local configuration and derived query
+projections do not carry signatures and are never accepted directly from peers.
 
 The schema makes this explicit: signed-fact relations have a `signature` field; local-only relations don't. This is the load-bearing distinction in the schema and we treat it as inviolable.
 
@@ -349,7 +352,10 @@ State that is yours alone — your read state, your tags, your stars, your lists
 }
 ```
 
-`state` is explicit and user-controlled. The default behavior is: opening an item moves it to `reading`; closing prompts (once, with a "stop asking" option) whether to mark `read`. After that, no nagging. We do not silently auto-mark items read.
+`state` is user-controlled. Recording a first reading position gives an untouched
+item the `reading` state; subsequent position writes preserve explicit intent.
+Completion uses an explicit control. Closing, syncing, and reaching the end do
+not mark an article read and do not prompt for completion.
 
 `progress` is generic 0.0-1.0 so queries can compare across types: "items I'm 80% through" works for articles, books, podcasts, videos uniformly. `progress_label` is the human string we show in the UI.
 
@@ -375,6 +381,67 @@ Tags are user-applied labels. An item can have many tags; the same tag can apply
 ```
 
 Star is a special boolean that gets its own table for query speed. Could in principle be a tag with name "starred"; we keep it separate because it's used everywhere and benefits from being a one-bit column rather than a string match.
+
+### Private causal state journal (version 6)
+
+```
+:create self_state {
+    register: String, revision_id: String =>
+    encoded: Bytes, parents: [String], kind: String, target: String
+}
+:create self_state_incoming {
+    register: String, revision_id: String =>
+    encoded: Bytes, parents: [String], kind: String, target: String
+}
+:create self_state_outbox { register: String, revision_id: String }
+```
+
+The register is the kind and stable target, with independent registers for
+explicit read intent, reading position, star, and subscription membership/settings.
+Each immutable record contains a bounded canonical CBOR payload, signing device,
+display time, sorted immediate parent revision IDs, signature, and BLAKE3 revision
+ID. Parents must belong to the same register. Clocks never establish causality.
+Local actions supersede every currently observed head in their register. Replays
+add no new action. The derived `read_state`, `item_star`, and `feed` rows remain
+query projections; their timestamps must not choose a conflict winner.
+
+Concurrent read/unread keeps unread; star/unstar keeps starred; subscription
+add/remove keeps removed. The legacy read states remain supported: incomplete
+intent takes precedence over completion (unread, reading, skimmed, abandoned,
+read in that order). Concurrent reading positions and concurrent present-feed
+settings use a deterministic revision-ID order, never a wall clock or maximum
+progress. A causally later position may move backwards when rereading. Explicit
+read intent and position never supersede each other's history.
+Implicit `reading` is derived from position alone and is not adopted as explicit
+intent. Otherwise repeated progress writes could compete with completion.
+Reading/Starred ordering timestamps are derived consistently from the current
+heads; a signed causal successor may have a lower display time. The old monotonic
+timestamp guard remains for unsigned rows without a journal.
+
+Local journal, projection, and outbox writes form one Cozo transaction. Incoming
+records require the bound master, an active authenticated sending device, and a
+certified originating device. A valid active device may forward history authored
+by a now-revoked device; new deliveries from the revoked device are rejected.
+Verified records missing parents or living item targets wait durably in
+`self_state_incoming`. Readiness is evaluated before a bounded promotion batch.
+Tombstoned item targets discard pending writes and cannot be resurrected.
+Journal records and their indexed metadata are immutable, including exact replay.
+The outbox is a durable mirror work queue, not an alternative source of truth.
+
+Migration 6 only adds relations and guards; it does not fabricate signatures for
+legacy unsigned state. Existing local rows remain usable. A later explicit local
+adoption signs the current values with the installation's operational key before
+the initial private transfer. Adoption must preserve negative states and generic
+position cursors, and must never introduce a new root where a causal register
+already exists. Portable subscription settings exclude conditional HTTP headers,
+fetch timestamps, failure counts, and adaptive intervals.
+Adoption retains existing reading/star display times without claiming that a
+legacy row was originally signed. It validates and adopts a cursor before
+materializing its intent, so a rejected cursor cannot be cleared by an earlier
+intent write. A first explicit reading action also adopts any legacy cursor.
+
+**Trust:** self channel only. Social peers cannot supply these records or their
+unsigned materializations. No general-purpose remote Cozo script is accepted.
 
 ```
 :create reading_list {
@@ -678,13 +745,22 @@ Threading via `parent_reply_id`. A reply at the top level has `parent_reply_id: 
 }
 ```
 
-The feed table is just the *subscription*. When a feed item arrives, it becomes an `item` (with `kind: "article"` typically) and gets a `feed_guid` identifier in `item_identifier` linking it back. The feed itself is not the item.
+The feed table materializes present subscriptions together with device-local HTTP
+cache metadata. Membership, chosen title, folder, and the legacy setting are
+portable signed private state; conditional headers, fetched times, intervals,
+descriptions, and failures are local. A missing portable title allows the local
+fetch to supply a display title. A chosen title survives feed refresh. When a feed
+item arrives, it becomes an `item` and gets a scoped `feed_guid` identifier. The
+feed itself is not an item. Fetch results serialize with membership writes and
+cannot recreate a signed removed subscription.
 
 Adaptive intervals: `fetch_interval_seconds` is updated based on observed update frequency. Decay up when feeds prove stale; decay down when they prove fresh.
 
-`auto_mark_read` is for the firehose subscriptions (Hacker News, link aggregators) where the user wants them present but doesn't want unread accumulation.
+`auto_mark_read` is a retained legacy field. It does not enable automatic reading
+completion in the current product.
 
-**Trust:** local. Your feed list is yours.
+**Trust:** private self channel through the signed journal. Direct feed rows and
+device-local HTTP metadata are never accepted from another peer.
 
 ## The peer allow-list
 

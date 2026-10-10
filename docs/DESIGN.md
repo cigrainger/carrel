@@ -400,6 +400,16 @@ the end of the archive. Filtering applies to all saved articles before any
 limit; an old unread or starred article remains reachable. Returning from
 reading and refreshing after a local write preserve the loaded older boundary.
 
+### Private state across devices
+
+Private state synchronization preserves explicit intent. Concurrent read/unread
+keeps unread, star/unstar keeps starred, and feed add/remove keeps removed.
+An explicit action after observing the conflict reverses the result normally;
+these simple registers do not add conflict dialogs. Reading position has its
+own history, so delayed scrolling cannot undo completion or mark-unread. A
+causally later position can move backwards when rereading. Reading and Starred
+ordering uses consistent display timestamps from the current history heads.
+
 ### Annotation review
 
 Highlights uses the same editorial grid and explicit **Load older** interaction

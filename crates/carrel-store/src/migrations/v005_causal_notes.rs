@@ -190,7 +190,10 @@ mod tests {
                 store.query(schema::CREATE_INCOMING_NOTE_GUARDS).unwrap();
             }
             store.migrate().unwrap();
-            assert_eq!(store.current_schema_version().unwrap(), 5);
+            assert_eq!(
+                store.current_schema_version().unwrap(),
+                crate::CURRENT_SCHEMA_VERSION
+            );
             assert_eq!(store.get_note("old").unwrap(), Some(records[2].clone()));
             let history = store.note_revisions("old").unwrap();
             assert_eq!(history.len(), 3);

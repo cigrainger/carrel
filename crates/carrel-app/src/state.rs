@@ -14,8 +14,6 @@ use crate::config::InstallPaths;
 pub struct AppState {
     pub(crate) blobs: BlobStore,
     pub(crate) feed_fetch_lock: Arc<AsyncMutex<()>>,
-    // Read/modify/write commands must not race a delayed progress snapshot.
-    pub(crate) item_state_lock: Arc<Mutex<()>>,
     // Includes first-use key creation, before the store's annotation write lock.
     pub(crate) annotation_lock: Arc<Mutex<()>>,
     pub(crate) feed_status: FeedStatusHandle,
@@ -30,7 +28,6 @@ impl AppState {
         Self {
             blobs,
             feed_fetch_lock: Arc::new(AsyncMutex::new(())),
-            item_state_lock: Arc::new(Mutex::new(())),
             annotation_lock: Arc::new(Mutex::new(())),
             feed_status: FeedStatusHandle::new(),
             search_status: Arc::new(Mutex::new(SearchStatus::Preparing)),
