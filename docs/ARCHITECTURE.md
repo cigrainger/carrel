@@ -108,6 +108,27 @@ These are the load-bearing flows. Understanding them is the fastest way to under
 
 The principle: a fact is written exactly once at the source of truth (Cozo), and all other consumers learn about it via emitted events. The bridge to Iroh is asynchronous and observational; the user's action does not block on sync.
 
+The private Iroh endpoint uses the installation's certified operational key as
+its TLS endpoint identity. Endpoint hooks check the locally bound master and
+active device certificates before outgoing dials and after every incoming or
+outgoing handshake, across docs, blobs, and gossip. A copied document or blob
+ticket does not grant private access. This endpoint has no social protocols.
+The native pairing flow will use a separately bounded invitation protocol;
+receiving a certificate never chooses a local master identity.
+
+The store emits an authorization-change signal only after a successful typed
+identity write. The transport rechecks Cozo and closes existing connections for
+revoked devices, including streams already transferring data. Weak connection
+handles avoid retaining idle connections or reference cycles. Authorization
+checks and connection registration serialize with that recheck so a handshake
+cannot miss a revocation wake-up. Signals carry no facts and are not durable
+state; restart reconstructs authorization from Cozo.
+
+Iroh docs and blobs use persistent storage beneath the installation's sync
+cache. The transport can start only for its locally bound, active device key.
+Its protocol host is separate from fact mirroring: the bridge must still verify
+each incoming typed record and materialize it through the store API.
+
 Private reading intent, position, star, and subscription actions use signed,
 content-addressed causal records in Cozo. Each action commits its immutable
 history, query projection, and durable mirror queue entry in one transaction.

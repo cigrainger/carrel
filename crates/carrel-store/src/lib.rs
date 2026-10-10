@@ -27,6 +27,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use cozo::{DataValue, DbInstance, NamedRows, ScriptMutability};
+use tokio::sync::watch;
 
 pub use crate::error::{Result, StoreError};
 
@@ -48,6 +49,9 @@ pub struct Store {
     identity_lock: Arc<Mutex<()>>,
     // Serializes private register writes and their derived query projections.
     private_state_lock: Arc<Mutex<()>>,
+    // Wake private transports after typed identity writes; Cozo remains
+    // authoritative, and the signal contains no facts.
+    identity_revision: watch::Sender<u64>,
 }
 
 impl Store {
@@ -64,6 +68,7 @@ impl Store {
             annotation_lock: Arc::new(Mutex::new(())),
             identity_lock: Arc::new(Mutex::new(())),
             private_state_lock: Arc::new(Mutex::new(())),
+            identity_revision: watch::channel(0).0,
         })
     }
 
@@ -75,6 +80,7 @@ impl Store {
             annotation_lock: Arc::new(Mutex::new(())),
             identity_lock: Arc::new(Mutex::new(())),
             private_state_lock: Arc::new(Mutex::new(())),
+            identity_revision: watch::channel(0).0,
         })
     }
 

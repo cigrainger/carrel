@@ -17,6 +17,18 @@ Keep the Leptos/Tauri approach and the mainstream Rust libraries. Update their s
 
 Repository activity is a maintenance signal, not a quality score. Candidate extraction libraries were inspected, not benchmarked or adopted. Kuchiki's cited advisory is an informational maintenance advisory.
 
+The self-sync implementation on 10 October adds a compatible current family:
+[Iroh 1.3.0](https://crates.io/crates/iroh/1.3.0),
+[iroh-docs 0.101.0](https://crates.io/crates/iroh-docs/0.101.0),
+[iroh-blobs 0.103.1](https://crates.io/crates/iroh-blobs/0.103.1), and
+[iroh-gossip 0.101.0](https://crates.io/crates/iroh-gossip/0.101.0).
+Their Rust minimum is 1.91. These dependencies now run the persistent private
+protocol host, with current endpoint hooks covering both incoming and outgoing
+authorization. Direct defaults are disabled; docs/blobs use filesystem storage,
+gossip uses its network feature, and Iroh uses ring TLS and native networking.
+No remote RPC service is enabled. `futures-core` is an already-transitive,
+test-only dependency for observing the real denied document-sync result.
+
 ## Applied version changes
 
 The manifests and lockfile were refreshed to current stable releases compatible with the workspace's Rust 1.95 requirement. Rust 1.99 stable is already installed on this machine; the workspace minimum stays at 1.95.

@@ -8,3 +8,14 @@ publish.workspace = true
 [dependencies]
 carrel-core = { workspace = true }
 carrel-store = { workspace = true }
+iroh = { workspace = true }
+iroh-blobs = { workspace = true }
+iroh-docs = { workspace = true }
+iroh-gossip = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+zeroize = { workspace = true }
+
+[dev-dependencies]
+futures-core = { workspace = true }
+tempfile = { workspace = true }

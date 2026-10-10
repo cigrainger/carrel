@@ -35,6 +35,20 @@ impl SelfDevice {
 }
 
 impl Store {
+    /// Subscribe to successful typed identity writes without exposing any facts.
+    ///
+    /// Consumers re-query Cozo; coalesced wake-ups are sufficient. Raw queries
+    /// are a development escape hatch and do not emit authorization events.
+    pub fn subscribe_identity_changes(&self) -> tokio::sync::watch::Receiver<u64> {
+        self.identity_revision.subscribe()
+    }
+
+    fn identity_changed(&self) {
+        self.identity_revision.send_modify(|revision| {
+            *revision = revision.wrapping_add(1);
+        });
+    }
+
     /// Return the explicitly bound identity, without inferring trust from peers.
     pub fn self_identity(&self) -> Result<Option<SelfIdentity>> {
         let rows = self.query("?[master, device] := *self_identity{singleton: 0, master_pubkey: master, device_pubkey: device}")?;
@@ -83,6 +97,7 @@ impl Store {
         "#,
             params,
         )?;
+        self.identity_changed();
         Ok(binding)
     }
 
@@ -102,6 +117,7 @@ impl Store {
             "?[master_pubkey, device_pubkey, device_cert] <- [[$master, $device, $cert]] :put device_certificate {master_pubkey, device_pubkey => device_cert}",
             certificate_params(cert)?,
         )?;
+        self.identity_changed();
         Ok(())
     }
 
@@ -123,6 +139,7 @@ impl Store {
                 ("cert".into(), DataValue::Bytes(bytes)),
             ]),
         )?;
+        self.identity_changed();
         Ok(())
     }
 

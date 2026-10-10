@@ -16,6 +16,57 @@ fn cert(master: &Keypair, device: &Keypair, at: i64) -> DeviceCert {
     DeviceCert::new_at_micros(master, device.public(), at, Some("Device café".into()))
 }
 
+#[test]
+fn identity_wakeups_follow_successful_typed_writes_and_are_shared_across_clones() {
+    let store = store();
+    let master = Keypair::from_seed(&[101; 32]);
+    let local = Keypair::from_seed(&[102; 32]);
+    let remote = Keypair::from_seed(&[103; 32]);
+    let mut changes = store.subscribe_identity_changes();
+    assert!(
+        store
+            .bind_self_identity(&cert(&master, &local, 1), &remote)
+            .is_err()
+    );
+    assert!(!changes.has_changed().unwrap());
+    store
+        .bind_self_identity(&cert(&master, &local, 1), &local)
+        .unwrap();
+    assert!(changes.has_changed().unwrap());
+    assert_eq!(*changes.borrow_and_update(), 1);
+    store
+        .clone()
+        .accept_self_device_certificate(&cert(&master, &remote, 1))
+        .unwrap();
+    assert!(changes.has_changed().unwrap());
+    assert_eq!(*changes.borrow_and_update(), 2);
+    store
+        .accept_self_revocation(&RevocationCert::new_at_micros(
+            &master,
+            remote.public(),
+            i64::MAX,
+        ))
+        .unwrap();
+    assert!(changes.has_changed().unwrap());
+    assert_eq!(*changes.borrow_and_update(), 3);
+    assert!(
+        !store
+            .self_devices()
+            .unwrap()
+            .iter()
+            .find(|device| device.certificate.device_pubkey == *remote.public())
+            .unwrap()
+            .is_authorized()
+    );
+    let foreign = Keypair::from_seed(&[104; 32]);
+    assert!(
+        store
+            .accept_self_device_certificate(&cert(&foreign, &remote, 2))
+            .is_err()
+    );
+    assert!(!changes.has_changed().unwrap());
+}
+
 fn note(store: &Store, device: &Keypair) -> carrel_store::highlights::NoteRecord {
     store
         .put_note(

@@ -5,3 +5,9 @@
 
 #![deny(unsafe_code)]
 #![warn(missing_docs)]
+
+mod authorization;
+mod error;
+pub mod transport;
+
+pub use error::{Result, SyncError};

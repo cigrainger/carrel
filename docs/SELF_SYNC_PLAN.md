@@ -152,9 +152,24 @@ resolution, and interrupted/invalid migration.
 `just check` passes 284 tests, formatting, and native/CSR lint; both full app
 builds pass.
 
-Pairing, cached-item/annotation replication, the Iroh mirror/transport, and
+The private protocol host now uses persistent Iroh docs/blobs with the existing
+certified operational key as its endpoint and document author. Shared endpoint
+hooks cover incoming and outgoing docs, blobs, and gossip connections; typed
+identity changes wake a recheck that closes unauthorized live connections.
+Authorization query failures close access and surface an error. Cache setup
+protects the dedicated directory and cleans up partially opened stores on failure.
+Independent local Iroh endpoints verify actual bidirectional document/blob
+transfer, reopened content and subsequent writes after reconnect, refusal of an
+outsider's stolen write capability and known blob hash, all private ALPNs,
+permanent revocation of live connections, and local revocation/startup recovery.
+This host is not yet connected to the app's private fact journal or pairing UI.
+`just check` passes 293 tests, formatting, and native/CSR lint; full native and
+CSR builds pass. Transport tests use independent endpoints on one machine;
+physical two-machine and complete native pairing checks remain ahead.
+
+Pairing, cached-item/annotation replication, the app fact mirror, and
 transport verification remain outstanding; the goal stays active. These
-separate-store tests do not claim to verify network synchronization.
+tests do not claim to verify the complete two-device application flow.
 
 ## Decisions already made
 
@@ -184,7 +199,8 @@ separate-store tests do not claim to verify network synchronization.
 
 ## Foundations to resolve before the sync milestone
 
-The sync crate is currently a stub. The schema uses `Validity` values for
+The sync crate now hosts private Iroh protocols; fact mirroring and pairing
+remain to be implemented. The schema uses `Validity` values for
 several mutable relations rather than historical validity keys; replication
 must not assume that ordinary `:put` operations resolve concurrent writes.
 Document and migrate the required history/merge semantics before implementing
@@ -200,7 +216,7 @@ compatible family: [Iroh 1.3.0](https://crates.io/crates/iroh/1.3.0),
 The docs/gossip releases require Iroh `^1`; docs requires blobs `^0.103`.
 All have Rust 1.91 as their minimum, within this workspace's requirement.
 The later-dated blobs 0.97 maintenance release belongs to the older Iroh 0.95
-family and is not the compatible choice. Dependencies will be added alongside
-the actual bridge rather than an unused transport stub. Current APIs compose
+family and is not the compatible choice. This family now powers the actual
+private protocol host. Current APIs compose
 Endpoint/Router with blobs, gossip, and docs; every private protocol needs the
 bound-device authorization gate before accepting access.

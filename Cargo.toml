@@ -31,10 +31,15 @@ clap = { version = "4.6.7", features = ["derive"] }
 cozo = { version = "0.7.6", default-features = false, features = ["rayon", "storage-rocksdb"] }
 ed25519-dalek = "3.0.0"
 feed-rs = "3.0.0"
+futures-core = "0.3.34"
 getrandom = "0.4.3"
 hex = "0.4"
 html-escape = "0.2.15"
 httpdate = "1"
+iroh = { version = "1.3.0", default-features = false, features = ["tls-ring", "fast-apple-datapath", "portmapper"] }
+iroh-blobs = { version = "0.103.1", default-features = false, features = ["fs-store"] }
+iroh-docs = { version = "0.101.0", default-features = false, features = ["fs-store"] }
+iroh-gossip = { version = "0.101.0", default-features = false, features = ["net"] }
 kuchiki = "0.8.1"
 katex = "0.4.6"
 leptos = { version = "0.8.22", default-features = false }
