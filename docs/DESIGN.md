@@ -398,6 +398,11 @@ When the user scrolls, the application chrome should fade — not literally anim
 
 List views (Today, Library, Unread, Reading, Starred, and individual feeds) display items in chronological order by default unless the route is explicitly ordered by local action time: Reading uses the latest read-state update, and Starred uses the latest star update. Each item gets a row showing: title, source, time/length, a short excerpt (up to two lines), read state, and quiet star/read controls.
 
+The visible date uses publication time when supplied, with first arrival as the
+fallback for undated posts. Default chronological ordering and Today's 24-hour
+window use first arrival. Refreshing existing posts updates their metadata
+without resetting their arrival date or changing their archive position.
+
 ```
 ● Article Title                          Source · 5min   2h ago
   Brief excerpt of the first paragraph…  ⭑ #commons

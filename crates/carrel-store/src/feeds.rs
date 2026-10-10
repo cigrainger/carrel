@@ -497,6 +497,8 @@ impl Store {
         self.query_with_params(
             r#"
             {
+                arrival[discovered_at] := *item{id: $id, discovered_at}
+                arrival[discovered_at] := not *item{id: $id}, discovered_at = $discovered_at
                 ?[id, kind, title, creators, primary_url, published_at, language, summary, discovered_at] :=
                     id = $id,
                     kind = 'article',
@@ -506,7 +508,7 @@ impl Store {
                     published_at = $published_at,
                     language = $language,
                     summary = $summary,
-                    discovered_at = $discovered_at
+                    arrival[discovered_at]
                 :put item {id => kind, title, creators, primary_url, published_at, language, summary, discovered_at}
             }
             {
@@ -878,6 +880,95 @@ mod tests {
             )
             .unwrap();
         assert_eq!(rows.rows.len(), 1);
+    }
+
+    #[test]
+    fn feed_refresh_preserves_first_arrival_and_archive_position() {
+        use carrel_core::library::{ItemFilter, ItemView};
+
+        let store = Store::open_in_memory().unwrap();
+        store.migrate().unwrap();
+        let feed_url = "https://example.com/feed.xml";
+        let mut parsed = ParsedFeed {
+            title: Some("Example".into()),
+            description: None,
+            language: None,
+            entries: (1..=2)
+                .map(|number| ParsedEntry {
+                    feed_guid: format!("post-{number}"),
+                    title: Some(format!("Post {number}")),
+                    authors: Vec::new(),
+                    url: Some(format!("https://example.com/post-{number}")),
+                    published_at_micros: Some(number * 10),
+                    language: None,
+                    summary_html: None,
+                    content_html: None,
+                })
+                .collect(),
+        };
+        let metadata = FeedFetchMetadata::default();
+        assert_eq!(
+            store
+                .ingest_feed(feed_url, &parsed, &metadata)
+                .unwrap()
+                .new_items,
+            2
+        );
+        // Simulate arrivals from an earlier session, without a timing-dependent sleep.
+        store.query(r#"
+            ?[id, kind, title, creators, primary_url, published_at, language, summary, discovered_at] :=
+                *item{id, kind, title, creators, primary_url, published_at, language, summary},
+                discovered_at = validity(to_int(published_at) * 10)
+            :put item {id => kind, title, creators, primary_url, published_at, language, summary, discovered_at}
+        "#).unwrap();
+        let filter = ItemFilter {
+            view: ItemView::Library,
+            limit: Some(1),
+            ..ItemFilter::default()
+        };
+        let before = store.list_item_page(&filter, 0).unwrap();
+        assert_eq!(before.items[0].title, "Post 2");
+        assert_eq!(before.items[0].discovered_at_micros, 200);
+        parsed.entries[0].title = Some("Updated post 1".into());
+        let refreshed = store.ingest_feed(feed_url, &parsed, &metadata).unwrap();
+        assert_eq!(refreshed.new_items, 0);
+        assert_eq!(refreshed.updated_items, 2);
+        assert!(refreshed.errors.is_empty());
+
+        let after = store.list_item_page(&filter, 0).unwrap();
+        assert_eq!(after.items, before.items);
+        assert_eq!(after.next_cursor, before.next_cursor);
+        let older = store
+            .list_item_page(
+                &ItemFilter {
+                    after: before.next_cursor,
+                    ..filter
+                },
+                0,
+            )
+            .unwrap();
+        assert_eq!(older.items.len(), 1);
+        assert_eq!(older.items[0].title, "Updated post 1");
+        assert_eq!(older.items[0].discovered_at_micros, 100);
+        assert!(older.next_cursor.is_none());
+        assert!(
+            store
+                .list_item_page(&ItemFilter::default(), 1_000)
+                .unwrap()
+                .items
+                .is_empty()
+        );
+
+        let mut new_entry = parsed.entries[0].clone();
+        new_entry.feed_guid = "post-3".into();
+        new_entry.url = Some("https://example.com/post-3".into());
+        parsed.entries.push(new_entry);
+        let added = store.ingest_feed(feed_url, &parsed, &metadata).unwrap();
+        assert_eq!(added.new_items, 1);
+        assert_eq!(added.updated_items, 2);
+        let arrivals = store.list_item_page(&ItemFilter::default(), 1_000).unwrap();
+        assert_eq!(arrivals.items.len(), 1);
+        assert!(arrivals.items[0].discovered_at_micros > 1_000);
     }
 
     #[test]

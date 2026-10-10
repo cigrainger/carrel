@@ -182,6 +182,10 @@ The `kind` field is a discriminator for which extension relation(s) to consult. 
 
 `creators` is deliberately a generic list of strings, not a structured author/role model. We do not need full bibliographic precision for this product; we need "who made this." If a future use case demands more, we add a side relation rather than complicate `item`.
 
+Feed refresh preserves an existing item's first `discovered_at`. It records
+arrival, independently of `published_at`, rather than the last fetch. Publisher
+dates may be updated when feed metadata changes.
+
 **Trust:** signed when shared (a share carries item facts to peers who don't have them yet); local otherwise.
 
 ### Identifiers

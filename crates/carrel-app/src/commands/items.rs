@@ -233,7 +233,11 @@ pub(crate) fn list_item_page_from_store(
                         word_count: item.word_count,
                         ..Default::default()
                     }),
-                    time_label: time_label(item.discovered_at_micros, now),
+                    time_label: time_label(
+                        item.published_at_micros
+                            .unwrap_or(item.discovered_at_micros),
+                        now,
+                    ),
                     summary,
                     id: item.id,
                     title,
@@ -661,7 +665,11 @@ fn summary_from_parts(
         title,
         source_name: source_name(item.primary_url.as_deref(), article.site_name.as_deref()),
         length_label: length_label(article),
-        time_label: time_label(item.discovered_at_micros, now),
+        time_label: time_label(
+            item.published_at_micros
+                .unwrap_or(item.discovered_at_micros),
+            now,
+        ),
         read_state,
         starred,
         primary_url: item.primary_url.clone(),
@@ -741,10 +749,10 @@ fn length_label(article: &ArticleMetadata) -> String {
     "unknown length".to_string()
 }
 
-fn time_label(discovered_at_micros: i64, now: OffsetDateTime) -> String {
-    let discovered_at =
-        OffsetDateTime::from_unix_timestamp(discovered_at_micros / 1_000_000).unwrap_or(now);
-    let age = now - discovered_at;
+fn time_label(timestamp_micros: i64, now: OffsetDateTime) -> String {
+    let timestamp =
+        OffsetDateTime::from_unix_timestamp(timestamp_micros / 1_000_000).unwrap_or(now);
+    let age = now - timestamp;
 
     if age <= Duration::ZERO {
         "now".to_string()
@@ -755,7 +763,7 @@ fn time_label(discovered_at_micros: i64, now: OffsetDateTime) -> String {
     } else if age < Duration::days(7) {
         format!("{}d ago", age.whole_days())
     } else {
-        let date = discovered_at.date();
+        let date = timestamp.date();
         format!(
             "{:04}-{:02}-{:02}",
             date.year(),
@@ -1019,6 +1027,56 @@ mod tests {
         assert_eq!(rows[0].source_name, "Example");
         assert_eq!(rows[0].length_label, "4 min");
         assert_eq!(rows[0].read_state, "reading");
+    }
+
+    #[test]
+    fn list_and_reader_dates_use_publication_with_arrival_fallback() {
+        let store = carrel_store::Store::open_in_memory().unwrap();
+        store.migrate().unwrap();
+        let tempdir = tempfile::tempdir().unwrap();
+        let blobs = BlobStore::open(tempdir.path());
+        for (id, published_at, expected) in [
+            ("dated", Some(1_600_000_000_000_000), "2020-09-13"),
+            ("undated", None, "2021-01-01"),
+        ] {
+            insert_item(
+                &store,
+                InsertItem {
+                    id,
+                    title: "An archived post",
+                    url: Some("https://example.com/post"),
+                    summary: None,
+                    discovered_at_micros: 1_609_459_200_000_000,
+                    read_state: None,
+                    site_name: None,
+                    minutes: None,
+                },
+            );
+            store.query_with_params(r#"
+                ?[id, kind, title, creators, primary_url, published_at, language, summary, discovered_at] :=
+                    *item{id: $id, kind, title, creators, primary_url, language, summary, discovered_at},
+                    id = $id, published_at = $published_at
+                :put item {id => kind, title, creators, primary_url, published_at, language, summary, discovered_at}
+            "#, BTreeMap::from([
+                ("id".into(), DataValue::from(id)),
+                ("published_at".into(), published_at.map(|time| DataValue::Validity(Validity::from((time, true)))).unwrap_or(DataValue::Null)),
+            ])).unwrap();
+            let page = list_item_page_from_store(
+                &store,
+                ItemFilter {
+                    view: ItemView::Library,
+                    ..ItemFilter::default()
+                },
+            )
+            .unwrap();
+            let row = page.items.iter().find(|item| item.id == id).unwrap();
+            assert_eq!(row.time_label, expected);
+            assert_eq!(row.discovered_at_micros, 1_609_459_200_000_000);
+            let detail = get_item_from_parts(&store, &blobs, id).unwrap().unwrap();
+            assert_eq!(detail.time_label, expected);
+            assert_eq!(detail.published_at.is_some(), published_at.is_some());
+            assert_eq!(detail.discovered_at, "2021-01-01T00:00:00Z");
+        }
     }
 
     #[test]

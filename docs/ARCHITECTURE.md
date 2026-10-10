@@ -195,6 +195,9 @@ hash) at the Cozo layer. Scheduled polling uses conditional requests. An article
 extraction failure does not prevent saving the entry's metadata; an explicit
 desktop **Fetch** downloads the feed body again and retries content caching,
 including when the feed's validators have not changed.
+An existing item's first `discovered_at` timestamp is retained during refresh;
+metadata and cached content can update without moving it through the archive or
+reintroducing it to Today's arrival window.
 
 Extraction removes elements with the HTML `hidden` attribute before checking
 for network error pages or sanitizing content. Dormant publisher error banners

@@ -20,6 +20,8 @@ pub struct LibraryItem {
     pub primary_url: Option<String>,
     /// Feed summary.
     pub summary: Option<String>,
+    /// Publisher date, when supplied, used for the visible item date.
+    pub published_at_micros: Option<i64>,
     /// Discovery time, independent of this view's sorting time.
     pub discovered_at_micros: i64,
     /// Stored read state, defaulting to unread.
@@ -122,9 +124,9 @@ impl Store {
             star[id, starred] := page[_, _, id], not *item_star{{item_id: id}}, starred = false
             article[id, site_name, minutes, words] := page[_, _, id], *item_article{{item_id: id, site_name, estimated_read_minutes: minutes, word_count: words}}
             article[id, site_name, minutes, words] := page[_, _, id], not *item_article{{item_id: id}}, site_name = null, minutes = null, words = null
-            ?[sort_at, id, title, primary_url, summary, discovered_at, state, starred, site_name, minutes, words] :=
+            ?[sort_at, id, title, primary_url, summary, discovered_at, state, starred, site_name, minutes, words, published_at] :=
                 page[_, sort_at, id],
-                *item{{id, title, primary_url, summary, discovered_at}},
+                *item{{id, title, primary_url, summary, discovered_at, published_at}},
                 state[id, state], star[id, starred], article[id, site_name, minutes, words]
             :sort -sort_at, id
         "#
@@ -211,6 +213,11 @@ impl Store {
                     title: string(&row[2])?,
                     primary_url: optional_string(&row[3])?,
                     summary: optional_string(&row[4])?,
+                    published_at_micros: match &row[11] {
+                        DataValue::Null => None,
+                        DataValue::Validity(value) => Some(value.timestamp.0.0),
+                        other => return Err(unexpected("published_at", other)),
+                    },
                     discovered_at_micros: match &row[5] {
                         DataValue::Validity(value) => value.timestamp.0.0,
                         other => return Err(unexpected("discovered_at", other)),
