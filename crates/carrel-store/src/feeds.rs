@@ -962,13 +962,16 @@ mod tests {
         let mut new_entry = parsed.entries[0].clone();
         new_entry.feed_guid = "post-3".into();
         new_entry.url = Some("https://example.com/post-3".into());
+        new_entry.published_at_micros = None;
         parsed.entries.push(new_entry);
         let added = store.ingest_feed(feed_url, &parsed, &metadata).unwrap();
         assert_eq!(added.new_items, 1);
         assert_eq!(added.updated_items, 2);
-        let arrivals = store.list_item_page(&ItemFilter::default(), 1_000).unwrap();
+        let since = super::now_micros() - carrel_core::library::TODAY_WINDOW_MICROS;
+        let arrivals = store.list_item_page(&ItemFilter::default(), since).unwrap();
         assert_eq!(arrivals.items.len(), 1);
-        assert!(arrivals.items[0].discovered_at_micros > 1_000);
+        assert!(arrivals.items[0].discovered_at_micros >= since);
+        assert!(arrivals.items[0].published_at_micros.is_none());
     }
 
     #[test]

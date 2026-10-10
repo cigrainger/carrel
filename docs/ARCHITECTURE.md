@@ -196,8 +196,9 @@ extraction failure does not prevent saving the entry's metadata; an explicit
 desktop **Fetch** downloads the feed body again and retries content caching,
 including when the feed's validators have not changed.
 An existing item's first `discovered_at` timestamp is retained during refresh;
-metadata and cached content can update without moving it through the archive or
-reintroducing it to Today's arrival window.
+metadata and cached content can update without changing its arrival order in
+the archive. Today uses publication time, with first arrival as the fallback
+for undated posts, so fetching an old post does not make it a recent publication.
 
 Extraction removes elements with the HTML `hidden` attribute before checking
 for network error pages or sanitizing content. Dormant publisher error banners
@@ -360,9 +361,11 @@ article. These are presentation caches; Cozo remains authoritative.
 
 Archive filters and pagination contracts live in `carrel-core::library`.
 `carrel-store::library` filters before limiting and joins article metadata,
-read state, and stars in one query per page. Cursors use descending discovery
-or action time with an ascending item-ID tie breaker. Today's time window is
-fixed for subsequent pages. List snapshots also retain the continuation and
+read state, and stars in one query per page. Cursors use descending publication
+time for Today (first arrival for undated posts), discovery time for the archive,
+or action time for Reading and Starred, with an ascending item-ID tie breaker.
+Today's 24-hour publication window excludes future dates and both boundaries
+are fixed for subsequent pages. List snapshots also retain the continuation and
 whether the archive end was reached; refreshes query through that older
 boundary. Async generations guard the entire multi-page refresh.
 

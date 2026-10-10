@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use carrel_core::library::{
-    ITEM_PAGE_SIZE, ItemCursor, ItemFilter, ItemPage, ItemView, search_terms,
+    ITEM_PAGE_SIZE, ItemCursor, ItemFilter, ItemPage, ItemView, TODAY_WINDOW_MICROS, search_terms,
 };
 use cozo::{DataValue, Num};
 
@@ -39,8 +39,8 @@ pub struct LibraryItem {
 impl Store {
     /// Query one archive page with a single joined store query.
     ///
-    /// `since_micros` bounds the initial Today query. Later pages retain that
-    /// window from their cursor. Other views ignore this argument.
+    /// `since_micros` starts Today's 24-hour publication window. Later pages
+    /// retain that window from their cursor. Other views ignore this argument.
     pub fn list_item_page(
         &self,
         filter: &ItemFilter,
@@ -77,7 +77,9 @@ impl Store {
             None
         };
         let membership = match &filter.view {
-            ItemView::Today => "sort_at = to_int(discovered_at), sort_at >= $since",
+            ItemView::Today => {
+                "publication_date[id, sort_at], sort_at >= $since, sort_at <= $until"
+            }
             ItemView::Library => "sort_at = to_int(discovered_at)",
             ItemView::Unread => "sort_at = to_int(discovered_at), unread[id]",
             ItemView::Reading => {
@@ -89,6 +91,14 @@ impl Store {
             ItemView::Feed { .. } => {
                 "*item_article{item_id: id, feed_url: $feed_url}, sort_at = to_int(discovered_at)"
             }
+        };
+        let publication_rules = if filter.view == ItemView::Today {
+            r#"
+            publication_date[id, date] := *item{id, published_at}, published_at != null, date = to_int(published_at)
+            publication_date[id, date] := *item{id, published_at: null, discovered_at}, date = to_int(discovered_at)
+            "#
+        } else {
+            ""
         };
         let (search_rules, search_membership) = if terms.is_some() {
             (
@@ -110,6 +120,7 @@ impl Store {
             unread[id] := *read_state{{item_id: id, state: 'unread'}}
             unread[id] := *item{{id}}, not *read_state{{item_id: id}}
             {search_rules}
+            {publication_rules}
             eligible[id, sort_at] :=
                 *item{{id, discovered_at}},
                 not *entity_tombstone{{id}},
@@ -159,6 +170,10 @@ impl Store {
                     DataValue::from(crate::search::SEARCH_EXTRACTOR_VERSION),
                 ),
                 ("since".into(), DataValue::from(since.unwrap_or(0))),
+                (
+                    "until".into(),
+                    DataValue::from(since.unwrap_or(0).saturating_add(TODAY_WINDOW_MICROS)),
+                ),
                 (
                     "feed_url".into(),
                     DataValue::from(match &filter.view {

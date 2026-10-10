@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::str::FromStr;
 
 use carrel_core::identity::Keypair;
-use carrel_core::library::{ItemFilter, ItemPage};
+use carrel_core::library::{ItemFilter, ItemPage, TODAY_WINDOW_MICROS};
 use carrel_core::private_state::{ReadIntent, StateKey, StateKind, StateValue};
 use carrel_core::shape::Shape;
 use carrel_store::blobs::{BlobId, BlobStore};
@@ -19,7 +19,7 @@ use crate::Result;
 use crate::error::AppError;
 use crate::state::AppState;
 
-const TODAY_LOOKBACK: Duration = Duration::hours(24);
+const TODAY_LOOKBACK: Duration = Duration::microseconds(TODAY_WINDOW_MICROS);
 const LEGACY_BLOB_URI_PREFIX: &str = "blob://";
 const WEBVIEW_BLOB_URI_PREFIX: &str = "carrel-blob://";
 

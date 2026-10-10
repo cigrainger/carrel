@@ -352,8 +352,90 @@ fn all_views_join_personal_state_and_use_their_documented_order() {
 }
 
 #[test]
+fn today_uses_publication_dates_with_arrival_fallback_and_excludes_future_posts() {
+    let store = Store::open_in_memory().unwrap();
+    store.migrate().unwrap();
+    let day = 86_400_000_000;
+    let since = 30 * day;
+    let now = since + day;
+    let rows = [
+        ("outdated-publication-new-arrival", Some(since - 1), now),
+        ("recent-published-old-arrival", Some(now - 10), since - 10),
+        ("newer-published-old-arrival", Some(now - 5), since - 20),
+        ("lower-bound", Some(since), now),
+        ("upper-bound", Some(now), since - 20),
+        ("undated-recent", None, now - 7),
+        ("undated-old", None, since - 1),
+        ("future-published", Some(now + 1), now),
+        ("undated-future", None, now + 1),
+    ]
+    .into_iter()
+    .map(|(id, published, arrived)| {
+        DataValue::List(vec![
+            DataValue::from(id),
+            DataValue::from("article"),
+            DataValue::from(id),
+            DataValue::List(Vec::new()),
+            DataValue::Null,
+            published.map(validity).unwrap_or(DataValue::Null),
+            DataValue::Null,
+            DataValue::Null,
+            validity(arrived),
+        ])
+    })
+    .collect();
+    store.query_with_params(r#"
+        ?[id, kind, title, creators, primary_url, published_at, language, summary, discovered_at] <- $rows
+        :put item {id => kind, title, creators, primary_url, published_at, language, summary, discovered_at}
+    "#, BTreeMap::from([("rows".into(), DataValue::List(rows))])).unwrap();
+    let page = store.list_item_page(&ItemFilter::today(), since).unwrap();
+    assert_eq!(
+        page.items
+            .iter()
+            .map(|item| item.id.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "upper-bound",
+            "newer-published-old-arrival",
+            "undated-recent",
+            "recent-published-old-arrival",
+            "lower-bound",
+        ]
+    );
+    assert_eq!(
+        store
+            .list_item_page(&ItemFilter::library(), since)
+            .unwrap()
+            .items
+            .len(),
+        9
+    );
+    assert!(
+        store
+            .list_item_page(
+                &ItemFilter {
+                    search: Some("outdated".into()),
+                    ..ItemFilter::today()
+                },
+                since
+            )
+            .unwrap()
+            .items
+            .is_empty()
+    );
+}
+
+#[test]
 fn today_preserves_its_time_window_between_pages() {
     let store = archive(6, false);
+    // Publication order differs from arrival order, and the oldest two posts
+    // were fetched recently but fall outside the publication window.
+    store.query(r#"
+        ?[id, kind, title, creators, primary_url, published_at, language, summary, discovered_at] :=
+            *item{id, kind, title, creators, primary_url, language, summary, discovered_at: arrival},
+            published_at = arrival, discovered_at = validity(100 - to_int(arrival))
+        :put item {id => kind, title, creators, primary_url, published_at, language, summary, discovered_at}
+    "#).unwrap();
     let mut filter = ItemFilter {
         limit: Some(2),
         ..ItemFilter::today()

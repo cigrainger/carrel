@@ -50,9 +50,9 @@ pub fn Today() -> impl IntoView {
             "Today",
             ItemFilter::today(),
             "/today",
-            "Nothing new in the past 24 hours.",
+            "No posts published in the past 24 hours. Browse older posts in Library.",
         );
-        spec.subtitle = Some("From your subscriptions · past 24 hours".into());
+        spec.subtitle = Some("Published in the past 24 hours · from your subscriptions".into());
         spec
     })
 }

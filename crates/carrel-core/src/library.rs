@@ -6,6 +6,9 @@ use std::collections::BTreeSet;
 /// The number of articles requested in one archive page.
 pub const ITEM_PAGE_SIZE: usize = 100;
 
+/// Duration of Today's rolling publication window, in microseconds.
+pub const TODAY_WINDOW_MICROS: i64 = 86_400_000_000;
+
 /// Maximum UTF-8 size of a literal search query.
 pub const MAX_SEARCH_BYTES: usize = 2_048;
 /// Maximum number of distinct words in a search query.
@@ -50,7 +53,7 @@ pub fn search_terms(query: Option<&str>) -> Result<Option<Vec<String>>, SearchEr
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ItemView {
-    /// Items discovered in the last day.
+    /// Items published in the last day, with arrival fallback when undated.
     #[default]
     Today,
     /// All saved items, newest first.
@@ -75,7 +78,7 @@ pub enum ItemView {
 pub struct ItemCursor {
     /// The view that produced this cursor; cursors cannot cross filters.
     pub view: ItemView,
-    /// Discovery, reading, or star timestamp, depending on the view.
+    /// Publication, discovery, reading, or star time, depending on the view.
     pub sort_at_micros: i64,
     /// Stable identity breaks timestamp ties.
     pub id: String,
@@ -123,7 +126,7 @@ impl Default for ItemFilter {
 }
 
 impl ItemFilter {
-    /// Recent subscription arrivals.
+    /// Recent publications, using first arrival for undated items.
     pub fn today() -> Self {
         Self::new(ItemView::Today)
     }

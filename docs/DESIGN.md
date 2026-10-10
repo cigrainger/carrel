@@ -300,8 +300,9 @@ The sidebar has four primary destinations: Today, Reading, Library, and
 Highlights. All, Unread, and Starred are filters inside Library, with their
 existing routes retained. Friends and Lists appear when their first useful flows
 work. Subscriptions sit below the primary destinations. There are no counts or
-badges. Today currently means recent arrivals in the past 24 hours; its subtitle
-states that window explicitly.
+badges. Today means posts published in the past 24 hours, with first arrival as
+the fallback for undated posts. Its subtitle states the publication window
+explicitly. Older posts remain in Library and individual feed views.
 
 There is one reader layout with a collapsible navigation sidebar. It starts
 hidden. Cmd+B and a visible reader control show or hide it without remounting
@@ -399,9 +400,12 @@ When the user scrolls, the application chrome should fade — not literally anim
 List views (Today, Library, Unread, Reading, Starred, and individual feeds) display items in chronological order by default unless the route is explicitly ordered by local action time: Reading uses the latest read-state update, and Starred uses the latest star update. Each item gets a row showing: title, source, time/length, a short excerpt (up to two lines), read state, and quiet star/read controls.
 
 The visible date uses publication time when supplied, with first arrival as the
-fallback for undated posts. Default chronological ordering and Today's 24-hour
-window use first arrival. Refreshing existing posts updates their metadata
-without resetting their arrival date or changing their archive position.
+fallback for undated posts. Today uses that same date for membership and order,
+within a rolling 24-hour window ending when the first page is requested; future
+dates are excluded. Both window boundaries stay fixed while loading subsequent
+pages. Library, Unread, and feed views use first arrival for chronological order.
+Refreshing existing posts does not reset their arrival date. Publication date
+corrections can change their position and membership in Today.
 
 ```
 ● Article Title                          Source · 5min   2h ago
