@@ -40,7 +40,8 @@ impl SelfTransport {
         Self::start_with_builder(store, cache_dir, device, Endpoint::builder(presets::N0)).await
     }
 
-    async fn start_with_builder(
+    /// Customize network addressing while retaining all private authorization gates.
+    pub async fn start_with_builder(
         store: Store,
         cache_dir: &Path,
         device: &Keypair,
@@ -172,6 +173,11 @@ impl SelfTransport {
 
     /// Stop protocol tasks and flush persistent mirrors before closing sockets.
     pub async fn shutdown(self) -> Result<()> {
+        self.stop().await
+    }
+
+    /// Stop and flush a shared host during the owning application's shutdown.
+    pub async fn stop(&self) -> Result<()> {
         self.authorization_task.abort();
         self.router
             .shutdown()

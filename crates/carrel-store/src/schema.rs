@@ -43,6 +43,105 @@ pub const RELATIONS: &[&str] = &[
     "self_state",
     "self_state_incoming",
     "self_state_outbox",
+    "self_item_revision",
+    "self_fact_outbox",
+    "self_fact_history",
+    "self_library_incoming",
+    "self_item_dirty",
+    "self_blob_incoming",
+    "self_document",
+    "self_peer_address",
+];
+
+/// Portable item history, immutable wire queue, and resumable source adoption.
+pub const PRIVATE_LIBRARY_RELATIONS: &[(&str, &str)] = &[
+    (
+        "self_item_revision",
+        ":create self_item_revision {id: String, revision_id: String => encoded: Bytes, parents: [String]}",
+    ),
+    (
+        "self_fact_outbox",
+        ":create self_fact_outbox {key: String => encoded: Bytes}",
+    ),
+    (
+        "self_fact_history",
+        ":create self_fact_history {key: String => encoded: Bytes}",
+    ),
+    (
+        "self_library_incoming",
+        ":create self_library_incoming {key: String => encoded: Bytes, kind: String, target: String?}",
+    ),
+    (
+        "self_item_dirty",
+        ":create self_item_dirty {id: String => token: String}",
+    ),
+    (
+        "self_blob_incoming",
+        ":create self_blob_incoming {blob_id: String => byte_size: Int}",
+    ),
+    (
+        "self_document",
+        ":create self_document {singleton: Int => namespace: Bytes, capability: Bytes}",
+    ),
+    (
+        "self_peer_address",
+        ":create self_peer_address {device_pubkey: Bytes => address: Bytes}",
+    ),
+];
+
+/// Item ancestry and verified incoming/outgoing bytes cannot be replaced.
+pub const PRIVATE_LIBRARY_GUARDS: &[&str] = &[
+    r#"::set_triggers self_document on put {
+        invalid[slot] := _new[slot, namespace, capability], slot != 0
+        invalid[slot] := _new[slot, namespace, capability], _old[slot, old_namespace, old_capability],
+            [namespace, capability] != [old_namespace, old_capability]
+        ?[slot] := invalid[slot] :assert none
+    } on rm { ?[slot] := _old[slot, namespace, capability] :assert none }"#,
+    r#"::set_triggers self_blob_incoming on put {
+        ?[id] := _new[id, size], _old[id, old_size], size != old_size :assert none
+    }"#,
+    r#"::set_triggers self_fact_history on put {
+        ?[key] := _new[key, encoded], _old[key, old_encoded], encoded != old_encoded :assert none
+    } on rm { ?[key] := _old[key, encoded] :assert none }"#,
+    r#"::set_triggers self_item_revision on put {
+        invalid[id, rev] := _new[id, rev, encoded, parents], _old[id, rev, old_encoded, old_parents],
+            [encoded, parents] != [old_encoded, old_parents]
+        invalid[id, rev] := _new[id, rev, encoded, parents], parent in parents, not *self_item_revision{id, revision_id: parent}
+        invalid[id, rev] := _new[id, rev, encoded, parents], parent in parents, parent == rev
+        invalid[id, rev] := _new[id, rev, encoded, parents], *entity_tombstone{id @ "END"}
+        ?[id, rev] := invalid[id, rev] :assert none
+    } on rm { ?[id, rev] := _old[id, rev, encoded, parents] :assert none }"#,
+    r#"::set_triggers self_fact_outbox on put {
+        ?[key] := _new[key, encoded], _old[key, old_encoded], encoded != old_encoded :assert none
+    }"#,
+    r#"::set_triggers self_library_incoming on put {
+        ?[key] := _new[key, encoded, kind, target], _old[key, old_encoded, old_kind, old_target],
+            [encoded, kind, target] != [old_encoded, old_kind, old_target] :assert none
+    }"#,
+];
+
+/// Every source metadata write gets a new capture token; incoming projections
+/// remove their token in the same transaction as the signed history and queue.
+pub const PRIVATE_ITEM_DIRTY_TRIGGERS: &[&str] = &[
+    r#"::set_triggers item on put {
+        ?[id] := _new[id, kind, title, creators, url, published, language, summary, discovered], *entity_tombstone{id @ "END"}
+        :assert none
+    } on put {
+        ?[id, token] := _new[id, kind, title, creators, url, published, language, summary, discovered], token = to_string(rand_uuid_v4())
+        :put self_item_dirty {id => token}
+    }"#,
+    r#"::set_triggers item_article on put {
+        ?[id, token] := _new[id, feed, words, minutes, site, byline], token = to_string(rand_uuid_v4())
+        :put self_item_dirty {id => token}
+    }"#,
+    r#"::set_triggers item_identifier on put {
+        ?[id, token] := _new[id, scheme, value, canonical, discovered], token = to_string(rand_uuid_v4())
+        :put self_item_dirty {id => token}
+    }"#,
+    r#"::set_triggers item_content on put {
+        ?[id, token] := _new[id, format, blob, fetched, extractor, size], token = to_string(rand_uuid_v4())
+        :put self_item_dirty {id => token}
+    }"#,
 ];
 
 /// Individually resumable private history and mirror work-queue relations.

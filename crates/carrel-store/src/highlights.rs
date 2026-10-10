@@ -6,6 +6,7 @@ use carrel_core::annotation::{AnnotationCursor, AnnotationPage, HighlightLocatio
 use carrel_core::identity::{
     Keypair, PublicKey, Signature, canonical_bytes, sign_canonical, verify_canonical,
 };
+use carrel_core::private_library::{PrivateHighlight, PrivateRemoval};
 use cozo::{DataValue, JsonData};
 use serde::Serialize;
 use time::OffsetDateTime;
@@ -84,6 +85,22 @@ impl HighlightRecord {
     }
 }
 
+impl From<&HighlightRecord> for PrivateHighlight {
+    fn from(value: &HighlightRecord) -> Self {
+        Self {
+            id: value.id.clone(),
+            item_id: value.item_id.clone(),
+            quoted_text: value.quoted_text.clone(),
+            location: value.location.clone(),
+            location_label: value.location_label.clone(),
+            color: value.color.clone(),
+            created_by: value.created_by,
+            created_at_micros: value.created_at_micros,
+            signature: value.signature,
+        }
+    }
+}
+
 /// Signed private removal, accompanied by a permanent entity tombstone.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AnnotationRemovalRecord {
@@ -127,6 +144,18 @@ impl AnnotationRemovalRecord {
                 message: error.to_string(),
             }
         })
+    }
+}
+
+impl From<&AnnotationRemovalRecord> for PrivateRemoval {
+    fn from(value: &AnnotationRemovalRecord) -> Self {
+        Self {
+            id: value.id.clone(),
+            kind: value.kind.clone(),
+            removed_by: value.removed_by,
+            removed_at_micros: value.removed_at_micros,
+            signature: value.signature,
+        }
     }
 }
 
@@ -321,59 +350,7 @@ impl Store {
             });
         }
         let signature = sign_highlight(&unsigned, signer)?;
-
-        self.query_with_params(
-            r#"
-            ?[id, item_id, quoted_text, location, location_label, color, created_by, created_at, signature] :=
-                id = $id,
-                item_id = $item_id,
-                quoted_text = $quoted_text,
-                location = $location,
-                location_label = $location_label,
-                color = $color,
-                created_by = $created_by,
-                created_at = $created_at,
-                signature = $signature
-            :put highlight {id => item_id, quoted_text, location, location_label, color, created_by, created_at, signature}
-            "#,
-            BTreeMap::from([
-                ("id".to_string(), DataValue::from(unsigned.id.as_str())),
-                (
-                    "item_id".to_string(),
-                    DataValue::from(unsigned.item_id.as_str()),
-                ),
-                (
-                    "quoted_text".to_string(),
-                    DataValue::from(unsigned.quoted_text.as_str()),
-                ),
-                (
-                    "location".to_string(),
-                    DataValue::Json(JsonData(location_json(&unsigned.location)?)),
-                ),
-                (
-                    "location_label".to_string(),
-                    option_string(unsigned.location_label.as_deref()),
-                ),
-                (
-                    "color".to_string(),
-                    option_string(unsigned.color.as_deref()),
-                ),
-                (
-                    "created_by".to_string(),
-                    DataValue::Bytes(unsigned.created_by.as_bytes().to_vec()),
-                ),
-                (
-                    "created_at".to_string(),
-                    validity_micros(unsigned.created_at_micros),
-                ),
-                (
-                    "signature".to_string(),
-                    DataValue::Bytes(signature.as_bytes().to_vec()),
-                ),
-            ]),
-        )?;
-
-        Ok(HighlightRecord {
+        let record = HighlightRecord {
             id: unsigned.id,
             item_id: unsigned.item_id,
             quoted_text: unsigned.quoted_text,
@@ -383,7 +360,9 @@ impl Store {
             created_by: unsigned.created_by,
             created_at_micros: unsigned.created_at_micros,
             signature,
-        })
+        };
+        self.write_private_highlight(&PrivateHighlight::from(&record))?;
+        Ok(record)
     }
 
     /// Return a highlight by id.
@@ -502,15 +481,7 @@ impl Store {
                 context: "annotation removal",
                 message: error.to_string(),
             })?;
-        self.query_with_params(r#"
-            { ?[id, removed_at, kind, removed_by, signature] <- [[$id, $at, 'highlight', $author, $signature]]
-              :insert annotation_removal {id, removed_at => kind, removed_by, signature} }
-            { ?[id, tombstoned_at, reason] <- [[$id, $at, 'removed highlight']]
-              :put entity_tombstone {id, tombstoned_at => reason} }
-        "#, BTreeMap::from([
-            ("id".into(), DataValue::from(id)), ("at".into(), validity_micros(removal.removed_at_micros)),
-            ("author".into(), DataValue::Bytes(removal.removed_by.as_bytes().to_vec())), ("signature".into(), DataValue::Bytes(removal.signature.as_bytes().to_vec())),
-        ]))?;
+        self.write_private_removal(&PrivateRemoval::from(&removal))?;
         Ok(removal)
     }
 }
@@ -589,7 +560,7 @@ fn highlight_signature_payload_from_record(
     }
 }
 
-fn decode_highlight_row(row: &[DataValue], offset: usize) -> Result<HighlightRecord> {
+pub(crate) fn decode_highlight_row(row: &[DataValue], offset: usize) -> Result<HighlightRecord> {
     Ok(HighlightRecord {
         id: value_as_string(required(row, offset, "highlight.id")?)?,
         item_id: value_as_string(required(row, offset + 1, "highlight.item_id")?)?,
@@ -674,21 +645,6 @@ fn value_as_signature(value: &DataValue) -> Result<Signature> {
         }
         other => Err(unexpected("signature bytes", other)),
     }
-}
-
-fn option_string(value: Option<&str>) -> DataValue {
-    value.map(DataValue::from).unwrap_or(DataValue::Null)
-}
-
-fn location_json(location: &HighlightLocation) -> Result<serde_json::Value> {
-    serde_json::to_value(location).map_err(|source| StoreError::UnexpectedValue {
-        context: "highlight.location",
-        value: source.to_string(),
-    })
-}
-
-fn validity_micros(micros: i64) -> DataValue {
-    DataValue::Validity(cozo::Validity::from((micros, true)))
 }
 
 fn now_micros() -> i64 {

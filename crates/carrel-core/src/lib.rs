@@ -31,3 +31,6 @@ pub mod subscription;
 /// Signed private registers and deterministic concurrent-intent resolution.
 #[cfg(feature = "identity")]
 pub mod private_state;
+
+#[cfg(feature = "identity")]
+pub mod private_library;

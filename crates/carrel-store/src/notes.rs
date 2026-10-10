@@ -77,7 +77,7 @@ pub struct NotePromotions {
     pub rejected: Vec<String>,
 }
 
-const NOTE_COLUMNS: &str = "id, body, target_kind, target_id, created_by, created_at, updated_at, signature, updated_by, signature_version, revision_id, parents";
+pub(crate) const NOTE_COLUMNS: &str = "id, body, target_kind, target_id, created_by, created_at, updated_at, signature, updated_by, signature_version, revision_id, parents";
 const WRITE_NOTE: &str = r#"
     { ?[id, revision_id, body, target_kind, target_id, created_by, created_at, updated_at, updated_by, signature_version, parents, signature] <-
         [[$id, $revision, $body, $kind, $target, $creator, $created, $updated, $updater, $version, $parents, $signature]]
@@ -453,7 +453,17 @@ impl Store {
     }
 
     fn write_note(&self, record: &NoteRecord) -> Result<()> {
-        self.query_with_params(WRITE_NOTE, note_params(record))?;
+        let mut params = note_params(record);
+        params.extend(crate::private_library::private_fact_params(
+            &carrel_core::private_library::PrivateFact::Note(record.clone()),
+        )?);
+        self.query_with_params(
+            &format!(
+                "{WRITE_NOTE}\n{}",
+                crate::private_library::QUEUE_PRIVATE_FACT
+            ),
+            params,
+        )?;
         Ok(())
     }
 

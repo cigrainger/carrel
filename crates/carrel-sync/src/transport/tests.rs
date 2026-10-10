@@ -49,7 +49,9 @@ async fn local_transport(store: &Store, path: &Path, key: &Keypair) -> SelfTrans
         store.clone(),
         path,
         key,
-        Endpoint::builder(presets::Minimal),
+        Endpoint::builder(presets::Minimal)
+            .bind_addr("127.0.0.1:0")
+            .unwrap(),
     )
     .await
     .unwrap()
@@ -58,6 +60,8 @@ async fn local_transport(store: &Store, path: &Path, key: &Keypair) -> SelfTrans
 async fn raw_endpoint(key: &Keypair) -> Endpoint {
     let seed = Zeroizing::new(key.to_seed_bytes());
     Endpoint::builder(presets::Minimal)
+        .bind_addr("127.0.0.1:0")
+        .unwrap()
         .secret_key(SecretKey::from_bytes(&seed))
         .bind()
         .await
@@ -450,7 +454,9 @@ async fn invalid_cache_and_docs_storage_fail_without_leaking_the_open_blob_store
         p.a.clone(),
         &cache,
         &p.ka,
-        Endpoint::builder(presets::Minimal),
+        Endpoint::builder(presets::Minimal)
+            .bind_addr("127.0.0.1:0")
+            .unwrap(),
     )
     .await;
     assert!(matches!(

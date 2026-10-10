@@ -314,6 +314,90 @@ Resilience: the moment a user highlights an item, we ensure the readable HTML bl
 
 **Trust:** the metadata fact is signed when shared (a peer sharing an item with its content reference includes the blob_id); the blob itself is fetched separately via iroh-blobs.
 
+## Private library replication (version 8)
+
+Saved-item snapshots carry the base item metadata, article details, identifiers,
+content references, and cached resource references. Each immutable snapshot is
+signed by a device, content-addressed, and names the item revisions it observed.
+An existing local library is adopted only with its actual operational key; schema
+migration never signs its unsigned metadata or selects a master identity.
+
+```
+:create self_item_revision {
+    id: String, revision_id: String => encoded: Bytes, parents: [String]
+}
+:create self_fact_outbox {key: String => encoded: Bytes}
+:create self_fact_history {key: String => encoded: Bytes}
+:create self_library_incoming {key: String => encoded: Bytes, kind: String, target: String?}
+:create self_item_dirty {id: String => token: String}
+:create self_blob_incoming {blob_id: String => byte_size: Int}
+```
+
+The signed snapshot is immutable history. `item`, `item_article`, identifiers,
+and content references materialize its current view for existing queries.
+Parents must exist for the same item. Missing parents wait durably; permanent
+item tombstones dominate arrival order. Concurrent external metadata resolves
+deterministically: the greatest head digest supplies the base metadata,
+identifiers are combined, and each available content format is retained with a
+stable digest tie-break. These are publisher/cache metadata, never reading
+intent. A new local snapshot observes every known head and can replace the
+external metadata after a refresh. Derived search text and shape stay local.
+
+Source metadata writes mark `self_item_dirty` with a fresh opaque token. The
+native worker captures metadata, reads and verifies its cached references, and
+adopts it only while that token is still current. Signing, projection, portable
+history, mirror work, and removal of the token commit together. Incoming item
+revisions wait while a local capture is unpublished, preserving offline changes.
+Migration marks existing articles for adoption without signing them; repeating
+an interrupted migration preserves tokens and existing history.
+
+The private wire allow-list contains saved-item revisions, reading/star/
+subscription revisions, note revisions, immutable highlights, signed annotation
+removals, device certificates, and revocation proofs. Every record verifies its
+original signature and known-master authorship before it is materialized. Legacy
+annotation signatures are preserved. Neither raw Cozo scripts nor unsigned table
+snapshots are an incoming API.
+
+The outbox stores bounded canonical wire records under a digest of their exact
+portable bytes. Local signed writes queue their record in the same transaction;
+incoming accepted records can also be mirrored by an authorized forwarder.
+Acknowledgement removes only that exact key. The old state outbox remains
+compatible during migration; history can rebuild a missing mirror without
+changing original signatures. Pending library records retain their verified
+bytes until their dependencies arrive.
+
+`self_fact_history` retains the exact portable records after acknowledgement,
+including distinct signed removal proofs at the same display timestamp. It is
+immutable and rebuilds a lost mirror without synthesizing new signatures.
+
+Verified item references queue `self_blob_incoming` in the same transaction as
+their history or dependency staging. The bridge fetches only these declared
+hashes and lengths, checks the remote size before reading a body, verifies its
+BLAKE3 content, and atomically installs it in the native cache. Missing content
+can be retried after restart without delaying metadata or independent actions.
+
+The bridge disables automatic document-content downloads. It validates the
+document author, key, and length before requesting bounded fact bytes. Cached
+content travels separately under its signed hash/length references, with hash
+and size verification before import. Rendering sanitizes cached HTML again while
+preserving local blob references; the original signed blob remains unchanged.
+
+### Local private-document binding and peer addresses
+
+Schema version 8 also records `self_document {singleton => namespace, capability}`
+and `self_peer_address {device_pubkey => address}`. These are local transport
+configuration, excluded from portable facts. The first document binding is
+immutable and requires an active, explicitly bound identity. A write capability
+is a private credential stored alongside the local database; it is never derived
+from, or a substitute for, the master key. Peer addresses are bounded hints for
+already certified devices, and revocation remains authoritative on every dial.
+An invitation grants this document to one independently generated device key;
+it does not transmit the master seed or change an existing identity binding.
+The explicit pairing transaction commits the local identity, document capability,
+all supplied certificates and revocations, peer addresses, and fact journal
+together. An interrupted setup therefore cannot start a new, unrelated document
+for a desktop that was already bound to a received Root.
+
 ## Local search
 
 Search uses Cozo's built-in full-text indexes with the `Simple` tokenizer and `Lowercase` filter. Titles are indexed directly from `item.title`. Cached readable HTML is reduced to plain text in `carrel-feeds` and stored in a derived relation:

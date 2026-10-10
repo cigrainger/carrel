@@ -8,14 +8,31 @@ use kuchiki::traits::TendrilSink;
 
 /// Sanitize readable article HTML to Carrel's storage-safe subset.
 pub fn sanitize_html(html: &str) -> String {
+    sanitize_with_cached_resources(html, false)
+}
+
+/// Sanitize cached HTML for rendering while retaining local content references.
+///
+/// Cached resources use Carrel's content-addressed protocol; its handler validates
+/// hashes and serves only blob-store contents. Web extraction does not allow these
+/// application-local schemes to be supplied by an external publisher.
+pub fn sanitize_cached_html(html: &str) -> String {
+    sanitize_with_cached_resources(html, true)
+}
+
+fn sanitize_with_cached_resources(html: &str, cached: bool) -> String {
     let html = strip_byte_order_marks(html);
+    let mut schemes = HashSet::from(["http", "https", "mailto"]);
+    if cached {
+        schemes.extend(["blob", "carrel-blob"]);
+    }
     let mut builder = Builder::new();
     builder
         .tags(allowed_tags())
         .clean_content_tags(clean_content_tags())
         .tag_attributes(tag_attributes())
         .generic_attributes(HashSet::from(["class", "id", "title", "lang"]))
-        .url_schemes(HashSet::from(["http", "https", "mailto"]))
+        .url_schemes(schemes)
         .url_relative(UrlRelative::PassThrough)
         .link_rel(None);
 

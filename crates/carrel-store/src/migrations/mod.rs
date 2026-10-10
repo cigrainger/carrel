@@ -11,9 +11,10 @@ mod v004_identity;
 mod v005_causal_notes;
 mod v006_private_state;
 mod v007_portable_legacy_notes;
+mod v008_private_library;
 
 /// The latest schema version known to this crate.
-pub const CURRENT_SCHEMA_VERSION: u32 = 7;
+pub const CURRENT_SCHEMA_VERSION: u32 = 8;
 
 /// Apply all migrations newer than `current_version`.
 pub fn migrate(db: &DbInstance, current_version: u32) -> Result<()> {
@@ -37,6 +38,9 @@ pub fn migrate(db: &DbInstance, current_version: u32) -> Result<()> {
     }
     if current_version < 7 {
         v007_portable_legacy_notes::up(db)?;
+    }
+    if current_version < 8 {
+        v008_private_library::up(db)?;
     }
 
     Ok(())

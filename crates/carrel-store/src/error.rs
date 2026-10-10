@@ -9,6 +9,9 @@ pub type Result<T> = std::result::Result<T, StoreError>;
 /// Errors raised by the Carrel store boundary.
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
+    /// Invalid signed saved metadata or private wire fact.
+    #[error("invalid private library fact: {0}")]
+    LibraryFact(#[from] carrel_core::private_library::LibraryFactError),
     /// Invalid signed private action or incompatible causal ancestry.
     #[error("invalid private state revision: {0}")]
     StateRevision(#[from] carrel_core::private_state::StateRevisionError),

@@ -12,7 +12,9 @@ use carrel_core::subscription::FeedSubscription;
 use cozo::{DataValue, JsonData, Validity};
 
 use crate::identity::bytes;
+use crate::private_library::{QUEUE_PRIVATE_FACT, private_fact_params};
 use crate::{Result, Store, StoreError};
+use carrel_core::private_library::PrivateFact;
 
 /// Result of a verified delivery on the authenticated self channel.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -698,6 +700,7 @@ impl Store {
             .max()
             .expect("nonempty heads");
         let mut params = record_params(record)?;
+        params.extend(private_fact_params(&PrivateFact::State(record.clone()))?);
         let projection = match value {
             StateValue::Star(starred) => {
                 params.insert("starred".into(), DataValue::Bool(starred));
@@ -757,7 +760,10 @@ impl Store {
                 "{ ?[item_id, state, progress, progress_label, last_position, updated_at] <- [[$target, $state, $progress, $label, $position, $at]] :put read_state {item_id => state, progress, progress_label, last_position, updated_at} }".to_string()
             }
         };
-        Ok((format!("{WRITE_HISTORY}\n{projection}"), params))
+        Ok((
+            format!("{WRITE_HISTORY}\n{projection}\n{QUEUE_PRIVATE_FACT}"),
+            params,
+        ))
     }
 
     fn read_projection_params(

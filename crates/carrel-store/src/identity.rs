@@ -5,7 +5,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use carrel_core::identity::{DeviceCert, Keypair, PublicKey, RevocationCert};
 use cozo::{DataValue, Validity};
 
+use crate::private_library::{QUEUE_PRIVATE_FACT, private_fact_params};
 use crate::{Result, Store, StoreError};
+use carrel_core::private_library::PrivateFact;
 
 /// The stable master and independent operational key bound to this installation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -43,7 +45,7 @@ impl Store {
         self.identity_revision.subscribe()
     }
 
-    fn identity_changed(&self) {
+    pub(crate) fn identity_changed(&self) {
         self.identity_revision.send_modify(|revision| {
             *revision = revision.wrapping_add(1);
         });
@@ -87,14 +89,20 @@ impl Store {
         if self.device_denied(&cert.master_pubkey, &cert.device_pubkey)? {
             return Err(StoreError::IdentityDeviceUnauthorized);
         }
-        let params = certificate_params(cert)?;
+        let mut params = certificate_params(cert)?;
+        params.extend(private_fact_params(&PrivateFact::Certificate(
+            cert.clone(),
+        ))?);
         self.query_with_params(
-            r#"
+            &format!(
+                "{}\n{QUEUE_PRIVATE_FACT}",
+                r#"
             { ?[master_pubkey, device_pubkey, device_cert] <- [[$master, $device, $cert]]
               :put device_certificate {master_pubkey, device_pubkey => device_cert} }
             { ?[singleton, master_pubkey, device_pubkey] <- [[0, $master, $device]]
               :put self_identity {singleton => master_pubkey, device_pubkey} }
-        "#,
+        "#
+            ),
             params,
         )?;
         self.identity_changed();
@@ -107,37 +115,96 @@ impl Store {
     /// proof of authorship, but cannot reauthorize the device.
     pub fn accept_self_device_certificate(&self, cert: &DeviceCert) -> Result<()> {
         let _guard = self.identity_lock.lock().expect("identity write lock");
+        self.accept_self_device_certificate_unlocked(cert)
+    }
+
+    pub(crate) fn accept_self_certificate_from(
+        &self,
+        cert: &DeviceCert,
+        sender: &PublicKey,
+    ) -> Result<()> {
+        let _guard = self.identity_lock.lock().expect("identity write lock");
+        self.require_private_sender(sender, None)?;
+        self.accept_self_device_certificate_unlocked(cert)
+    }
+
+    fn accept_self_device_certificate_unlocked(&self, cert: &DeviceCert) -> Result<()> {
         cert.verify()?;
         self.require_bound_master(&cert.master_pubkey)?;
         if cert.device_pubkey == cert.master_pubkey {
             return Err(StoreError::IdentityDeviceUnauthorized);
         }
         self.require_matching_certificate(cert)?;
+        let mut params = certificate_params(cert)?;
+        params.extend(private_fact_params(&PrivateFact::Certificate(
+            cert.clone(),
+        ))?);
         self.query_with_params(
-            "?[master_pubkey, device_pubkey, device_cert] <- [[$master, $device, $cert]] :put device_certificate {master_pubkey, device_pubkey => device_cert}",
-            certificate_params(cert)?,
+            &format!("{{ ?[master_pubkey, device_pubkey, device_cert] <- [[$master, $device, $cert]] :put device_certificate {{master_pubkey, device_pubkey => device_cert}} }}\n{QUEUE_PRIVATE_FACT}"),
+            params,
         )?;
         self.identity_changed();
         Ok(())
     }
 
+    /// Original revocation proofs, including devices whose certificate is absent.
+    pub fn self_revocation_proofs(&self) -> Result<Vec<RevocationCert>> {
+        let binding = self.self_identity()?.ok_or(StoreError::IdentityUnbound)?;
+        let rows = self.query_with_params(
+            "?[proof] := *device_revocation{master_pubkey: $master, revocation_cert: proof}",
+            BTreeMap::from([(
+                "master".into(),
+                DataValue::Bytes(binding.master_pubkey.as_bytes().to_vec()),
+            )]),
+        )?;
+        rows.rows
+            .iter()
+            .map(|row| {
+                let proof = RevocationCert::from_bytes(bytes(&row[0])?)?;
+                if proof.master_pubkey != binding.master_pubkey {
+                    return Err(StoreError::IdentityMasterMismatch);
+                }
+                Ok(proof)
+            })
+            .collect()
+    }
+
     /// Persist a master's signed revocation even if its certificate is not here yet.
     pub fn accept_self_revocation(&self, cert: &RevocationCert) -> Result<()> {
         let _guard = self.identity_lock.lock().expect("identity write lock");
+        self.accept_self_revocation_unlocked(cert)
+    }
+
+    pub(crate) fn accept_self_revocation_from(
+        &self,
+        cert: &RevocationCert,
+        sender: &PublicKey,
+    ) -> Result<()> {
+        let _guard = self.identity_lock.lock().expect("identity write lock");
+        self.require_private_sender(sender, None)?;
+        self.accept_self_revocation_unlocked(cert)
+    }
+
+    fn accept_self_revocation_unlocked(&self, cert: &RevocationCert) -> Result<()> {
         cert.verify()?;
         self.require_bound_master(&cert.master_pubkey)?;
         let bytes = cert.to_bytes().map_err(|error| StoreError::Signing {
             context: "device revocation",
             message: error.to_string(),
         })?;
+        let mut params = private_fact_params(&PrivateFact::Revocation(cert.clone()))?;
+        params.extend([
+            ("master".into(), key_value(&cert.master_pubkey)),
+            ("device".into(), key_value(&cert.device_pubkey)),
+            (
+                "at".into(),
+                DataValue::Validity(Validity::from((cert.revoked_at_micros, true))),
+            ),
+            ("cert".into(), DataValue::Bytes(bytes)),
+        ]);
         self.query_with_params(
-            "?[master_pubkey, device_pubkey, revoked_at, revocation_cert] <- [[$master, $device, $at, $cert]] :put device_revocation {master_pubkey, device_pubkey, revoked_at => revocation_cert}",
-            BTreeMap::from([
-                ("master".into(), key_value(&cert.master_pubkey)),
-                ("device".into(), key_value(&cert.device_pubkey)),
-                ("at".into(), DataValue::Validity(Validity::from((cert.revoked_at_micros, true)))),
-                ("cert".into(), DataValue::Bytes(bytes)),
-            ]),
+            &format!("{{ ?[master_pubkey, device_pubkey, revoked_at, revocation_cert] <- [[$master, $device, $at, $cert]] :put device_revocation {{master_pubkey, device_pubkey, revoked_at => revocation_cert}} }}\n{QUEUE_PRIVATE_FACT}"),
+            params,
         )?;
         self.identity_changed();
         Ok(())
@@ -247,6 +314,26 @@ impl Store {
         Ok(())
     }
 
+    /// Read an original certificate during explicit local setup, without binding a Root.
+    pub fn device_certificate(
+        &self,
+        master: &PublicKey,
+        device: &PublicKey,
+    ) -> Result<Option<DeviceCert>> {
+        let rows = self.query_with_params("?[cert] := *device_certificate{master_pubkey: $master, device_pubkey: $device, device_cert: cert}",
+            BTreeMap::from([("master".into(), key_value(master)), ("device".into(), key_value(device))]))?;
+        rows.rows
+            .first()
+            .map(|row| {
+                let cert = DeviceCert::from_bytes(bytes(&row[0])?)?;
+                if cert.master_pubkey != *master || cert.device_pubkey != *device {
+                    return Err(StoreError::IdentityCertificateConflict);
+                }
+                Ok(cert)
+            })
+            .transpose()
+    }
+
     fn require_matching_certificate(&self, cert: &DeviceCert) -> Result<()> {
         let rows = self.query_with_params("?[cert] := *device_certificate{master_pubkey: $master, device_pubkey: $device, device_cert: cert}",
             BTreeMap::from([("master".into(), key_value(&cert.master_pubkey)), ("device".into(), key_value(&cert.device_pubkey))]))?;
@@ -259,7 +346,7 @@ impl Store {
         Ok(())
     }
 
-    fn device_denied(&self, master: &PublicKey, device: &PublicKey) -> Result<bool> {
+    pub(crate) fn device_denied(&self, master: &PublicKey, device: &PublicKey) -> Result<bool> {
         let rows = self.query_with_params(r#"
             ?[device] := *device_revocation{master_pubkey: $master, device_pubkey: device @ "END"}, device = $device
             ?[device] := *device_local_block{master_pubkey: $master, device_pubkey: device}, device = $device

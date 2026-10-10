@@ -135,10 +135,13 @@ mod tests {
 
     fn old_store(records: &[NoteRevision]) -> Store {
         let store = Store::open_in_memory().unwrap();
-        store.migrate().unwrap();
-        store
-            .query("?[version] <- [[7]] :rm schema_version {version}")
-            .unwrap();
+        crate::migrations::v001_initial::up(&store.db).unwrap();
+        crate::migrations::v002_search::up(&store.db).unwrap();
+        crate::migrations::v003_annotations::up(&store.db).unwrap();
+        crate::migrations::v004_identity::up(&store.db).unwrap();
+        crate::migrations::v005_causal_notes::up(&store.db).unwrap();
+        crate::migrations::v006_private_state::up(&store.db).unwrap();
+        assert_eq!(store.current_schema_version().unwrap(), 6);
         for record in records {
             let mut params = crate::notes::note_params(record);
             // This is the wire encoding produced before normalization existed.

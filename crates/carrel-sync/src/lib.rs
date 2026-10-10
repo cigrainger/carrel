@@ -7,7 +7,10 @@
 #![warn(missing_docs)]
 
 mod authorization;
+pub mod bridge;
 mod error;
+pub mod pairing;
+pub mod runtime;
 pub mod transport;
 
 pub use error::{Result, SyncError};

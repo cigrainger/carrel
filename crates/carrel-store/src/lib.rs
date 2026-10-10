@@ -17,7 +17,9 @@ pub mod keystore;
 pub mod library;
 mod migrations;
 pub mod notes;
+pub mod private_library;
 pub mod private_state;
+pub mod private_transport;
 pub mod schema;
 pub mod search;
 

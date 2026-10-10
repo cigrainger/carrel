@@ -3,6 +3,21 @@
 /// A private transport operation failed.
 #[derive(Debug, thiserror::Error)]
 pub enum SyncError {
+    /// An invitation is malformed, expired, consumed, or fails its Root proof.
+    #[error("invalid or expired pairing invitation")]
+    InvalidInvitation,
+    /// Invalid original private fact bytes or proof.
+    #[error(transparent)]
+    Fact(#[from] carrel_core::private_library::LibraryFactError),
+    /// Reading or atomically installing the native cache failed.
+    #[error(transparent)]
+    Blob(#[from] carrel_store::blobs::BlobError),
+    /// A private SDK header, key, or portable content identity is invalid.
+    #[error("invalid private document entry")]
+    InvalidEntry,
+    /// Network or cached bytes disagree with the declared hash/length.
+    #[error("private content failed hash or length verification")]
+    BlobIntegrity,
     /// The source-of-truth store could not complete an operation.
     #[error(transparent)]
     Store(#[from] carrel_store::StoreError),

@@ -10,7 +10,7 @@ pub use extract::{
     extract_from_url_with_options, html_to_text,
 };
 pub use images::{ImageRewriteFailure, ImageRewriteResult, rewrite_images};
-pub use sanitize::sanitize_html;
+pub use sanitize::{sanitize_cached_html, sanitize_html};
 
 pub(crate) const READABILITY_EXTRACTOR: &str = "readable-readability";
 pub(crate) const TRAFILATURA_EXTRACTOR: &str = "trafilatura";
