@@ -34,6 +34,34 @@ These commitments are non-negotiable for the v1 product. Subsequent sections ope
 
 ## Typography
 
+### Design reset under review
+
+The current Editorial implementation is being reconsidered from first principles.
+The new references emphasize dramatic scale contrasts, asymmetrical grids,
+confident grotesk typography, structural color fields, and geometric rhythm.
+Those principles must organize the reading task rather than decorate it.
+The exploration in `docs/prototypes/carrel-directions.html` presents three
+alternatives using the same archive content and reader interactions:
+
+- **Index:** horizontal destination navigation, a collapsible source index,
+  and a chronological gutter. Cool white / cobalt and dark ink; a 64px section
+  heading, 48px date, and 27px grotesk article titles.
+- **Fold:** an architectural side panel holding destinations and sources,
+  with the selected page meeting that panel at a clear seam. Clay, pale ivory,
+  and ink; a 60px section heading and 27px grotesk article titles.
+- **Field:** full-width destination navigation and article rows, with sources
+  in a drawer rather than permanently consuming a column. Forest and pale mint;
+  an expressive navigation band with 22px labels / a 32px active destination,
+  and 29px grotesk article titles. The band contracts in the reader.
+
+These are proposals, not replacement production tokens. Their names describe
+layout choices, not user-selectable app themes. The reader keeps the user's
+body font, a comfortable measure, and restrained chrome. All alternatives
+retain Today / Reading / Library / Highlights, explicit read and star actions,
+publisher dates, square controls, Lucide icons, and the sidebar toggle. They
+introduce no unread counts or rankings. Selecting a direction will replace the
+Editorial specification below before production components change.
+
 ### Editorial direction
 
 The first complete reading loop uses an Editorial layout: warm paper, charcoal,

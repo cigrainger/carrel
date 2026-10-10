@@ -1,0 +1,426 @@
+<div id="carrel-directions" class="viz-carousel" aria-label="Carrel design directions">
+  <section data-variant="Field" aria-label="Field design">
+    <div class="carrel-preview field" data-design="field" aria-label="Carrel Field preview"></div>
+  </section>
+  <section data-variant="Index" aria-label="Index design" hidden>
+    <div class="carrel-preview index" data-design="index" aria-label="Carrel Index preview"></div>
+  </section>
+  <section data-variant="Fold" aria-label="Fold design" hidden>
+    <div class="carrel-preview fold" data-design="fold" aria-label="Carrel Fold preview"></div>
+  </section>
+</div>
+<style>
+  #carrel-directions { color-scheme: light dark; container-type: inline-size; }
+  #carrel-directions > section { min-height: 1080px; }
+  #carrel-directions .carrel-preview {
+    --sheet: light-dark(#f2f3ef, #171b1c);
+    --ink: light-dark(#111923, #f0f2ed);
+    --subtle: light-dark(#555d65, #abb5bb);
+    --line: light-dark(#c2c9cc, #46515a);
+    --signal: light-dark(#234de4, #91a8ff);
+    --signal-ink: light-dark(#ffffff, #121b3c);
+    --rail: light-dark(#e2e6e7, #222b30);
+    --selection: light-dark(#e1e7ff, #222f50);
+    background: var(--sheet); color: var(--ink);
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 14px; line-height: 1.4; min-height: 1050px;
+    border: 1px solid var(--line); position: relative;
+    container-type: inline-size; display: flex; flex-direction: column;
+  }
+  #carrel-directions .carrel-preview * { box-sizing: border-box; }
+  #carrel-directions .carrel-preview [hidden] { display: none !important; }
+  #carrel-directions .carrel-preview button,
+  #carrel-directions .carrel-preview input,
+  #carrel-directions .carrel-preview select {
+    font: inherit; color: inherit; border-radius: 0;
+  }
+  #carrel-directions .carrel-preview button {
+    background: transparent; border: 0; text-align: left;
+    padding: 0; min-height: 32px;
+  }
+  #carrel-directions .carrel-preview button:disabled { opacity: .4; }
+  #carrel-directions .carrel-preview button:hover:not(:disabled) { color: var(--signal); }
+  #carrel-directions .carrel-preview h1,
+  #carrel-directions .carrel-preview h2,
+  #carrel-directions .carrel-preview p { margin: 0; }
+  #carrel-directions .carrel-preview svg { flex-shrink: 0; width: 17px; height: 17px; stroke-width: 1.5; }
+  #carrel-directions .icon-button {
+    display: inline-flex; justify-content: center; align-items: center;
+    min-width: 34px; min-height: 34px !important;
+  }
+  #carrel-directions .icon-button[aria-pressed="true"] { color: var(--signal); }
+  #carrel-directions .icon-button.star[aria-pressed="true"] svg { fill: currentColor; }
+  #carrel-directions .wordmark { font-size: 32px; font-weight: 750; letter-spacing: -2px; line-height: 1; }
+  #carrel-directions .brand { display: flex; align-items: center; gap: 10px; }
+  #carrel-directions .nook { width: 25px; height: 26px; background: var(--signal); position: relative; }
+  #carrel-directions .nook::before {
+    content: ""; position: absolute; left: 7px; top: 7px;
+    width: 18px; height: 19px; background: var(--sheet); border-radius: 11px 0 0 0;
+  }
+  #carrel-directions .nook::after {
+    content: ""; position: absolute; left: 10px; top: 13px;
+    width: 10px; height: 2px; background: var(--signal);
+    box-shadow: 0 4px 0 var(--signal), 0 8px 0 var(--signal);
+  }
+  #carrel-directions .topbar {
+    display: grid; grid-template-columns: 170px 1fr auto; align-items: center;
+    gap: 22px; padding: 18px 26px; border-bottom: 1px solid var(--ink);
+  }
+  #carrel-directions .destinations { display: flex; gap: 28px; align-items: center; flex-wrap: wrap; }
+  #carrel-directions .destination {
+    display: inline-flex; align-items: center; gap: 8px;
+    position: relative; font-weight: 500; padding: 8px 0 !important;
+  }
+  #carrel-directions .destination[aria-current="page"] { font-weight: 750; }
+  #carrel-directions .destination[aria-current="page"]::after {
+    content: ""; height: 4px; background: var(--signal);
+    position: absolute; bottom: -19px; left: 0; right: 0;
+  }
+  #carrel-directions .tools { display: flex; gap: 4px; }
+  #carrel-directions .workspace { display: grid; grid-template-columns: 195px minmax(0,1fr); min-height: 695px; flex: 1; }
+  #carrel-directions .workspace.no-sidebar { grid-template-columns: minmax(0,1fr); }
+  #carrel-directions .source-index {
+    padding: 32px 22px 24px 26px; background: var(--rail);
+    display: flex; flex-direction: column; border-right: 1px solid var(--ink);
+  }
+  #carrel-directions .source-label { font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: .08em; }
+  #carrel-directions .source-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px; }
+  #carrel-directions .source { padding: 9px 0 !important; display: block; width: 100%; }
+  #carrel-directions .source[aria-pressed="true"] { font-weight: 750; color: var(--signal); }
+  #carrel-directions .source::before { content: ""; width: 6px; height: 6px; display: inline-block; margin: 0 9px 2px 0; }
+  #carrel-directions .source[aria-pressed="true"]::before { background: currentColor; }
+  #carrel-directions .utilities { margin-top: auto; padding-top: 36px; display: grid; gap: 8px; }
+  #carrel-directions .utility { display: inline-flex; align-items: center; gap: 8px; font-size: 12px !important; }
+  #carrel-directions .page { padding: 28px 30px 24px; min-width: 0; }
+  #carrel-directions .page-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 20px; }
+  #carrel-directions .page-heading h1 { font-size: 64px; font-weight: 750; line-height: 1.05; letter-spacing: -3.7px; }
+  #carrel-directions .page-subtitle { color: var(--subtle); font-size: 12px; margin-top: 10px !important; }
+  #carrel-directions .search-line { display: flex; align-items: center; gap: 10px; margin-top: 26px; padding: 10px 0; border-bottom: 1px solid var(--ink); }
+  #carrel-directions .search-line input { border: 0; background: transparent; width: 100%; min-width: 0; font-size: 14px; outline-offset: 5px; }
+  #carrel-directions .search-line input::placeholder { color: var(--subtle); opacity: 1; }
+  #carrel-directions .filters { display: flex; gap: 23px; padding: 16px 0 12px; }
+  #carrel-directions .filter { color: var(--subtle); font-size: 12px !important; min-height: 24px !important; }
+  #carrel-directions .filter[aria-pressed="true"] { color: var(--ink); font-weight: 750; border-bottom: 2px solid var(--ink); }
+  #carrel-directions .article-row { display: grid; grid-template-columns: 65px minmax(0,1fr) 34px; gap: 16px; padding: 22px 0; border-top: 1px solid var(--line); position: relative; }
+  #carrel-directions .article-row:first-child { border-top: 4px solid var(--signal); }
+  #carrel-directions .article-row.is-selected::before { content: ""; position: absolute; left: -12px; top: 23px; bottom: 23px; width: 3px; background: var(--signal); }
+  #carrel-directions .date { display: flex; flex-direction: column; align-items: flex-start; color: var(--signal); }
+  #carrel-directions .date-day { font-size: 48px; line-height: .92; font-weight: 750; letter-spacing: -2px; }
+  #carrel-directions .date-month { font-size: 11px; font-weight: 650; letter-spacing: .05em; margin-top: 7px; }
+  #carrel-directions .date-year { font-size: 11px; color: var(--subtle); margin-top: 3px; }
+  #carrel-directions .date-repeat { display: none; }
+  #carrel-directions .date.is-repeat > :not(.date-repeat) { display: none; }
+  #carrel-directions .date.is-repeat .date-repeat { display: block; font-size: 11px; font-weight: 650; letter-spacing: .03em; margin-top: 2px; color: var(--subtle); }
+  #carrel-directions .article-copy { min-width: 0; }
+  #carrel-directions .byline { font-size: 11px; color: var(--subtle); margin-bottom: 8px; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+  #carrel-directions .state-dot { width: 5px; height: 5px; border: 1px solid var(--signal); border-radius: 50%; background: var(--signal); display: inline-block; }
+  #carrel-directions .article-row.is-read .state-dot { background: transparent; }
+  #carrel-directions .article-title { font-size: clamp(22px, 3cqw, var(--title-size,27px)) !important; line-height: 1.13 !important; font-weight: 650 !important; letter-spacing: -.8px; width: 100%; overflow-wrap: anywhere; }
+  #carrel-directions .excerpt { color: var(--subtle); font-size: 13px; line-height: 1.5; margin-top: 10px !important; }
+  #carrel-directions .row-actions { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  #carrel-directions .list-end { display: flex; justify-content: space-between; align-items: center; padding-top: 20px; border-top: 1px solid var(--ink); font-size: 12px; color: var(--subtle); }
+  #carrel-directions .older { display: inline-flex; gap: 10px; align-items: center; color: var(--ink); }
+  #carrel-directions .empty { padding: 45px 0; border-top: 4px solid var(--signal); }
+  #carrel-directions .empty h2 { font-size: 26px; letter-spacing: -.7px; font-weight: 650; }
+  #carrel-directions .empty p { color: var(--subtle); margin-top: 15px; max-width: 40ch; }
+  #carrel-directions .empty button { color: var(--signal); margin-top: 23px; }
+  #carrel-directions .status { display: flex; justify-content: space-between; gap: 15px; padding: 13px 26px; border-top: 1px solid var(--line); font-size: 11px; color: var(--subtle); }
+  #carrel-directions .reader-tools { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--ink); padding-bottom: 12px; gap: 16px; }
+  #carrel-directions .back { display: flex; align-items: center; gap: 8px; }
+  #carrel-directions .reader-actions { display: flex; gap: 5px; }
+  #carrel-directions .reading-page { padding: 32px 0; max-width: 58ch; margin: 0 auto; }
+  #carrel-directions .reader-meta { font-size: 12px; color: var(--subtle); margin-bottom: 19px; }
+  #carrel-directions .reading-page h1 { font-size: 37px; line-height: 1.12; letter-spacing: -1.2px; font-weight: 650; margin-bottom: 26px; }
+  #carrel-directions .reading-page .body-copy { font-family: Georgia, "Times New Roman", serif; font-size: 19px; line-height: 1.65; }
+  #carrel-directions .reading-page .body-copy p { font: inherit; }
+  #carrel-directions .reading-page .body-copy p + p { margin-top: 18px; }
+  #carrel-directions .finish { display: flex; align-items: center; gap: 9px; margin-top: 36px; padding: 10px 14px !important; background: var(--ink) !important; color: var(--sheet) !important; }
+  #carrel-directions .finish:hover { background: var(--signal) !important; color: var(--signal-ink) !important; }
+  #carrel-directions .fold {
+    --sheet: light-dark(#f3ecda, #211c17); --ink: light-dark(#221f19, #f3ecda);
+    --subtle: light-dark(#645c4c, #c0b7a7); --line: light-dark(#c8bca4, #5e5143);
+    --signal: light-dark(#a73717, #f6936c); --signal-ink: light-dark(#fff2df, #27160e);
+    --rail: light-dark(#dd663e, #733423); --selection: light-dark(#e9d8a8, #44371f);
+  }
+  #carrel-directions .fold .topbar { grid-template-columns: 1fr auto; padding: 10px 25px; margin-left: 212px; gap: 12px; min-height: 55px; }
+  #carrel-directions .fold .topbar .brand { font-size: 11px; letter-spacing: .02em; color: var(--subtle); }
+  #carrel-directions .fold .workspace { grid-template-columns: 212px minmax(0,1fr); min-height: 727px; }
+  #carrel-directions .fold .workspace.no-sidebar { grid-template-columns: minmax(0,1fr); }
+  #carrel-directions .fold .source-index { margin-top: -55px; padding: 0 22px 24px; border-right: 0; color: light-dark(#271b15, #fff0dc); }
+  #carrel-directions .fold .rail-brand { padding: 35px 0 28px; border-bottom: 3px solid currentColor; }
+  #carrel-directions .fold .wordmark { font-size: 44px; letter-spacing: -3px; }
+  #carrel-directions .fold .nook { --sheet: var(--rail); --signal: light-dark(#271b15,#fff0dc); width: 36px; height: 38px; }
+  #carrel-directions .fold .nook::before { width: 25px; height: 27px; left: 11px; top: 11px; border-radius: 17px 0 0 0; }
+  #carrel-directions .fold .nook::after { left: 15px; top: 19px; width: 13px; }
+  #carrel-directions .fold .destinations { display: flex; flex-direction: column; align-items: stretch; gap: 3px; padding: 24px 0 30px; }
+  #carrel-directions .fold .destination { font-size: 23px; letter-spacing: -.6px; gap: 12px; }
+  #carrel-directions .fold .destination[aria-current="page"]::after { bottom: 0; height: 2px; background: currentColor; }
+  #carrel-directions .fold .source-heading { padding-top: 20px; border-top: 1px solid currentColor; }
+  #carrel-directions .fold .source[aria-pressed="true"] { color: inherit; }
+  #carrel-directions .fold .source-index button:hover { color: light-dark(#fff7e8,#ffffff); }
+  #carrel-directions .fold .page { padding: 28px 34px 24px; }
+  #carrel-directions .fold .page-heading h1 { font-size: 60px; letter-spacing: -3px; }
+  #carrel-directions .fold .article-row { grid-template-columns: minmax(0,1fr) 34px; padding: 23px 16px; margin: 0 -16px; }
+  #carrel-directions .fold .article-row.is-selected { background: var(--selection); }
+  #carrel-directions .fold .article-row.is-selected::before { left: 0; top: 0; bottom: 0; width: 4px; }
+  #carrel-directions .fold .date { display: none; }
+  #carrel-directions .fold .reading-page { padding-top: 38px; }
+  #carrel-directions .field {
+    --sheet: light-dark(#eaf0d8, #1c211b); --ink: light-dark(#153c32, #e9efd9);
+    --subtle: light-dark(#466257, #adbda7); --line: light-dark(#b5c8a9, #50624c);
+    --signal: light-dark(#17694e, #b1d9a5); --signal-ink: light-dark(#f1f5e3, #143326);
+    --rail: light-dark(#d2dfbb, #2c3b29); --selection: light-dark(#d5e1be, #2b3f2b);
+    --band: light-dark(#153c32, #132e24); --band-ink: light-dark(#eaf0d8, #d6e1c5);
+  }
+  #carrel-directions .field .topbar { grid-template-columns: 138px 1fr auto; border-bottom: 0; padding: 28px 30px 22px; background: var(--band); color: var(--band-ink); align-items: start; }
+  #carrel-directions .field .topbar .nook { --signal: var(--band-ink); --sheet: var(--band); }
+  #carrel-directions .field .topbar button:hover { color: var(--band-ink); }
+  #carrel-directions .field .topbar .icon-button[aria-pressed="true"] { color: var(--band-ink); }
+  #carrel-directions .field .destinations { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 22px; align-items: start; }
+  #carrel-directions .field .destination { font-size: 22px; flex-direction: column; align-items: flex-start; gap: 12px; padding: 0 0 18px !important; letter-spacing: -.7px; }
+  #carrel-directions .field .destination[aria-current="page"] { font-size: 32px; letter-spacing: -1.7px; }
+  #carrel-directions .field .destination[aria-current="page"]::after { bottom: 0; height: 4px; background: currentColor; }
+  #carrel-directions .field .workspace { display: block; min-height: 698px; }
+  #carrel-directions .field .source-index { border-right: 0; border-bottom: 1px solid var(--ink); padding: 14px 30px; display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px 22px; }
+  #carrel-directions .field .source-heading { margin: 0 8px 0 0; gap: 16px; }
+  #carrel-directions .field .source { width: auto; }
+  #carrel-directions .field .utilities { margin: 0 0 0 auto; padding: 0; display: flex; gap: 14px; flex-wrap: wrap; }
+  #carrel-directions .field .page { padding: 25px 30px 24px; }
+  #carrel-directions .field .page-heading { border-bottom: 1px solid var(--ink); padding-bottom: 12px; }
+  #carrel-directions .field .page-heading h1 { font-size: 18px; letter-spacing: -.3px; }
+  #carrel-directions .field .page-subtitle { font-size: 12px; margin-top: 10px !important; }
+  #carrel-directions .field .search-line { margin-top: 18px; }
+  #carrel-directions .field .filters { padding-top: 13px; }
+  #carrel-directions .field .article-row { grid-template-columns: 110px minmax(0,1fr) 76px; gap: 24px; padding: 23px 0; }
+  #carrel-directions .field .article-row:first-child { border-top: 1px solid var(--ink); }
+  #carrel-directions .field .article-title { letter-spacing: -1px; }
+  #carrel-directions .field .date-day { font-size: 56px; font-weight: 400; }
+  #carrel-directions .field .date { color: var(--ink); }
+  #carrel-directions .field .row-actions { flex-direction: row; align-items: flex-start; gap: 4px; }
+  #carrel-directions .field .reader-tools { border-bottom-width: 3px; }
+  #carrel-directions .field .reading-page { max-width: 61ch; }
+  #carrel-directions .field.is-reading .topbar { align-items: center; padding: 18px 30px; }
+  #carrel-directions .field.is-reading .destination,
+  #carrel-directions .field.is-reading .destination[aria-current="page"] { font-size: 14px; letter-spacing: 0; padding: 5px 0 !important; gap: 8px; flex-direction: row; }
+  #carrel-directions .field.is-reading .destination[aria-current="page"]::after { height: 2px; bottom: -8px; }
+  #carrel-directions .field.is-reading .workspace { display: grid; grid-template-columns: 195px minmax(0,1fr); }
+  #carrel-directions .field.is-reading .workspace.no-sidebar { grid-template-columns: minmax(0,1fr); }
+  #carrel-directions .field.is-reading .source-index { flex-direction: column; align-items: stretch; padding: 28px 22px; border-bottom: 0; border-right: 1px solid var(--ink); gap: 4px; }
+  #carrel-directions .field.is-reading .source-heading { margin-bottom: 16px; }
+  #carrel-directions .field.is-reading .source { width: 100%; }
+  #carrel-directions .field.is-reading .utilities { margin: auto 0 0; padding-top: 30px; display: grid; gap: 8px; }
+  @container (max-width: 800px) {
+    #carrel-directions .topbar { gap: 14px; grid-template-columns: 125px 1fr auto; padding: 18px; }
+    #carrel-directions .destinations { gap: 16px; }
+    #carrel-directions .wordmark { font-size: 28px; }
+    #carrel-directions .workspace { grid-template-columns: 160px minmax(0,1fr); }
+    #carrel-directions .source-index { padding-left: 18px; padding-right: 14px; }
+    #carrel-directions .page { padding-left: 24px; padding-right: 24px; }
+    #carrel-directions .article-row { gap: 12px; grid-template-columns: 54px minmax(0,1fr) 34px; }
+    #carrel-directions .fold .topbar { margin-left: 185px; grid-template-columns: 1fr auto; }
+    #carrel-directions .fold .workspace { grid-template-columns: 185px minmax(0,1fr); }
+    #carrel-directions .fold .article-row { grid-template-columns: minmax(0,1fr) 34px; }
+    #carrel-directions .fold .wordmark { font-size: 37px; }
+    #carrel-directions .field .article-row { grid-template-columns: 74px minmax(0,1fr) 34px; gap: 20px; }
+    #carrel-directions .field .row-actions { flex-direction: column; }
+    #carrel-directions .field .topbar { grid-template-columns: 120px 1fr auto; gap: 16px; }
+    #carrel-directions .field .destinations { gap: 15px; }
+    #carrel-directions .field .destination { font-size: 18px; }
+    #carrel-directions .field .destination[aria-current="page"] { font-size: 27px; }
+  }
+  @container (max-width: 620px) {
+    #carrel-directions .topbar, #carrel-directions .field .topbar { grid-template-columns: 1fr auto; padding: 16px; }
+    #carrel-directions .topbar .destinations { grid-column: 1 / -1; grid-row: 2; justify-content: space-between; gap: 12px; }
+    #carrel-directions .destination { font-size: 13px !important; }
+    #carrel-directions .destination svg { display: none; }
+    #carrel-directions .destination[aria-current="page"]::after { bottom: -16px; }
+    #carrel-directions .workspace, #carrel-directions .fold .workspace { display: block; }
+    #carrel-directions .source-index, #carrel-directions .field .source-index { padding: 12px 16px; border-right: 0; border-bottom: 1px solid var(--ink); flex-direction: row; align-items: center; flex-wrap: wrap; gap: 0 15px; }
+    #carrel-directions .source-heading { margin: 0; gap: 8px; }
+    #carrel-directions .source { width: auto; }
+    #carrel-directions .utilities { padding: 0; margin: 0 0 0 auto; display: flex; gap: 8px; flex-wrap: wrap; }
+    #carrel-directions .utility { font-size: 11px !important; }
+    #carrel-directions .page, #carrel-directions .fold .page, #carrel-directions .field .page { padding: 23px 18px; }
+    #carrel-directions .page-heading h1, #carrel-directions .fold .page-heading h1, #carrel-directions .field .page-heading h1 { font-size: 48px; letter-spacing: -2.5px; }
+    #carrel-directions .page-heading { flex-wrap: wrap; gap: 8px; }
+    #carrel-directions .article-row, #carrel-directions .field .article-row { grid-template-columns: 42px minmax(0,1fr) 30px; gap: 10px; }
+    #carrel-directions .date-day, #carrel-directions .field .date-day { font-size: 36px; }
+    #carrel-directions .fold .topbar { margin-left: 0; min-height: 62px; }
+    #carrel-directions .fold .source-index { margin-top: 0; }
+    #carrel-directions .fold .rail-brand { display: none; }
+    #carrel-directions .fold .source-index .destinations { width: 100%; flex-direction: row; justify-content: space-between; padding: 0 0 12px; gap: 8px; }
+    #carrel-directions .fold .source-index .source-heading { padding-top: 0; border: 0; }
+    #carrel-directions .fold .destination[aria-current="page"]::after, #carrel-directions .field .destination[aria-current="page"]::after { bottom: 0; }
+    #carrel-directions .reading-page h1 { font-size: 30px; }
+    #carrel-directions .reading-page .body-copy { font-size: 18px; }
+    #carrel-directions .status { padding: 12px 18px; }
+    #carrel-directions .filters { gap: 18px; }
+    #carrel-directions .field .topbar .destinations { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); }
+    #carrel-directions .field .topbar .destination { font-size: 15px !important; padding-top: 8px !important; }
+    #carrel-directions .field .topbar .destination[aria-current="page"] { font-size: 21px !important; letter-spacing: -.8px; }
+    #carrel-directions .field .page-heading h1 { font-size: 18px; letter-spacing: 0; }
+    #carrel-directions .field.is-reading .workspace { display: block; }
+    #carrel-directions .field.is-reading .source-index { flex-direction: row; flex-wrap: wrap; padding: 12px 16px; gap: 0 15px; border-right: 0; border-bottom: 1px solid var(--ink); }
+    #carrel-directions .field.is-reading .source-heading { margin: 0; }
+    #carrel-directions .field.is-reading .source { width: auto; }
+    #carrel-directions .field.is-reading .utilities { margin: 0 0 0 auto; padding: 0; display: flex; }
+    #carrel-directions > section { min-height: 1210px; }
+    #carrel-directions .carrel-preview { min-height: 1180px; }
+  }
+  @container (max-width: 420px) {
+    #carrel-directions .article-row, #carrel-directions .field .article-row { grid-template-columns: minmax(0,1fr) 34px; }
+    #carrel-directions .date { grid-column: 1; flex-direction: row; align-items: baseline; gap: 5px; }
+    #carrel-directions .date-day, #carrel-directions .field .date-day { font-size: 16px; letter-spacing: 0; }
+    #carrel-directions .date-month, #carrel-directions .date-year { margin-top: 0; }
+    #carrel-directions .article-copy { grid-column: 1; }
+    #carrel-directions .row-actions { grid-column: 2; grid-row: 1 / span 2; }
+    #carrel-directions .field .topbar .destination { font-size: 12px !important; letter-spacing: -.3px; }
+    #carrel-directions .field .topbar .destination[aria-current="page"] { font-size: 16px !important; }
+    #carrel-directions > section { min-height: 1390px; }
+    #carrel-directions .carrel-preview { min-height: 1360px; }
+  }
+  @media (pointer: coarse) {
+    #carrel-directions .icon-button, #carrel-directions .source, #carrel-directions .destination, #carrel-directions .filter { min-height: 44px !important; }
+    #carrel-directions .icon-button { min-width: 44px; }
+    #carrel-directions .search-line input { font-size: 16px; }
+  }
+</style>
+<script>
+(() => {
+  const root = document.getElementById('carrel-directions');
+  const posts = [
+    { id: 'history', source: 'json.blog', date: '2026-09-09', title: 'The End of History and the Final Girl is another absolute banger…', excerpt: 'Katherine Alejandra Cross is fast becoming my favorite writer. If you are at all interested in this political moment, this one is worth your time.', body: ['The End of History and the Final Girl is another absolute banger by Katherine Alejandra Cross who is fast becoming my favorite writer.', 'If you are at all interested in this political moment, this one is worth your time. I couldn’t put it down.'], read: false, starred: false, reading: true },
+    { id: 'ted', source: 'json.blog', date: '2026-09-09', title: 'This episode of Ted Lasso was on its way to being my favorite…', excerpt: 'Until they drop my absolute least favorite trope.', body: ['This episode of Ted Lasso was on its way to being my favorite until they drop my absolute least favorite trope.'], read: false, starred: false, reading: false },
+    { id: 'phone', source: 'json.blog', date: '2026-09-09', title: 'I don’t know which phone I want', excerpt: 'Or what I want to do now that the Upgrade program is over.', body: ['I don’t know which phone I want or what I want to do now that the Upgrade program is over.'], read: false, starred: true, reading: false }
+  ];
+  const destinations = ['Today', 'Reading', 'Library', 'Highlights'];
+  const icons = { Today: 'calendar-days', Reading: 'book-open', Library: 'library', Highlights: 'highlighter' };
+  const models = new Map();
+  const esc = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const icon = name => `<i data-lucide="${name}" aria-hidden="true"></i>`;
+  const button = (action, name, label, extra = '') => `<button type="button" class="icon-button cursor-interaction ${action === 'star' ? 'star' : ''}" data-action="${action}" aria-label="${esc(label)}" data-tooltip="${esc(label)}" ${extra}>${icon(name)}</button>`;
+  const brand = `<div class="brand"><span class="nook" aria-hidden="true"></span><span class="wordmark">carrel</span></div>`;
+
+  function navigation(model) {
+    return `<nav class="destinations" aria-label="Destinations">${destinations.map(name => `<button type="button" class="destination cursor-interaction" data-destination="${name}" ${model.destination === name ? 'aria-current="page"' : ''}>${icon(icons[name])}<span>${name}</span></button>`).join('')}</nav>`;
+  }
+  function sources(model) {
+    return `<aside class="source-index" aria-label="Source index" ${!model.sidebar ? 'hidden' : ''}>
+      ${model.design === 'fold' ? `<div class="rail-brand">${brand}</div>${navigation(model)}` : ''}
+      <div class="source-heading"><span class="source-label">Sources</span>${button('add', 'plus', 'Add a website or feed')}</div>
+      <button type="button" class="source cursor-interaction" data-source="all" aria-pressed="${model.source === 'all'}">All sources</button>
+      <button type="button" class="source cursor-interaction" data-source="json.blog" aria-pressed="${model.source === 'json.blog'}">json.blog</button>
+      <button type="button" class="source cursor-interaction" data-source="Elixir Blog" aria-pressed="${model.source === 'Elixir Blog'}">Elixir Blog</button>
+      <div class="utilities">
+        <button type="button" class="utility cursor-interaction" data-action="devices">${icon('monitor')}Devices</button>
+        <button type="button" class="utility cursor-interaction" data-action="subscriptions">${icon('settings-2')}Subscriptions</button>
+      </div>
+    </aside>`;
+  }
+  function list(model) {
+    let items = model.posts.filter(p => model.source === 'all' || p.source === model.source);
+    if (model.destination === 'Today') items = [];
+    if (model.destination === 'Reading') items = items.filter(p => p.reading && !p.read);
+    if (model.destination === 'Highlights') items = [];
+    if (model.filter === 'Unread') items = items.filter(p => !p.read);
+    if (model.filter === 'Starred') items = items.filter(p => p.starred);
+    const query = model.query.toLowerCase().trim();
+    if (query) items = items.filter(p => `${p.title} ${p.body.join(' ')}`.toLowerCase().includes(query));
+    if (!items.length) {
+      const title = query ? 'No matching posts.' : model.destination === 'Today' ? 'Nothing published in the past 24 hours.' : model.destination === 'Highlights' ? 'A place for what you notice.' : model.destination === 'Reading' ? 'Nothing left open.' : 'No posts in this view.';
+      const copy = query ? 'Try another word or clear the search.' : model.destination === 'Highlights' ? 'Passages you highlight while reading will appear here.' : model.destination === 'Reading' ? 'Articles you start reading will be here when you return.' : 'Older posts remain in your Library.';
+      return `<div class="empty"><h2>${title}</h2><p>${copy}</p><button type="button" class="cursor-interaction" data-action="library">Browse Library →</button></div>`;
+    }
+    return items.map((p,index) => `<article class="article-row ${model.selected === p.id ? 'is-selected' : ''} ${p.read ? 'is-read' : ''}" aria-label="${esc(p.title)}">
+      <time class="date ${items[index - 1]?.date === p.date ? 'is-repeat' : ''}" datetime="${p.date}" aria-label="Published 9 September 2026"><span class="date-day">09</span><span class="date-month">SEP</span><span class="date-year">2026</span><span class="date-repeat">9 SEP</span></time>
+      <div class="article-copy"><div class="byline"><span class="state-dot" aria-label="${p.read ? 'Read' : 'Unread'}"></span><span>${p.source}</span><span>·</span><span>1 min</span>${model.design === 'fold' ? `<span>·</span><time datetime="${p.date}">9 Sep 2026</time>` : ''}</div>
+      <button type="button" class="article-title cursor-interaction" data-open="${p.id}">${esc(p.title)}</button><p class="excerpt">${esc(p.excerpt)}</p></div>
+      <div class="row-actions">${button('read', p.read ? 'circle-dot' : 'circle-check', p.read ? 'Mark unread' : 'Mark read', `data-id="${p.id}" aria-pressed="${p.read}"`)}${button('star', 'star', p.starred ? 'Unstar' : 'Star', `data-id="${p.id}" aria-pressed="${p.starred}"`)}</div>
+    </article>`).join('') + `<div class="list-end"><span>September 2026</span><button type="button" class="older cursor-interaction" data-action="older">Load older ${icon('arrow-down')}</button></div>`;
+  }
+  function overview(model) {
+    const title = model.source !== 'all' ? model.source : model.destination;
+    const subtitle = model.destination === 'Today' ? 'Published in the past 24 hours' : model.destination === 'Reading' ? 'Pick up where you left off' : model.destination === 'Highlights' ? 'Your passages and marginalia' : 'Your reading, kept here';
+    return `<main class="page"><header class="page-heading"><h1>${esc(title)}</h1><span class="source-label">${model.destination === 'Today' ? '11 OCT 2026' : 'Archive'}</span></header><p class="page-subtitle">${subtitle}</p>
+      <label class="search-line">${icon('search')}<input type="search" aria-label="Search ${esc(title)}" placeholder="Search this ${model.destination === 'Library' ? 'library' : 'view'}" value="${esc(model.query)}"></label>
+      <div class="filters" ${model.destination !== 'Library' ? 'hidden' : ''}>${['All', 'Unread', 'Starred'].map(name => `<button type="button" class="filter cursor-interaction" data-filter="${name}" aria-pressed="${model.filter === name}">${name}</button>`).join('')}</div>
+      <div class="items" aria-live="polite">${list(model)}</div></main>`;
+  }
+  function reader(model) {
+    const post = model.posts.find(p => p.id === model.open);
+    return `<main class="page"><div class="reader-tools"><button type="button" class="back cursor-interaction" data-action="back">${icon('arrow-left')}Back to ${model.destination}</button><div class="reader-actions">${button('sidebar', 'panel-left', 'Show or hide sources · ⌘B', `aria-pressed="${model.sidebar}"`)}${button('star','star',post.starred ? 'Unstar' : 'Star',`data-id="${post.id}" aria-pressed="${post.starred}"`)}</div></div>
+      <article class="reading-page"><div class="reader-meta">${post.source} &nbsp; / &nbsp; Published 9 September 2026 &nbsp; / &nbsp; 1 min</div><h1>${esc(post.title)}</h1><div class="body-copy">${post.body.map(p => `<p>${esc(p)}</p>`).join('')}</div><button type="button" class="finish cursor-interaction" data-action="finish" data-id="${post.id}">${icon('circle-check')}Finish reading</button></article></main>`;
+  }
+  function render(model) {
+    const active = document.activeElement;
+    const focusedAttributes = active && model.element.contains(active) ? ['data-action','data-id','data-open','data-destination','data-source','data-filter'].filter(name => active.hasAttribute(name)).map(name => [name,active.getAttribute(name)]) : [];
+    model.element.classList.toggle('is-reading',Boolean(model.open));
+    model.element.innerHTML = `<header class="topbar">${model.design === 'fold' ? '<div class="brand">CARREL / YOUR READING ROOM</div>' : brand}${model.design !== 'fold' ? navigation(model) : ''}<div class="tools">${button('sidebar','panel-left','Show or hide sources · ⌘B',`aria-pressed="${model.sidebar}"`)}${button('refresh','refresh-cw','Refresh sources')}</div></header>
+      <div class="workspace ${!model.sidebar ? 'no-sidebar' : ''}">${sources(model)}${model.open ? reader(model) : overview(model)}</div>
+      <footer class="status"><span class="status-copy">${esc(model.message || 'Saved on this device')}</span><span>Preview</span></footer>`;
+    if (globalThis.lucide) lucide.createIcons({attrs:{width:17,height:17}});
+    model.element.style.setProperty('--title-size', `${model.titleSize}px`);
+    if (focusedAttributes.length) {
+      const selector = focusedAttributes.map(([name,value]) => `[${name}="${CSS.escape(value)}"]`).join('');
+      const replacement = model.element.querySelector(selector) || (model.open ? model.element.querySelector('[data-action="back"]') : model.element.querySelector(`[data-open="${model.selected}"]`));
+      replacement?.focus({preventScroll:true});
+    }
+  }
+  function remember(model) {
+    if (globalThis.openai?.setWidgetState) globalThis.openai.setWidgetState({modelContent:{design:model.design,destination:model.destination},privateContent:{sidebar:model.sidebar}}).catch(() => {});
+  }
+  const saved = globalThis.openai?.widgetState;
+  root.querySelectorAll('[data-design]').forEach(element => {
+    const model = { element, design: element.dataset.design, destination: 'Library', source: 'all', filter: 'All', query: '', sidebar: element.dataset.design !== 'field', open: null, selected: 'history', message: '', posts: posts.map(p => ({...p})), titleSize: element.dataset.design === 'field' ? 29 : 27 };
+    models.set(model.design,model);
+    if (saved?.modelContent?.design === model.design) {
+      if (destinations.includes(saved.modelContent.destination)) model.destination = saved.modelContent.destination;
+      if (typeof saved.privateContent?.sidebar === 'boolean') model.sidebar = saved.privateContent.sidebar;
+    }
+    render(model);
+    element.addEventListener('input', event => {
+      if (event.target.matches('input[type="search"]')) {
+        model.query = event.target.value;
+        element.querySelector('.items').innerHTML = list(model);
+        if (globalThis.lucide) lucide.createIcons({attrs:{width:17,height:17}});
+      }
+    });
+    element.addEventListener('click', event => {
+      const control = event.target.closest('button');
+      if (!control || !element.contains(control)) return;
+      const action = control.dataset.action;
+      if (control.dataset.destination) { model.destination = control.dataset.destination; model.source = 'all'; model.open = null; model.query = ''; model.filter = 'All'; }
+      if (control.dataset.source) { model.source = control.dataset.source; model.destination = 'Library'; model.open = null; model.query = ''; }
+      if (control.dataset.filter) model.filter = control.dataset.filter;
+      if (control.dataset.open) { model.open = control.dataset.open; model.selected = model.open; model.posts.find(p => p.id === model.open).reading = true; }
+      if (action === 'sidebar') model.sidebar = !model.sidebar;
+      if (action === 'back') model.open = null;
+      if (action === 'library') { model.destination = 'Library'; model.source = 'all'; model.filter = 'All'; model.query = ''; }
+      if (action === 'read' || action === 'star') { const post = model.posts.find(p => p.id === control.dataset.id); if (action === 'read') post.read = !post.read; else post.starred = !post.starred; }
+      if (action === 'finish') { const post = model.posts.find(p => p.id === control.dataset.id); post.read = true; post.reading = false; model.open = null; model.message = 'Marked read'; }
+      if (action === 'refresh') model.message = 'Preview: sources are already up to date';
+      if (action === 'older') model.message = 'Preview: this is the end of the sample archive';
+      if (action === 'add') model.message = 'Preview: paste a website URL; discover its advertised feeds before subscribing';
+      if (action === 'subscriptions') model.message = 'Preview: subscription settings and OPML import / export';
+      if (action === 'devices') model.message = 'Preview: pair another device with a one-time invitation';
+      render(model); remember(model);
+    });
+    element.addEventListener('keydown', event => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'b') { event.preventDefault(); model.sidebar = !model.sidebar; render(model); remember(model); }
+      if (event.key === 'Escape' && model.open) { model.open = null; render(model); }
+    });
+    if (globalThis.Tweak) {
+      const tweak = new Tweak({container:element,onChange:()=>render(model)});
+      tweak.addSlider(model,'titleSize',{label:'Article title size',min:22,max:32,unit:'px'});
+    }
+  });
+  window.addEventListener('openai:set_globals',event => {
+    const snapshot = event.detail?.globals?.widgetState;
+    const model = models.get(snapshot?.modelContent?.design);
+    if (!model) return;
+    if (destinations.includes(snapshot.modelContent.destination)) model.destination = snapshot.modelContent.destination;
+    if (typeof snapshot.privateContent?.sidebar === 'boolean') model.sidebar = snapshot.privateContent.sidebar;
+    render(model);
+  });
+})();
+</script>
