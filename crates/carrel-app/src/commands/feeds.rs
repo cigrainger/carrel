@@ -10,7 +10,7 @@ use url::Url;
 
 use crate::Result;
 use crate::error::AppError;
-use crate::feed_runner::{self, FetchOutcome, FetchReport};
+use crate::feed_runner::{self, FetchMode, FetchOutcome, FetchReport};
 use crate::state::{AppState, FeedStatusCounts, FeedStatusSnapshot};
 
 /// List feed subscriptions.
@@ -60,7 +60,7 @@ pub async fn fetch_feed(
         return Err(AppError::Feed(format!("{url} is not subscribed")));
     };
 
-    Ok(fetch_records(app_state, vec![feed])
+    Ok(fetch_records(app_state, vec![feed], FetchMode::Refresh)
         .await?
         .into_iter()
         .next())
@@ -71,7 +71,7 @@ pub async fn fetch_feed(
 pub async fn fetch_all_feeds(state: State<'_, AppState>) -> Result<Vec<FeedFetchSummary>> {
     let app_state = state.inner().clone();
     let feeds = app_state.store.list_feeds()?;
-    fetch_records(app_state, feeds).await
+    fetch_records(app_state, feeds, FetchMode::Refresh).await
 }
 
 /// Return current feed fetch status for the status strip.
@@ -95,12 +95,13 @@ pub(crate) async fn fetch_due_feeds(app_state: AppState) -> Result<Vec<FeedFetch
         return Ok(Vec::new());
     }
 
-    fetch_records(app_state, feeds).await
+    fetch_records(app_state, feeds, FetchMode::Conditional).await
 }
 
 pub(crate) async fn fetch_records(
     app_state: AppState,
     feeds: Vec<FeedRecord>,
+    mode: FetchMode,
 ) -> Result<Vec<FeedFetchSummary>> {
     if feeds.is_empty() {
         app_state
@@ -111,7 +112,7 @@ pub(crate) async fn fetch_records(
 
     let feed_fetch_lock = app_state.feed_fetch_lock.clone();
     let _guard = feed_fetch_lock.lock().await;
-    tauri::async_runtime::spawn_blocking(move || fetch_records_blocking(app_state, feeds))
+    tauri::async_runtime::spawn_blocking(move || fetch_records_blocking(app_state, feeds, mode))
         .await
         .map_err(|error| AppError::Feed(format!("feed worker failed: {error}")))?
 }
@@ -119,6 +120,7 @@ pub(crate) async fn fetch_records(
 fn fetch_records_blocking(
     app_state: AppState,
     feeds: Vec<FeedRecord>,
+    mode: FetchMode,
 ) -> Result<Vec<FeedFetchSummary>> {
     let status_label = if feeds.len() == 1 {
         format!("Fetching {}", display_name(&feeds[0]))
@@ -148,6 +150,7 @@ fn fetch_records_blocking(
             &app_state.blobs,
             &fetcher,
             &feed,
+            mode,
         )));
     }
 
@@ -345,12 +348,21 @@ fn status_message(reports: &[FetchReport], counts: FeedStatusCounts) -> String {
 
     let issue_count = counts.feed_errors + counts.entry_errors + counts.content_errors;
     if issue_count > 0 {
+        let sample_content_error = reports
+            .iter()
+            .flat_map(|report| &report.content_errors)
+            .next()
+            .map(|error| error.message.as_str());
         warn!(
             feed_errors = counts.feed_errors,
             entry_errors = counts.entry_errors,
             content_errors = counts.content_errors,
+            sample_content_error,
             "feed fetch completed with issues"
         );
+        if counts.feed_errors == 0 && counts.entry_errors == 0 {
+            return "Feeds updated; some content could not be cached".to_string();
+        }
         return format!("Feed fetch finished with {issue_count} issues");
     }
 
@@ -402,6 +414,38 @@ mod tests {
         assert_eq!(
             status_message(&reports, status_counts(&reports)),
             "Feeds checked"
+        );
+    }
+
+    #[test]
+    fn content_failure_status_distinguishes_saved_feeds_from_incomplete_cache() {
+        let counts = FeedStatusCounts {
+            content_errors: 25,
+            ..FeedStatusCounts::default()
+        };
+        let reports = vec![FetchReport {
+            url: "https://example.com/feed.xml".into(),
+            outcome: FetchOutcome::Updated {
+                stats: carrel_store::feeds::IngestStats::default(),
+            },
+            content_errors: vec![carrel_store::feeds::EntryError {
+                feed_guid: "example".into(),
+                message: "article request failed".into(),
+            }],
+        }];
+        assert_eq!(
+            status_message(&reports, counts),
+            "Feeds updated; some content could not be cached"
+        );
+        assert_eq!(
+            status_message(
+                &reports,
+                FeedStatusCounts {
+                    feed_errors: 1,
+                    ..counts
+                }
+            ),
+            "Feed fetch finished with 26 issues"
         );
     }
 }

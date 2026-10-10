@@ -96,36 +96,36 @@ pub fn extract_from_html_with_options(
     base_url: &str,
     options: &ExtractOptions,
 ) -> Result<ExtractedArticle, ExtractError> {
-    if looks_like_network_error_page(html) {
+    let html = without_hidden_content(html);
+    if looks_like_network_error_page(&html) {
         return Err(ExtractError::NetworkErrorPage {
             url: base_url.to_string(),
         });
     }
 
-    match readable_extract(html, base_url) {
-        Ok(primary) if primary.word_count > 0 || options.trafilatura.is_none() => Ok(primary),
-        Ok(_) | Err(ExtractError::EmptyContent { .. }) => run_trafilatura(
-            html,
-            base_url,
-            options
-                .trafilatura
-                .as_ref()
-                .expect("fallback is configured"),
-        ),
-        Err(error) => Err(error),
+    match (
+        readable_extract(&html, base_url),
+        options.trafilatura.as_ref(),
+    ) {
+        (Ok(primary), _) if primary.word_count > 0 => Ok(primary),
+        (Ok(_) | Err(ExtractError::EmptyContent { .. }), Some(fallback)) => {
+            run_trafilatura(&html, base_url, fallback)
+        }
+        (result, _) => result,
     }
 }
 
 /// Sanitize already embedded feed content without fetching or readability scoring.
 pub fn extract_embedded_html(html: &str, base_url: &str) -> Result<ExtractedArticle, ExtractError> {
-    if looks_like_network_error_page(html) {
+    let html = without_hidden_content(html);
+    if looks_like_network_error_page(&html) {
         return Err(ExtractError::NetworkErrorPage {
             url: base_url.to_string(),
         });
     }
 
     let base = parse_base_url(base_url)?;
-    let content_html = sanitize_html(html);
+    let content_html = sanitize_html(&html);
     article_from_sanitized(
         None,
         None,
@@ -233,6 +233,20 @@ pub fn html_to_text(html: &str) -> String {
         }
     }
     text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn without_hidden_content(html: &str) -> String {
+    let document = kuchiki::parse_html().one(html);
+    // Publishers ship dormant offline banners alongside real articles. Remove
+    // them before error detection and before sanitization drops `hidden`.
+    let hidden: Vec<_> = document
+        .select("[hidden]")
+        .expect("valid hidden selector")
+        .collect();
+    for node in hidden {
+        node.as_node().detach();
+    }
+    document.to_string()
 }
 
 fn looks_like_network_error_page(html: &str) -> bool {

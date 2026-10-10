@@ -101,3 +101,16 @@ fn parses_rss_atom_and_json_feed() {
         Some("Short JSON summary")
     );
 }
+#[test]
+fn empty_publisher_titles_remain_untitled() {
+    let parsed = carrel_feeds::parse_feed(
+        br#"<rss version="2.0"><channel><title>Example</title>
+          <item><guid>one</guid><title></title><description>A short post.</description></item>
+          <item><guid>two</guid><title>   </title></item>
+        </channel></rss>"#,
+        "https://example.com/feed.xml",
+    )
+    .unwrap();
+    assert_eq!(parsed.entries.len(), 2);
+    assert!(parsed.entries.iter().all(|entry| entry.title.is_none()));
+}

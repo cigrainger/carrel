@@ -48,6 +48,63 @@ fn embedded_feed_content_skips_readability_scoring() {
 }
 
 #[test]
+fn hidden_offline_banners_do_not_reject_or_pollute_readable_articles() {
+    let html = r#"
+        <html><body>
+          <main><article>
+            <h1>A readable post</h1>
+            <p>This is a real article delivered successfully by the publisher.
+               Its readable paragraphs must remain available for offline reading.</p>
+          </article></main>
+          <div role="alert" hidden>
+            <p>We can&#39;t find the internet</p>
+            <div hidden><p>Attempting to reconnect</p></div>
+          </div>
+          <div hidden><p>Hidden server failure</p></div>
+        </body></html>
+    "#;
+
+    for article in [
+        extract_from_html(html, "https://example.com/post").unwrap(),
+        extract_embedded_html(html, "https://example.com/post").unwrap(),
+    ] {
+        assert!(
+            article
+                .content_html
+                .contains("real article delivered successfully")
+        );
+        assert!(!article.content_html.contains("find the internet"));
+        assert!(!article.content_html.contains("Attempting to reconnect"));
+        assert!(!article.content_html.contains("Hidden server failure"));
+        assert!(article.word_count > 0);
+    }
+}
+
+#[test]
+fn visible_network_error_content_is_still_rejected_from_feeds() {
+    let html = "<p>We can’t find the internet</p><p>Attempting to reconnect</p>";
+    assert!(extract_embedded_html(html, "https://example.com/post").is_err());
+}
+
+#[test]
+fn empty_or_entirely_hidden_pages_fail_without_panicking() {
+    for html in [
+        "<html><body></body></html>",
+        "<div hidden>We can't find the internet. Attempting to reconnect.</div>",
+    ] {
+        for result in [
+            extract_from_html(html, "https://example.com/post"),
+            extract_embedded_html(html, "https://example.com/post"),
+        ] {
+            assert!(matches!(
+                result,
+                Err(carrel_feeds::ExtractError::EmptyContent { .. })
+            ));
+        }
+    }
+}
+
+#[test]
 fn sanitizer_strips_known_xss_patterns() {
     let cleaned = sanitize_html(
         r#"

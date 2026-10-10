@@ -49,7 +49,11 @@ fn normalize_entry(feed: &Feed, entry: &Entry, feed_base: &Url) -> ParsedEntry {
 
     ParsedEntry {
         feed_guid: stable_guid(entry, url.as_deref()),
-        title: entry.title.as_ref().map(text_content),
+        title: entry
+            .title
+            .as_ref()
+            .map(text_content)
+            .filter(|title| !title.trim().is_empty()),
         authors,
         url,
         published_at_micros,

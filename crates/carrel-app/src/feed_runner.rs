@@ -9,20 +9,31 @@ use carrel_store::blobs::BlobStore;
 use carrel_store::feeds::{EntryError, FeedFetchMetadata, FeedRecord, IngestStats};
 use time::OffsetDateTime;
 
+/// Whether an explicit fetch should retry content despite cached validators.
+#[derive(Clone, Copy)]
+pub(crate) enum FetchMode {
+    /// Scheduled polling preserves conditional request headers.
+    Conditional,
+    /// User-requested refresh obtains the feed body to retry article caching.
+    Refresh,
+}
+
 /// Fetch and ingest one subscribed feed.
 pub(crate) async fn fetch_one(
     store: &carrel_store::Store,
     blobs: &BlobStore,
     fetcher: &Fetcher,
     feed: &FeedRecord,
+    mode: FetchMode,
 ) -> FetchReport {
-    let result = fetcher
-        .fetch(
-            &feed.url,
+    let (etag, last_modified) = match mode {
+        FetchMode::Conditional => (
             feed.etag_header.as_deref(),
             feed.last_modified_header.as_deref(),
-        )
-        .await;
+        ),
+        FetchMode::Refresh => (None, None),
+    };
+    let result = fetcher.fetch(&feed.url, etag, last_modified).await;
 
     match result {
         Ok(FetchResult::Updated { body, headers }) => {
@@ -249,6 +260,8 @@ struct EntryContentExtraction {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Duration;
 
     use carrel_feeds::{DEFAULT_USER_AGENT, FetcherConfig};
@@ -310,7 +323,7 @@ mod tests {
             .unwrap();
         let fetcher = test_fetcher();
 
-        let report = fetch_one(&store, &blobs, &fetcher, &feed).await;
+        let report = fetch_one(&store, &blobs, &fetcher, &feed, FetchMode::Conditional).await;
 
         match report.outcome {
             FetchOutcome::Updated { stats } => {
@@ -370,12 +383,106 @@ mod tests {
             .unwrap();
         let fetcher = test_fetcher();
 
-        let report = fetch_one(&store, &blobs, &fetcher, &feed).await;
+        let report = fetch_one(&store, &blobs, &fetcher, &feed, FetchMode::Conditional).await;
 
         assert_eq!(report.outcome, FetchOutcome::NotModified);
         let feed = store.get_feed(&feed.url).unwrap().unwrap();
         assert_eq!(feed.etag_header.as_deref(), Some("\"fresh\""));
         assert_eq!(feed.consecutive_failures, 0);
+    }
+
+    #[tokio::test]
+    async fn explicit_refresh_recovers_content_without_a_feed_change() {
+        let server = MockServer::start().await;
+        allow_robots(&server).await;
+        let feed_body = format!(
+            r#"<rss version="2.0"><channel><title>Recovery feed</title>
+              <item><guid>recoverable</guid><title>Saved article</title>
+                <link>{}/article</link><description>Summary</description>
+              </item></channel></rss>"#,
+            server.uri()
+        );
+        Mock::given(method("GET"))
+            .and(path("/feed.xml"))
+            .respond_with(move |request: &wiremock::Request| {
+                if request.headers.contains_key("if-none-match")
+                    || request.headers.contains_key("if-modified-since")
+                {
+                    ResponseTemplate::new(304)
+                } else {
+                    ResponseTemplate::new(200)
+                        .insert_header("etag", "\"unchanged\"")
+                        .insert_header("last-modified", "Wed, 09 Sep 2026 10:00:00 GMT")
+                        .set_body_string(&feed_body)
+                }
+            })
+            .mount(&server)
+            .await;
+        let article_requests = Arc::new(AtomicUsize::new(0));
+        let requests = article_requests.clone();
+        Mock::given(method("GET"))
+            .and(path("/article"))
+            .respond_with(move |_: &wiremock::Request| {
+                if requests.fetch_add(1, Ordering::Relaxed) == 0 {
+                    ResponseTemplate::new(503)
+                } else {
+                    ResponseTemplate::new(200).set_body_string(
+                        r#"<article><h1>Recovered article</h1>
+                          <p>This recovered article is now cached and searchable locally.</p>
+                        </article>
+                        <div hidden><p>We can't find the internet</p>
+                          <p>Attempting to reconnect</p></div>"#,
+                    )
+                }
+            })
+            .mount(&server)
+            .await;
+
+        let tempdir = tempfile::tempdir().unwrap();
+        let store = carrel_store::Store::open_in_memory().unwrap();
+        store.migrate().unwrap();
+        let blobs = BlobStore::open(tempdir.path());
+        let feed = store
+            .add_feed(&format!("{}/feed.xml", server.uri()))
+            .unwrap();
+        let fetcher = test_fetcher();
+        let first = fetch_one(&store, &blobs, &fetcher, &feed, FetchMode::Conditional).await;
+        assert_eq!(first.content_errors.len(), 1);
+        assert!(matches!(first.outcome, FetchOutcome::Updated { .. }));
+        let feed = store.get_feed(&feed.url).unwrap().unwrap();
+        assert_eq!(feed.etag_header.as_deref(), Some("\"unchanged\""));
+        assert!(feed.last_modified_header.is_some());
+
+        let scheduled = fetch_one(&store, &blobs, &fetcher, &feed, FetchMode::Conditional).await;
+        assert_eq!(scheduled.outcome, FetchOutcome::NotModified);
+        assert_eq!(article_requests.load(Ordering::Relaxed), 1);
+
+        let refresh = fetch_one(&store, &blobs, &fetcher, &feed, FetchMode::Refresh).await;
+        assert!(refresh.content_errors.is_empty());
+        let FetchOutcome::Updated { stats } = refresh.outcome else {
+            panic!("expected refreshed feed body");
+        };
+        assert_eq!(stats.new_items, 0);
+        assert_eq!(stats.updated_items, 1);
+        assert_eq!(article_requests.load(Ordering::Relaxed), 2);
+        let matches = store
+            .list_item_page(
+                &carrel_core::library::ItemFilter {
+                    search: Some("recovered searchable".into()),
+                    ..carrel_core::library::ItemFilter::library()
+                },
+                0,
+            )
+            .unwrap();
+        assert_eq!(matches.items.len(), 1);
+        assert!(
+            store
+                .get_item_detail(&matches.items[0].id)
+                .unwrap()
+                .unwrap()
+                .readable
+                .is_some()
+        );
     }
 
     async fn allow_robots(server: &MockServer) {

@@ -466,7 +466,16 @@ impl Store {
         let title = entry
             .title
             .clone()
-            .or_else(|| content.and_then(|content| content.title.clone()))
+            .filter(|title| !title.trim().is_empty())
+            .or_else(|| {
+                content.and_then(|content| {
+                    content.title.clone().filter(|title| {
+                        !title.trim().is_empty()
+                            && parsed.title.as_deref() != Some(title.as_str())
+                            && content.site_name.as_deref() != Some(title.as_str())
+                    })
+                })
+            })
             .or_else(|| canonical_url.map(ToString::to_string))
             .unwrap_or_else(|| entry.feed_guid.clone());
         let byline = if entry.authors.is_empty() {
@@ -952,5 +961,76 @@ mod tests {
         assert_eq!(rows.rows[0][0], cozo::DataValue::Num(cozo::Num::Int(500)));
         assert_eq!(rows.rows[0][1], cozo::DataValue::Num(cozo::Num::Int(2)));
         assert_eq!(rows.rows[0][2], cozo::DataValue::from("Ada"));
+    }
+
+    #[test]
+    fn blank_feed_titles_allow_article_titles_but_not_generic_site_headings() {
+        let store = Store::open_in_memory().unwrap();
+        store.migrate().unwrap();
+        let feed_url = "https://example.com/feed.xml";
+        let article_url = "https://example.com/post";
+        store.add_feed(feed_url).unwrap();
+        for (feed_title, extracted_title, expected) in [
+            (
+                Some("A publisher title"),
+                Some("Example"),
+                "A publisher title",
+            ),
+            (Some("Example"), Some("Another title"), "Example"),
+            (
+                Some(""),
+                Some("A real article title"),
+                "A real article title",
+            ),
+            (
+                Some("  "),
+                Some("A real article title"),
+                "A real article title",
+            ),
+            (None, Some("Example"), article_url),
+            (None, Some("example.com"), article_url),
+            (None, None, article_url),
+        ] {
+            let parsed = ParsedFeed {
+                title: Some("Example".into()),
+                description: None,
+                language: None,
+                entries: vec![ParsedEntry {
+                    feed_guid: "untitled".into(),
+                    title: feed_title.map(str::to_string),
+                    authors: Vec::new(),
+                    url: Some(article_url.into()),
+                    published_at_micros: None,
+                    language: None,
+                    summary_html: Some("<p>An opening sentence.</p>".into()),
+                    content_html: None,
+                }],
+            };
+            let content = ExtractedEntryContent {
+                searchable_text: "An opening sentence.".into(),
+                feed_guid: "untitled".into(),
+                title: extracted_title.map(str::to_string),
+                byline: None,
+                blob_id: "fixture-blob".into(),
+                byte_size: 25,
+                extracted_with: "fixture".into(),
+                word_count: 3,
+                estimated_read_minutes: 1,
+                language: None,
+                site_name: Some("example.com".into()),
+                shape: Default::default(),
+            };
+            let stats = store
+                .ingest_feed_with_content(
+                    feed_url,
+                    &parsed,
+                    &FeedFetchMetadata::default(),
+                    &[content],
+                )
+                .unwrap();
+            assert!(stats.errors.is_empty());
+            let rows = store.query("?[title] := *item{title}").unwrap();
+            assert_eq!(rows.rows, vec![vec![DataValue::from(expected)]]);
+        }
     }
 }

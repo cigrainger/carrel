@@ -217,21 +217,31 @@ pub(crate) fn list_item_page_from_store(
         items: page
             .items
             .into_iter()
-            .map(|item| ItemSummary {
-                source_name: source_name(item.primary_url.as_deref(), item.site_name.as_deref()),
-                length_label: length_label(&ArticleMetadata {
-                    estimated_read_minutes: item.estimated_read_minutes,
-                    word_count: item.word_count,
-                    ..Default::default()
-                }),
-                time_label: time_label(item.discovered_at_micros, now),
-                summary: item.summary.as_deref().map(plain_text_summary),
-                id: item.id,
-                title: item.title,
-                read_state: item.read_state,
-                starred: item.starred,
-                primary_url: item.primary_url,
-                discovered_at_micros: item.discovered_at_micros,
+            .map(|item| {
+                let (title, summary) = item_display_text(
+                    &item.title,
+                    item.primary_url.as_deref(),
+                    item.summary.as_deref(),
+                );
+                ItemSummary {
+                    source_name: source_name(
+                        item.primary_url.as_deref(),
+                        item.site_name.as_deref(),
+                    ),
+                    length_label: length_label(&ArticleMetadata {
+                        estimated_read_minutes: item.estimated_read_minutes,
+                        word_count: item.word_count,
+                        ..Default::default()
+                    }),
+                    time_label: time_label(item.discovered_at_micros, now),
+                    summary,
+                    id: item.id,
+                    title,
+                    read_state: item.read_state,
+                    starred: item.starred,
+                    primary_url: item.primary_url,
+                    discovered_at_micros: item.discovered_at_micros,
+                }
             })
             .collect(),
         next_cursor: page.next_cursor,
@@ -641,27 +651,54 @@ fn summary_from_parts(
     starred: bool,
     now: OffsetDateTime,
 ) -> ItemSummary {
+    let (title, summary) = item_display_text(
+        &item.title,
+        item.primary_url.as_deref(),
+        item.summary.as_deref(),
+    );
     ItemSummary {
         id: item.id.clone(),
-        title: item.title.clone(),
+        title,
         source_name: source_name(item.primary_url.as_deref(), article.site_name.as_deref()),
         length_label: length_label(article),
         time_label: time_label(item.discovered_at_micros, now),
         read_state,
         starred,
         primary_url: item.primary_url.clone(),
-        summary: item.summary.as_deref().map(plain_text_summary),
+        summary,
         discovered_at_micros: item.discovered_at_micros,
     }
 }
 
 fn plain_text_summary(summary: &str) -> String {
-    kuchiki::parse_html()
-        .one(summary)
-        .text_contents()
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
+    carrel_feeds::html_to_text(summary)
+}
+
+fn item_display_text(
+    title: &str,
+    primary_url: Option<&str>,
+    summary_html: Option<&str>,
+) -> (String, Option<String>) {
+    let summary = summary_html
+        .map(plain_text_summary)
+        .filter(|summary| !summary.is_empty());
+    let title = title.trim();
+    if !title.is_empty() && primary_url != Some(title) {
+        return (title.to_string(), summary);
+    }
+    let Some(summary) = summary else {
+        return ("Untitled post".to_string(), None);
+    };
+    let Some((limit, _)) = summary.char_indices().nth(120) else {
+        return (summary, None);
+    };
+    let end = summary[..limit]
+        .rfind(' ')
+        .filter(|end| *end > 0)
+        .unwrap_or(limit);
+    let heading = format!("{}…", summary[..end].trim_end());
+    let continuation = summary[end..].trim().to_string();
+    (heading, (!continuation.is_empty()).then_some(continuation))
 }
 
 fn summary_content_html(summary: &str) -> String {
@@ -855,6 +892,85 @@ mod tests {
     use cozo::Validity;
 
     use super::*;
+
+    #[test]
+    fn untitled_entries_use_plain_opening_text_and_keep_publisher_titles() {
+        let url = "https://example.com/untitled";
+        assert_eq!(
+            item_display_text(
+                url,
+                Some(url),
+                Some("<p>A short opening <em>sentence</em>.</p>")
+            ),
+            ("A short opening sentence.".into(), None)
+        );
+        assert_eq!(
+            item_display_text("A publisher title", Some(url), Some("<p>The body.</p>")),
+            ("A publisher title".into(), Some("The body.".into()))
+        );
+        assert_eq!(
+            item_display_text("  ", Some(url), Some("<script>untrusted()</script>")),
+            ("Untitled post".into(), None)
+        );
+        assert_eq!(
+            item_display_text(url, Some(url), None),
+            ("Untitled post".into(), None)
+        );
+        let unicode = "文".repeat(121);
+        let (heading, continuation) = item_display_text("", None, Some(&unicode));
+        assert_eq!(heading, format!("{}…", "文".repeat(120)));
+        assert_eq!(continuation.as_deref(), Some("文"));
+        let words = "opening ".repeat(30);
+        let (heading, continuation) = item_display_text(url, Some(url), Some(&words));
+        assert!(heading.chars().count() <= 121);
+        assert!(!heading.ends_with("open…"));
+        let reconstructed = format!(
+            "{} {}",
+            heading.trim_end_matches('…'),
+            continuation.unwrap()
+        );
+        assert_eq!(reconstructed, words.trim());
+    }
+
+    #[test]
+    fn saved_url_headings_are_presented_consistently_without_rewriting_metadata() {
+        let store = carrel_store::Store::open_in_memory().unwrap();
+        store.migrate().unwrap();
+        let url = "https://example.com/untitled";
+        insert_item(
+            &store,
+            InsertItem {
+                id: "untitled",
+                title: url,
+                url: Some(url),
+                summary: Some("<p>This post has no publisher title.</p>"),
+                discovered_at_micros: unix_micros(OffsetDateTime::now_utc()),
+                read_state: None,
+                site_name: Some("Example"),
+                minutes: None,
+            },
+        );
+        let items = list_items_from_store(&store, ItemFilter::default()).unwrap();
+        assert_eq!(items[0].title, "This post has no publisher title.");
+        assert!(items[0].summary.is_none());
+        let tempdir = tempfile::tempdir().unwrap();
+        let detail = get_item_from_parts(&store, &BlobStore::open(tempdir.path()), "untitled")
+            .unwrap()
+            .unwrap();
+        assert_eq!(detail.title, items[0].title);
+        assert!(
+            detail
+                .content_html
+                .contains("This post has no publisher title.")
+        );
+        assert_eq!(
+            query_item_record(&store, "untitled")
+                .unwrap()
+                .unwrap()
+                .title,
+            url
+        );
+    }
 
     fn list_items_from_store(
         store: &carrel_store::Store,

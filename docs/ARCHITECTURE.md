@@ -190,7 +190,17 @@ conflict rules and migration/adoption boundaries are in `SCHEMA.md`.
 [Webview] "Today" view updates
 ```
 
-Every step is restartable. If we crash mid-fetch, the next tick re-fetches (the conditional headers prevent re-downloading unchanged content). If we crash mid-extract, the entry isn't yet in Cozo, so we just retry. Idempotency is achieved by deduplication on stable identifiers (feed GUID, URL, content hash) at the Cozo write layer.
+Feed writes are idempotent through stable identifiers (feed GUID, URL, content
+hash) at the Cozo layer. Scheduled polling uses conditional requests. An article
+extraction failure does not prevent saving the entry's metadata; an explicit
+desktop **Fetch** downloads the feed body again and retries content caching,
+including when the feed's validators have not changed.
+
+Extraction removes elements with the HTML `hidden` attribute before checking
+for network error pages or sanitizing content. Dormant publisher error banners
+must neither reject a successful article response nor become visible cached
+text when sanitization removes their attributes. Empty pages return a typed
+error; the subprocess fallback runs only when explicitly configured.
 
 ### 3. Sync with a peer
 

@@ -49,6 +49,12 @@ are paper `#f5f2eb` and elevated paper `#faf8f3`, with ink `#252722`, secondary
 text `#62645d`, tertiary text `#65675f`, rules `#d2d0c5` / `#bdbbb0`, and accent
 `#9a462f`. Existing dark, sepia, and black themes remain available.
 
+Publisher titles take precedence. Genuinely untitled posts use a short opening
+excerpt, using up to 120 Unicode source characters at a word boundary when available,
+instead of the URL. The remaining text can appear underneath without repeating
+the heading. This is a display fallback, including for older saved entries;
+the original article metadata remains intact.
+
 Typography is the most important visual decision in a reading app. The user spends the majority of their time looking at body text; the body text deserves real care.
 
 ### Typefaces
@@ -666,6 +672,11 @@ started them. A failed optimistic action restores the affected state and reports
 the failure quietly, preserving the working list or article.
 
 Feed fetch progress and non-fatal errors surface in the status strip. The sidebar may expose a small explicit "Fetch" command, but it never animates or prompts for attention.
+
+An explicit **Fetch** obtains the feed body again so failed article caching can
+recover even when the publisher's feed has not changed. Scheduled polling keeps
+conditional requests. Partial content failures distinguish a successfully saved
+feed from an incomplete article cache; diagnostic logs include a sample reason.
 
 ### Share affordance
 
