@@ -57,6 +57,7 @@ pub fn run() -> Result<()> {
             close::cancel_app_close,
             commands::links::open_external_url,
             commands::feeds::add_feed,
+            commands::feeds::discover_feeds,
             commands::feeds::feed_status,
             commands::feeds::fetch_all_feeds,
             commands::feeds::fetch_feed,

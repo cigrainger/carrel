@@ -171,6 +171,102 @@ async fn per_host_interval_delays_back_to_back_requests() {
     assert!(start.elapsed() >= Duration::from_millis(45));
 }
 
+#[tokio::test]
+async fn redirect_targets_are_checked_against_robots_before_fetching() {
+    let server = MockServer::start().await;
+    Mock::given(path("/robots.txt"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_string("User-agent: *\nDisallow: /private\n"),
+        )
+        .mount(&server)
+        .await;
+    Mock::given(path("/start"))
+        .respond_with(ResponseTemplate::new(302).insert_header("location", "/private/feed"))
+        .mount(&server)
+        .await;
+    let result = test_fetcher()
+        .fetch(&format!("{}/start", server.uri()), None, None)
+        .await;
+    assert!(matches!(result, Err(FetchError::RobotsDisallowed { .. })));
+    assert!(
+        !server
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .any(|r| r.url.path() == "/private/feed")
+    );
+}
+
+#[tokio::test]
+async fn redirect_loops_and_unsupported_targets_fail_without_unbounded_requests() {
+    let server = MockServer::start().await;
+    allow_robots(&server).await;
+    Mock::given(path("/loop"))
+        .respond_with(ResponseTemplate::new(302).insert_header("location", "/loop"))
+        .mount(&server)
+        .await;
+    Mock::given(path("/file"))
+        .respond_with(ResponseTemplate::new(302).insert_header("location", "file:///tmp/feed"))
+        .mount(&server)
+        .await;
+    let fetcher = test_fetcher();
+    assert!(matches!(
+        fetcher
+            .fetch(&format!("{}/loop", server.uri()), None, None)
+            .await,
+        Err(FetchError::RedirectLimit { .. })
+    ));
+    assert!(matches!(
+        fetcher
+            .fetch(&format!("{}/file", server.uri()), None, None)
+            .await,
+        Err(FetchError::InvalidUrl { .. })
+    ));
+    assert_eq!(
+        server
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .filter(|r| r.url.path() == "/loop")
+            .count(),
+        11
+    );
+}
+
+#[tokio::test]
+async fn cross_origin_redirects_do_not_forward_cache_validators() {
+    let first = MockServer::start().await;
+    let target = MockServer::start().await;
+    allow_robots(&first).await;
+    allow_robots(&target).await;
+    Mock::given(path("/start"))
+        .respond_with(
+            ResponseTemplate::new(302).insert_header("location", format!("{}/feed", target.uri())),
+        )
+        .mount(&first)
+        .await;
+    Mock::given(path("/feed"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("feed body"))
+        .mount(&target)
+        .await;
+    let (url, result) = test_fetcher()
+        .fetch_document(
+            &format!("{}/start", first.uri()),
+            Some("private-cache-tag"),
+            Some("Sun, 03 May 2026 00:00:00 GMT"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(url, format!("{}/feed", target.uri()));
+    assert!(matches!(result, FetchResult::Updated { .. }));
+    let requests = target.received_requests().await.unwrap();
+    let request = requests.iter().find(|r| r.url.path() == "/feed").unwrap();
+    assert!(!request.headers.contains_key("if-none-match"));
+    assert!(!request.headers.contains_key("if-modified-since"));
+}
+
 async fn allow_robots(server: &MockServer) {
     Mock::given(method("GET"))
         .and(path("/robots.txt"))

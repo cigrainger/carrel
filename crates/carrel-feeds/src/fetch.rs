@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use reqwest::header::{
-    ETAG, HeaderMap, IF_MODIFIED_SINCE, IF_NONE_MATCH, LAST_MODIFIED, RETRY_AFTER,
+    ETAG, HeaderMap, IF_MODIFIED_SINCE, IF_NONE_MATCH, LAST_MODIFIED, LOCATION, RETRY_AFTER,
 };
 use reqwest::{Client, StatusCode};
 use texting_robots::{Robot, get_robots_url};
@@ -94,6 +94,7 @@ impl Default for FetcherConfig {
 #[derive(Clone, Debug)]
 pub struct Fetcher {
     client: Client,
+    document_client: Client,
     user_agent: String,
     limiter: Arc<HostLimiter>,
     robots_cache: Arc<Mutex<HashMap<String, CachedRobots>>>,
@@ -113,9 +114,17 @@ impl Fetcher {
             .timeout(config.request_timeout)
             .build()
             .map_err(FetchError::ClientBuild)?;
+        // Robots lookup may follow redirects; documents need a policy check at every hop.
+        let document_client = Client::builder()
+            .user_agent(user_agent)
+            .timeout(config.request_timeout)
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .map_err(FetchError::ClientBuild)?;
 
         Ok(Self {
             client,
+            document_client,
             user_agent: user_agent.to_string(),
             limiter: Arc::new(HostLimiter::new(
                 config.max_concurrent_per_host,
@@ -133,27 +142,67 @@ impl Fetcher {
         etag: Option<&str>,
         last_modified: Option<&str>,
     ) -> Result<FetchResult, FetchError> {
-        let url = parse_http_url(url)?;
-        self.ensure_robots_allowed(&url).await?;
+        self.fetch_document(url, etag, last_modified)
+            .await
+            .map(|(_, result)| result)
+    }
 
-        let _permit = self.limiter.acquire(&url).await?;
-        let mut request = self.client.get(url.clone());
-        if let Some(etag) = etag.filter(|value| !value.is_empty()) {
-            request = request.header(IF_NONE_MATCH, etag);
-        }
-        if let Some(last_modified) = last_modified.filter(|value| !value.is_empty()) {
-            request = request.header(IF_MODIFIED_SINCE, last_modified);
-        }
-
-        let response = request.send().await.map_err(|source| FetchError::Request {
-            url: url.to_string(),
-            source,
-        })?;
+    /// Fetch a document and retain its final URL for resolving advertised links.
+    pub async fn fetch_document(
+        &self,
+        url: &str,
+        etag: Option<&str>,
+        last_modified: Option<&str>,
+    ) -> Result<(String, FetchResult), FetchError> {
+        let original = parse_http_url(url)?;
+        let mut url = original.clone();
+        let mut redirects = 0;
+        let (response, _permit) = loop {
+            self.ensure_robots_allowed(&url).await?;
+            let permit = self.limiter.acquire(&url).await?;
+            let mut request = self.document_client.get(url.clone());
+            if url.origin() == original.origin() {
+                if let Some(etag) = etag.filter(|value| !value.is_empty()) {
+                    request = request.header(IF_NONE_MATCH, etag);
+                }
+                if let Some(last_modified) = last_modified.filter(|value| !value.is_empty()) {
+                    request = request.header(IF_MODIFIED_SINCE, last_modified);
+                }
+            }
+            let response = request.send().await.map_err(|source| FetchError::Request {
+                url: url.to_string(),
+                source,
+            })?;
+            if matches!(response.status().as_u16(), 301 | 302 | 303 | 307 | 308)
+                && let Some(location) = response
+                    .headers()
+                    .get(LOCATION)
+                    .and_then(|value| value.to_str().ok())
+            {
+                if redirects == 10 {
+                    return Err(FetchError::RedirectLimit {
+                        url: url.to_string(),
+                    });
+                }
+                let next = url
+                    .join(location)
+                    .map_err(|source| FetchError::InvalidUrl {
+                        url: url.to_string(),
+                        source,
+                    })?;
+                url = parse_http_url(next.as_str())?;
+                redirects += 1;
+                drop(permit);
+                continue;
+            }
+            break (response, permit);
+        };
         let status = response.status();
+        let final_url = response.url().to_string();
         let headers = HttpHeaders::from_headers(response.headers());
 
         if status == StatusCode::NOT_MODIFIED {
-            return Ok(FetchResult::NotModified { headers });
+            return Ok((final_url, FetchResult::NotModified { headers }));
         }
 
         if status.is_success() {
@@ -161,13 +210,16 @@ impl Fetcher {
                 url: url.to_string(),
                 source,
             })?;
-            return Ok(FetchResult::Updated { body, headers });
+            return Ok((final_url, FetchResult::Updated { body, headers }));
         }
 
-        Ok(FetchResult::GoneOrError {
-            status: status.as_u16(),
-            headers,
-        })
+        Ok((
+            final_url,
+            FetchResult::GoneOrError {
+                status: status.as_u16(),
+                headers,
+            },
+        ))
     }
 
     async fn ensure_robots_allowed(&self, url: &Url) -> Result<(), FetchError> {
@@ -295,16 +347,22 @@ enum RobotsPolicy {
 }
 
 fn parse_http_url(raw: &str) -> Result<Url, FetchError> {
-    let url = Url::parse(raw).map_err(|source| FetchError::InvalidUrl {
+    let mut url = Url::parse(raw).map_err(|source| FetchError::InvalidUrl {
         url: raw.to_string(),
         source,
     })?;
-    match url.scheme() {
-        "http" | "https" => Ok(url),
-        _ => Err(FetchError::InvalidUrl {
+    if matches!(url.scheme(), "http" | "https")
+        && url.host_str().is_some()
+        && url.username().is_empty()
+        && url.password().is_none()
+    {
+        url.set_fragment(None);
+        Ok(url)
+    } else {
+        Err(FetchError::InvalidUrl {
             url: raw.to_string(),
             source: url::ParseError::RelativeUrlWithoutBase,
-        }),
+        })
     }
 }
 

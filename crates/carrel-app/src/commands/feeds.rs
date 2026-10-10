@@ -19,6 +19,34 @@ pub fn list_feeds(state: State<'_, AppState>) -> Result<Vec<FeedSummary>> {
     list_feeds_from_store(&state.store)
 }
 
+/// Validated feed choice returned before a subscription is saved.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct FeedCandidate {
+    /// Validated, resolved feed URL.
+    pub url: String,
+    /// Publisher title for the subscription chooser.
+    pub title: String,
+}
+
+/// Find validated feeds without changing subscriptions.
+#[tauri::command]
+pub async fn discover_feeds(url: String) -> Result<Vec<FeedCandidate>> {
+    let fetcher =
+        Fetcher::new(DEFAULT_USER_AGENT).map_err(|error| AppError::Feed(error.to_string()))?;
+    carrel_feeds::discovery::discover_feeds(&fetcher, &url)
+        .await
+        .map(|feeds| {
+            feeds
+                .into_iter()
+                .map(|feed| FeedCandidate {
+                    url: feed.url,
+                    title: feed.title,
+                })
+                .collect()
+        })
+        .map_err(|error| AppError::Feed(error.to_string()))
+}
+
 /// Subscribe to a feed URL.
 #[tauri::command]
 pub fn add_feed(state: State<'_, AppState>, url: String) -> Result<FeedSummary> {

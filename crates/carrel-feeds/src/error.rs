@@ -20,6 +20,13 @@ pub enum FetchError {
     #[error("failed to build HTTP client: {0}")]
     ClientBuild(#[source] reqwest::Error),
 
+    /// A document exceeded the bounded redirect chain.
+    #[error("too many redirects while fetching {url}")]
+    RedirectLimit {
+        /// Last requested URL.
+        url: String,
+    },
+
     /// The HTTP request failed before receiving a response.
     #[error("request failed for {url}: {source}")]
     Request {

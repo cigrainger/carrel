@@ -170,6 +170,18 @@ conflict rules and migration/adoption boundaries are in `SCHEMA.md`.
 
 ### 2. Fetching and ingesting a feed
 
+Website URL discovery is a read-only ingestion operation in
+`carrel-feeds::discovery`. The normal robots-aware, rate-limited fetcher retains
+the final response URL. Direct feeds are parsed immediately; HTML alternate
+feed links resolve against that URL and the document base, then are fetched and
+validated independently. Candidate work is bounded and duplicate resolved URLs
+are merged. Document redirects are bounded to ten hops; each target is checked
+against robots policy and host rate limits before fetching. Conditional cache
+validators are retained only on the original origin. The app command returns feed titles and URLs; the frontend selects
+a lone candidate or displays a chooser before invoking the ordinary local
+subscription write. Closing or editing the discovery form cannot trigger a late
+subscription. Discovery adds no persistent relations or infrastructure.
+
 ```
 [carrel-app::background::feed_loop] tick
    ↓ query Cozo for feeds due for fetch
