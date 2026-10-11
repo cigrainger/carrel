@@ -343,7 +343,13 @@ a {
 }
 
 .reader-actions button,
-.reader-action-link {
+.reader-action-link,
+.reader-footer :is(button, a),
+.reader-info button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
   height: 30px;
   padding: 0 var(--space-3);
   border: 0;
@@ -351,9 +357,8 @@ a {
   background: transparent;
   color: var(--color-text-secondary);
   cursor: default;
-  font: inherit;
-  font-size: var(--text-sm);
-  line-height: 30px;
+  font: var(--text-sm)/30px var(--font-chrome);
+  text-decoration: none;
 }
 
 .reader-action-link {
@@ -362,10 +367,14 @@ a {
   text-decoration: none;
 }
 
-.reader-actions button:hover,
+.reader-actions button:enabled:hover,
 .reader-actions button:focus-visible,
 .reader-action-link:hover,
 .reader-action-link:focus-visible,
+.reader-footer :is(button, a):hover,
+.reader-footer :is(button, a):focus-visible,
+.reader-info button:hover,
+.reader-info button:focus-visible,
 .reader-actions button[aria-pressed="true"] {
   background: var(--color-selected);
   color: var(--color-text);
@@ -426,24 +435,6 @@ a {
   color: var(--color-text);
   font-size: var(--text-lg);
   font-weight: 650;
-}
-
-.reader-info button {
-  height: 28px;
-  padding: 0 var(--space-3);
-  border: 1px solid var(--color-rule);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--text-sm);
-}
-
-.reader-info button:hover,
-.reader-info button:focus-visible {
-  background: var(--color-selected);
-  color: var(--color-text);
 }
 
 .reader-info dl {
@@ -726,26 +717,27 @@ a {
 .reader-footer {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
-  gap: var(--space-4);
-  margin-top: var(--space-10);
-  padding-top: var(--space-6);
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: var(--space-8);
+  padding-top: var(--space-4);
   border-top: 1px solid var(--color-rule);
   color: var(--color-text-tertiary);
   font-family: var(--font-chrome);
   font-size: var(--text-sm);
 }
 
-.reader-footer a {
-  color: var(--color-text-secondary);
-  text-decoration: underline;
-  text-underline-offset: 0.16em;
-}
+.reader-footer .reader-completion { margin-left: auto; color: var(--color-text); }
+.reader-footer :is(button, a) { flex: 0 0 auto; white-space: nowrap; }
 
 .quiet-state {
   color: var(--color-text-secondary);
   font-size: var(--text-sm);
 }
+
+.quiet-link { color: var(--color-text-secondary); text-decoration: underline; text-underline-offset: 0.16em; }
+.quiet-link:hover { color: var(--color-text); }
 
 .item-list {
   margin: 0;
@@ -893,11 +885,8 @@ button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px soli
 .item-state-action, .item-star-action { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 6px; border: 0; background: transparent; color: var(--color-text-secondary); cursor: pointer; font: inherit; }
 .item-state-action:hover, .item-star-action:hover { background: var(--color-selected); color: var(--color-text); }
 .item-star-action[aria-pressed="true"], .item-state-action[aria-pressed="true"] { color: var(--color-accent); }
+.reader-star-action[aria-pressed="true"], .reader-read-action[aria-pressed="true"] { color: var(--color-accent); }
 .item-star-action[aria-pressed="true"] .lucide, .reader-star-action[aria-pressed="true"] .lucide { fill: currentColor; }
-.reader-complete { display: flex; gap: var(--space-4); align-items: center; justify-content: flex-start; width: min(100%, var(--reading-measure)); margin: var(--space-6) auto; }
-.reader-complete > * { font-family: var(--font-chrome); font-size: var(--text-sm); }
-.reader-complete button { border: 1px solid var(--color-text); padding: var(--space-3) var(--space-4); background: var(--color-text); color: var(--color-bg); font: inherit; cursor: pointer; }
-.reader-complete button:hover { background: var(--color-accent); border-color: var(--color-accent); }
 
 .highlight-list {
   margin: 0;
@@ -1087,9 +1076,13 @@ button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px soli
 
 .app-shell:has(.reading-route) .status-strip { grid-row: 3; }
 
-.appearance-menu { margin-left: auto; }
-.appearance-menu summary { cursor: pointer; padding: var(--space-1); }
-.appearance-menu .theme-switcher { position: absolute; right: var(--space-3); bottom: calc(100% + var(--space-2)); padding: var(--space-2); background: var(--color-bg-elevated); z-index: 10; }
+.status-strip > :is(.status-message, .status-warning) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.appearance-menu { position: relative; flex: 0 0 auto; margin-left: auto; }
+.appearance-menu summary { display: flex; align-items: center; gap: var(--space-1); height: 26px; padding: 0 var(--space-2); list-style: none; cursor: default; }
+.appearance-menu summary::-webkit-details-marker { display: none; }
+.appearance-menu summary:focus-visible { outline-offset: -2px; }
+.appearance-menu summary:hover, .appearance-menu[open] summary { background: var(--color-selected); color: var(--color-text); }
+.appearance-menu .theme-switcher { position: absolute; right: 0; bottom: calc(100% + var(--space-2)); padding: var(--space-2); background: var(--color-bg-elevated); z-index: 10; }
 
 .status-warning {
   color: var(--color-accent);
@@ -1098,7 +1091,6 @@ button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px soli
 .theme-switcher {
   display: inline-flex;
   gap: 1px;
-  margin-left: auto;
   border: 1px solid var(--color-rule);
   border-radius: var(--radius-sm);
   overflow: hidden;
@@ -1106,13 +1098,13 @@ button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px soli
 
 .theme-switcher button {
   min-width: 3.5rem;
-  height: 20px;
+  height: 30px;
   border: 0;
   border-radius: 0;
   background: transparent;
   color: var(--color-text-secondary);
-  cursor: pointer;
-  font: inherit;
+  cursor: default;
+  font: var(--text-sm)/30px var(--font-chrome);
 }
 
 .theme-switcher button:hover,

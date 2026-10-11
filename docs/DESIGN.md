@@ -340,6 +340,13 @@ For night reading on OLED screens. Pure black saves power and reduces light blee
 
 The current implementation stores the theme in webview local storage and applies `data-theme` to the application shell. The Appearance control in the status strip opens the theme choices. Moving preferences into `:self` Cozo state is future work. Theme switches are instant; only the colors change. Native window and dialog appearance follows the selected reading theme: Light and Sepia use light native controls, Dark and Black use dark controls. The native window backing color matches the navigation field so exposed window edges remain coherent.
 
+Appearance opens upward from a fixed status-strip control. Its upward chevron
+keeps the same position and direction in both states; a quiet background marks
+the open state. Theme choices use 30px system-font controls and identify the
+selected theme. Choosing a theme closes the panel and restores trigger focus.
+Escape closes it before any underlying reader action; clicking outside or
+tabbing away also dismisses it without taking focus from the next control.
+
 We do not auto-switch based on system theme by default. Some users want their reading app to be different from their system. The user can opt in to system-following in settings.
 
 ## Layout
@@ -383,6 +390,9 @@ work. Subscriptions and utilities live in Sources. There are no counts or
 badges. Today means posts published in the past 24 hours, with first arrival as
 the fallback for undated posts. Its subtitle states the publication window
 explicitly. Older posts remain in Library and individual feed views.
+Empty Today and Reading views offer a quiet Browse Library link so their
+suggested next step is directly available. Empty search results retain Clear
+search instead of taking the user out of the current view.
 
 There is one reader layout with a collapsible source sidebar. It starts
 hidden. Cmd+B and a visible reader control show or hide it without remounting
@@ -436,9 +446,8 @@ The reading view is the application's most important screen and the one that sho
 │   typography…                            │
 │                                          │
 │                                          │
-│           ─ end of article ─              │
-│                                          │
-│   [open original]  [send to ereader]      │
+│   ────────────────────────────────────   │
+│   [open original]  [mark read & next]     │
 │                                          │
 └──────────────────────────────────────────┘
 ```
@@ -457,7 +466,14 @@ with the left edge of the body measure.
 
 The item-info surface is user-initiated and appears in the article scroll area before the text, again without overlaying the article. It holds metadata that would clutter the article header: source/feed, canonical URL, cache state, discovery/publish dates, length facts, and content-shape tags. `Esc` closes item info before it navigates away from the reader.
 
-The footer is similarly minimal. It marks the end of the article and may repeat a link to the original so the user can verify the source or grab the URL. Send-to-ereader waits until that flow is real. That's it.
+The article ends with one ruled footer aligned to its reading measure: Open
+original on the left and Mark read & next on the right (Mark read & return for
+the final item). Both use the same 30px square, icon-and-label system-font
+controls as the reader rail, with a quiet hover background and a visible
+keyboard focus ring. There is no separate completion prompt or filled call to
+action. Scrolling to this footer does not mark the article read. Saved summaries
+retain their explicit cache notice above the body. Send-to-ereader waits until
+that flow is real.
 
 Publication dates in the reading header use a short calendar date; item info
 retains the precise source timestamp. The reading measure uses the body font

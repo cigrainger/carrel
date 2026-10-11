@@ -496,15 +496,11 @@ pub fn ReadingView() -> impl IntoView {
                                         item=detail
                                          highlights=visible_highlights
                                          highlights_ready=highlights_ready
-                                        body_ref=body_ref
-                                        status=status
-                                     />
-                                     <div class="reader-complete">
-                                         <span>"Finished reading?"</span>
-                                         <button type="button" on:click=move |_| complete.run(())>
-                                             {move || if can_navigate_adjacent(item.get(), list_navigation.get(), Direction::Next) { "Mark read & next" } else { "Mark read & return" }}
-                                         </button>
-                                     </div>
+                                         body_ref=body_ref
+                                         status=status
+                                         can_next=Signal::derive(move || can_navigate_adjacent(item.get(), list_navigation.get(), Direction::Next))
+                                         on_complete=complete
+                                      />
                                 }.into_any()
                             })
                             .unwrap_or_else(|| view! {
@@ -607,8 +603,8 @@ pub fn ItemInfo(item: ItemDetail, on_close: UnsyncCallback<()>) -> impl IntoView
         <aside class="reader-info" aria-label="Item info">
             <header>
                 <h2>"Item info"</h2>
-                <button type="button" aria-label="Close item info" on:click=move |_| on_close.run(())>
-                    "Close"
+                <button type="button" aria-label="Close item info" title="Close item info (Esc)" on:click=move |_| on_close.run(())>
+                    <Icon name=IconName::Close/>
                 </button>
             </header>
             <dl>
@@ -733,6 +729,8 @@ pub fn ArticleContent(
     #[prop(default = Signal::stored(true), into)] highlights_ready: Signal<bool>,
     body_ref: NodeRef<html::Div>,
     status: StatusController,
+    #[prop(into)] can_next: Signal<bool>,
+    on_complete: UnsyncCallback<()>,
 ) -> impl IntoView {
     let byline = item.byline.clone().or_else(|| {
         if item.creators.is_empty() {
@@ -805,7 +803,6 @@ pub fn ArticleContent(
                 on:auxclick=move |event| crate::links::article_link(event, body_ref, link_original.with_value(|url| url.clone()).as_deref(), status)
             ></div>
             <footer class="reader-footer">
-                <span class="reader-end">{if has_cache { "end of article" } else { "end of saved summary" }}</span>
                 <Show when=move || has_original>
                     <a
                         href=item.primary_url.clone().unwrap_or_default()
@@ -814,9 +811,13 @@ pub fn ArticleContent(
                         on:click=move |event| { event.prevent_default(); if let Some(url) = link_original.get_value() { crate::links::open_original(url, status); } }
                         on:auxclick=move |event| { if event.button() == 1 { event.prevent_default(); if let Some(url) = link_original.get_value() { crate::links::open_original(url, status); } } }
                     >
-                        "Open original"
+                        <Icon name=IconName::Original/><span>"Open original"</span>
                     </a>
                 </Show>
+                <button type="button" class="reader-completion" title="Mark read and continue (N)" on:click=move |_| on_complete.run(())>
+                    <Icon name=IconName::Read/>
+                    <span>{move || if can_next.get() { "Mark read & next" } else { "Mark read & return" }}</span>
+                </button>
             </footer>
         </article>
     }
@@ -1481,6 +1482,8 @@ mod tests {
                     highlights=Vec::new()
                     body_ref=body_ref
                     status=status
+                    can_next=true
+                    on_complete=UnsyncCallback::new(|()| {})
                 />
             }
             .to_html()
@@ -1505,10 +1508,10 @@ mod tests {
                 let mut item = sample_item();
                 item.readable_blob_id = None;
                 item.content_html = text.into();
-                view! { <ArticleContent item=item highlights=Vec::new() body_ref=NodeRef::new() status=status/> }.to_html()
+                view! { <ArticleContent item=item highlights=Vec::new() body_ref=NodeRef::new() status=status can_next=false on_complete=UnsyncCallback::new(|()| {})/> }.to_html()
             });
             assert!(html.contains(message));
-            assert!(html.contains("end of saved summary"));
+            assert!(html.contains("Mark read &amp; return"));
             assert!(!html.contains("end of article"));
         }
     }

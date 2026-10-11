@@ -50,7 +50,7 @@ pub fn Today() -> impl IntoView {
             "Today",
             ItemFilter::today(),
             "/today",
-            "No posts published in the past 24 hours. Browse older posts in Library.",
+            "No posts published in the past 24 hours.",
         );
         spec.subtitle = Some("Published in the past 24 hours · from your subscriptions".into());
         spec
@@ -85,7 +85,7 @@ pub fn Reading() -> impl IntoView {
             "Reading",
             ItemFilter::reading(),
             "/reading",
-            "Nothing in progress. Open an article to begin.",
+            "Nothing in progress.",
         )
     })
 }
@@ -534,7 +534,14 @@ pub(crate) fn list_route_view(
             }>"Try again"</button></div> })}
             <Show when=move || loaded.get()>
                 <Show when=move || !visible.get().is_empty() fallback=move || view! { <Show when=move || error.get().is_none()><div class="quiet-state">
-                    <Show when=move || query.get().is_some() fallback=move || view! {<p>{spec.get().empty_message}</p><EmptyListAddFeed/>}>
+                    <Show when=move || query.get().is_some() fallback=move || view! {
+                        <p>{spec.get().empty_message}
+                            <Show when=move || matches!(spec.get().filter.view, ItemView::Today | ItemView::Reading)>
+                                " "<A href="/library" attr:class="quiet-link">"Browse Library"</A>
+                            </Show>
+                        </p>
+                        <EmptyListAddFeed/>
+                    }>
                         <p>"No articles match in this view."</p><button type="button" on:click=move |_| clear_search.run(())>"Clear search"</button>
                     </Show>
                 </div></Show> }>

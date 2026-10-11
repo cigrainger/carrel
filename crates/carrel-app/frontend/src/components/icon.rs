@@ -24,6 +24,7 @@ pub(crate) enum IconName {
     SidebarClose,
     Info,
     Original,
+    Appearance,
 }
 
 /// Decorative icon; the containing control supplies its accessible name.
@@ -49,6 +50,7 @@ pub(crate) fn Icon(name: IconName) -> impl IntoView {
         IconName::SidebarClose => view! { <lucide::PanelLeftClose size=18/> }.into_any(),
         IconName::Info => view! { <lucide::Info size=18/> }.into_any(),
         IconName::Original => view! { <lucide::ExternalLink size=18/> }.into_any(),
+        IconName::Appearance => view! { <lucide::ChevronUp size=16/> }.into_any(),
     };
     view! { <span class="icon" aria-hidden="true">{icon}</span> }
 }
