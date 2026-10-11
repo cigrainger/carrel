@@ -262,3 +262,66 @@ fn configured_fallback_can_extract_when_primary_is_empty() {
     assert_eq!(article.extractor, ExtractorUsed::Trafilatura);
     assert!(article.content_html.contains("fallback body text"));
 }
+
+#[tokio::test]
+async fn image_rewrite_caches_complete_cdn_srcset_urls_once_each() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/robots.txt"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("User-agent: *\nAllow: /\n"))
+        .mount(&server)
+        .await;
+    let mut candidates = Vec::new();
+    let mut expected = Vec::new();
+    for width in [400_u32, 800, 1200] {
+        let image_path = format!("/cdn-cgi/image/format=auto,quality=85,width={width},/photo.jpg");
+        let mut png = vec![0_u8; 24];
+        png[..8].copy_from_slice(b"\x89PNG\r\n\x1a\n");
+        png[16..20].copy_from_slice(&width.to_be_bytes());
+        png[20..24].copy_from_slice(&600_u32.to_be_bytes());
+        expected.push(format!("blob://{} {width}w", blake3::hash(&png).to_hex()));
+        candidates.push(format!("{}{image_path} {width}w", server.uri()));
+        Mock::given(method("GET"))
+            .and(path(&image_path))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(png))
+            .expect(1)
+            .mount(&server)
+            .await;
+    }
+    let srcset = candidates.join(", ");
+    let src = candidates[2].split_whitespace().next().unwrap();
+    // Img and picture source share candidates; each URL must be fetched once.
+    let html = format!(
+        r#"<picture><source srcset="{srcset}"><img src="{src}" srcset="{srcset}" alt="photograph"></picture>"#
+    );
+    let fetcher = Fetcher::with_config(
+        DEFAULT_USER_AGENT,
+        FetcherConfig {
+            min_interval_per_host: std::time::Duration::ZERO,
+            ..FetcherConfig::default()
+        },
+    )
+    .unwrap();
+    let mut stored = 0;
+    let result = rewrite_images(
+        &html,
+        &format!("{}/article", server.uri()),
+        &fetcher,
+        |bytes| {
+            stored += 1;
+            Ok::<_, String>(blake3::hash(bytes).to_hex().to_string())
+        },
+    )
+    .await;
+    assert!(result.failures.is_empty(), "{:?}", result.failures);
+    assert_eq!(stored, 3);
+    assert_eq!(
+        result
+            .html
+            .matches(&format!("srcset=\"{}\"", expected.join(", ")))
+            .count(),
+        2
+    );
+    assert!(!result.html.contains("cdn-cgi"));
+    server.verify().await;
+}

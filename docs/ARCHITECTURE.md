@@ -218,6 +218,14 @@ must neither reject a successful article response nor become visible cached
 text when sanitization removes their attributes. Empty pages return a typed
 error; the subprocess fallback runs only when explicitly configured.
 
+Image caching and webview URI rewriting share the same `srcset` tokenization.
+Commas inside a URL (including image-CDN transformation options) remain part of
+that URL; only candidate boundaries separate images. A reader-scoped image error
+handler retries the saved `src` when a responsive candidate fails, also recovering
+older caches produced by the previous comma-splitting parser. If the fallback
+fails, presentation collapses the broken image without changing article text or
+highlight offsets. It does not fetch or cache resources outside the engine.
+
 ### 3. Sync with a peer
 
 ```

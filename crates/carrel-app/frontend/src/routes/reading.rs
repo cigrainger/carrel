@@ -759,6 +759,11 @@ pub fn ArticleContent(
 
     #[cfg(target_arch = "wasm32")]
     {
+        Effect::new(move |_| {
+            if let Some(body) = body_ref.get() {
+                crate::reader_images::install(&body);
+            }
+        });
         let content_html = content_html.clone();
         Effect::new(move |_| {
             let Some(body) = body_ref.get() else {

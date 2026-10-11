@@ -600,6 +600,20 @@ a {
 
 .reader-body img { background: var(--color-media-bg); }
 
+.reader-body .carrel-image-unavailable {
+  display: block;
+  margin: var(--space-6) 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-rule);
+  color: var(--color-text-secondary);
+  font: var(--text-sm)/1.5 var(--font-chrome);
+  overflow-wrap: anywhere;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.reader-body .carrel-image-unavailable::before { content: attr(data-label); }
+.reader-body .carrel-image-unavailable img { display: none; }
+
 .reader-body figure {
   margin: var(--space-6) 0;
 }

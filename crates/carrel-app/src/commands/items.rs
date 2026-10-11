@@ -613,25 +613,17 @@ fn rewrite_legacy_blob_url(value: &str) -> Option<String> {
 
 fn rewrite_legacy_blob_srcset(value: &str) -> Option<String> {
     let mut changed = false;
-    let rewritten = value
-        .split(',')
-        .map(str::trim)
-        .filter(|candidate| !candidate.is_empty())
+    let rewritten = carrel_feeds::readability::parse_srcset(value)
+        .into_iter()
         .map(|candidate| {
-            let mut parts = candidate.split_whitespace();
-            let url = parts.next().unwrap_or_default();
-            let descriptor = parts.collect::<Vec<_>>().join(" ");
-            let url = if let Some(rewritten) = rewrite_legacy_blob_url(url) {
+            if let Some(url) = rewrite_legacy_blob_url(&candidate.url) {
                 changed = true;
-                rewritten
+                match candidate.descriptor {
+                    Some(descriptor) => format!("{url} {descriptor}"),
+                    None => url,
+                }
             } else {
-                url.to_string()
-            };
-
-            if descriptor.is_empty() {
-                url
-            } else {
-                format!("{url} {descriptor}")
+                candidate.original
             }
         })
         .collect::<Vec<_>>()
@@ -1487,6 +1479,22 @@ mod tests {
             rewrite_blob_uris_for_webview(&detail.content_html),
             detail.content_html
         );
+    }
+
+    #[test]
+    fn webview_srcset_rewriting_preserves_cdn_urls_and_descriptors() {
+        let srcset = "https://images.example/cdn-cgi/image/width=400,format=auto,/photo.jpg 400w, blob://cached 800w";
+        assert_eq!(
+            rewrite_legacy_blob_srcset(srcset).as_deref(),
+            Some(
+                "https://images.example/cdn-cgi/image/width=400,format=auto,/photo.jpg 400w, carrel-blob://cached 800w"
+            )
+        );
+        assert_eq!(
+            rewrite_legacy_blob_srcset("blob://first, blob://second 2x").as_deref(),
+            Some("carrel-blob://first, carrel-blob://second 2x")
+        );
+        assert!(rewrite_legacy_blob_srcset("https://images.example/a,b.jpg 2x").is_none());
     }
 
     #[test]

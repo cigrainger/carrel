@@ -14,6 +14,8 @@ mod keymap;
 mod links;
 mod navigation;
 mod progress;
+#[cfg(target_arch = "wasm32")]
+mod reader_images;
 mod requests;
 mod routes;
 mod selection;

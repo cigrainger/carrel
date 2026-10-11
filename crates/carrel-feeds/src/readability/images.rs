@@ -338,28 +338,72 @@ fn absolute_url(raw: &str, base: &Url) -> Option<String> {
         .map(|url| url.to_string())
 }
 
-#[derive(Debug)]
-struct SrcsetCandidate {
-    original: String,
-    url: String,
-    descriptor: Option<String>,
+/// One responsive image reference, before browser descriptor validation.
+#[derive(Debug, Eq, PartialEq)]
+pub struct SrcsetCandidate {
+    /// Original candidate text, excluding the separator.
+    pub original: String,
+    /// URL token, which may contain commas.
+    pub url: String,
+    /// Optional width or density descriptor text.
+    pub descriptor: Option<String>,
 }
 
-fn parse_srcset(raw: &str) -> Vec<SrcsetCandidate> {
-    raw.split(',')
-        .map(str::trim)
-        .filter(|candidate| !candidate.is_empty())
-        .map(|candidate| {
-            let mut parts = candidate.split_whitespace();
-            let url = parts.next().unwrap_or_default().to_string();
-            let descriptor = parts.collect::<Vec<_>>().join(" ");
-            SrcsetCandidate {
-                original: candidate.to_string(),
-                url,
-                descriptor: (!descriptor.is_empty()).then_some(descriptor),
+/// Split responsive image references using HTML's URL/descriptor boundaries.
+///
+/// URL commas are significant (for example in CDN transformation paths and data
+/// URLs). The browser remains responsible for validating descriptor values.
+pub fn parse_srcset(raw: &str) -> Vec<SrcsetCandidate> {
+    // Tokenization follows the HTML srcset algorithm, including trailing URL
+    // commas and parenthesized descriptors. Splitting every comma corrupts URLs.
+    // https://html.spec.whatwg.org/multipage/images.html#parsing-a-srcset-attribute
+    let bytes = raw.as_bytes();
+    let whitespace = |byte: u8| matches!(byte, b'\t' | b'\n' | b'\x0c' | b'\r' | b' ');
+    let mut position = 0;
+    let mut candidates = Vec::new();
+    while position < bytes.len() {
+        while position < bytes.len() && (whitespace(bytes[position]) || bytes[position] == b',') {
+            position += 1;
+        }
+        let start = position;
+        while position < bytes.len() && !whitespace(bytes[position]) {
+            position += 1;
+        }
+        let token = &raw[start..position];
+        if token.is_empty() {
+            break;
+        }
+        let url = token.trim_end_matches(',');
+        let descriptor = if token.ends_with(',') {
+            None
+        } else {
+            let descriptor_start = position;
+            let mut in_parens = false;
+            while position < bytes.len() {
+                match bytes[position] {
+                    b',' if !in_parens => break,
+                    b'(' => in_parens = true,
+                    b')' => in_parens = false,
+                    _ => {}
+                }
+                position += 1;
             }
-        })
-        .collect()
+            let descriptor = raw[descriptor_start..position].trim_matches(|character: char| {
+                character.is_ascii() && whitespace(character as u8)
+            });
+            (!descriptor.is_empty()).then(|| descriptor.to_string())
+        };
+        let original = match &descriptor {
+            Some(descriptor) => format!("{url} {descriptor}"),
+            None => url.to_string(),
+        };
+        candidates.push(SrcsetCandidate {
+            original,
+            url: url.to_string(),
+            descriptor,
+        });
+    }
+    candidates
 }
 
 fn serialize_body_children(document: &kuchiki::NodeRef) -> String {
@@ -371,4 +415,67 @@ fn serialize_body_children(document: &kuchiki::NodeRef) -> String {
         .children()
         .map(|child| child.to_string())
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn srcset_preserves_commas_inside_image_urls() {
+        let candidates = parse_srcset(
+            "https://images.example/cdn-cgi/image/format=auto,quality=85,width=400,/photo.jpg 400w, https://images.example/cdn-cgi/image/format=auto,quality=85,width=800,/photo.jpg 800w",
+        );
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(
+            candidates[0].url,
+            "https://images.example/cdn-cgi/image/format=auto,quality=85,width=400,/photo.jpg"
+        );
+        assert_eq!(candidates[0].descriptor.as_deref(), Some("400w"));
+        assert_eq!(candidates[1].descriptor.as_deref(), Some("800w"));
+    }
+
+    #[test]
+    fn srcset_handles_html_token_boundaries_without_corrupting_urls() {
+        for (raw, expected) in [
+            (" , \t\n", vec![]),
+            (
+                "first.png, second.png",
+                vec![("first.png", None), ("second.png", None)],
+            ),
+            (
+                "first.png 1x,second.png 2x",
+                vec![("first.png", Some("1x")), ("second.png", Some("2x"))],
+            ),
+            (
+                "/图,片.png\t400w, /large.png\n800w,",
+                vec![("/图,片.png", Some("400w")), ("/large.png", Some("800w"))],
+            ),
+            (
+                "data:image/png;base64,AAAA 1x, /large.png 2x",
+                vec![
+                    ("data:image/png;base64,AAAA", Some("1x")),
+                    ("/large.png", Some("2x")),
+                ],
+            ),
+            (
+                "image.png future(a,b), second.png 2x",
+                vec![
+                    ("image.png", Some("future(a,b)")),
+                    ("second.png", Some("2x")),
+                ],
+            ),
+            ("image.png 0w", vec![("image.png", Some("0w"))]),
+        ] {
+            let actual = parse_srcset(raw);
+            assert_eq!(
+                actual
+                    .iter()
+                    .map(|candidate| (candidate.url.as_str(), candidate.descriptor.as_deref()))
+                    .collect::<Vec<_>>(),
+                expected,
+                "{raw}"
+            );
+        }
+    }
 }

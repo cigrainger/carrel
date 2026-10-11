@@ -467,6 +467,10 @@ summary and original link, rather than presented as a complete article.
 Source images retain their colors on a light paper backing in every theme.
 This keeps transparent ink diagrams and image-based equations readable in dark
 themes without inverting photographs or illustrations.
+If a responsive image fails, the reader tries its saved main image. If that also
+fails, a compact “Image unavailable” placeholder retains any alternative text
+and the publisher's caption. It never reserves a large empty paper rectangle;
+Open original remains available in the footer.
 
 Article links and Open original open in the system browser, preserving the
 reader. Fragment links to targets in the cached article stay in the reader.
