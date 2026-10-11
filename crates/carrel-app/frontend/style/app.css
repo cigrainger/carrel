@@ -1214,6 +1214,10 @@ button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px soli
 
 .feed-dialog form > label { display: block; margin-top: var(--space-4); color: var(--color-text-secondary); font-size: var(--text-sm); }
 .feed-dialog form > input { margin-top: var(--space-2); }
+.capture-notice, .capture-result-label { margin-top: var(--space-3); color: var(--color-text-secondary); font-size: var(--text-sm); line-height: 1.5; }
+.capture-result-title { margin: var(--space-3) 0; font-weight: 600; overflow-wrap: anywhere; }
+.capture-library-link { display: inline-block; margin-top: var(--space-2); font-size: var(--text-sm); color: var(--color-accent); }
+.capture-result .feed-dialog-actions button { display: inline-flex; align-items: center; gap: var(--space-2); }
 .feed-chooser { margin-top: var(--space-5); padding: 0; border: 0; }
 .feed-chooser legend { margin-bottom: var(--space-2); font-size: var(--text-sm); }
 .feed-chooser label { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-3) 0; border-top: 1px solid var(--color-rule); cursor: pointer; }

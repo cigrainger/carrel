@@ -695,7 +695,8 @@ fn plain_text_summary(summary: &str) -> String {
     carrel_feeds::html_to_text(summary)
 }
 
-fn item_display_text(
+/// Display a publisher title, falling back to a bounded opening excerpt.
+pub(crate) fn item_display_text(
     title: &str,
     primary_url: Option<&str>,
     summary_html: Option<&str>,

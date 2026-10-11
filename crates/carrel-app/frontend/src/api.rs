@@ -6,6 +6,35 @@ use serde::{Deserialize, Serialize};
 pub use carrel_core::annotation::{AnnotationCursor, AnnotationPage};
 pub use carrel_core::library::{ItemCursor, ItemFilter, ItemPage, ItemView};
 
+/// Result of explicitly archiving an article URL.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SavedArticle {
+    pub id: String,
+    pub title: String,
+    pub existed: bool,
+    pub warning: Option<String>,
+}
+
+#[cfg(target_arch = "wasm32")]
+pub(crate) async fn save_article(url: String) -> Result<SavedArticle, ApiError> {
+    #[derive(Serialize)]
+    struct Args {
+        url: String,
+    }
+    let args = serde_wasm_bindgen::to_value(&Args { url })
+        .map_err(|error| ApiError::new(error.to_string()))?;
+    let result = tauri_invoke("save_article", args)
+        .await
+        .map_err(api_error_from_js)?;
+    serde_wasm_bindgen::from_value(result).map_err(|error| ApiError::new(error.to_string()))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) async fn save_article(_url: String) -> Result<SavedArticle, ApiError> {
+    Err(ApiError::new("Article saving requires the desktop app"))
+}
+
 /// Quiet private-sync state; no reading contents or counts cross this boundary.
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]

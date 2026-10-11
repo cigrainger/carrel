@@ -1,6 +1,7 @@
 //! Tauri command handlers.
 
 pub(crate) mod annotation_export;
+pub(crate) mod capture;
 pub(crate) mod feeds;
 pub(crate) mod highlights;
 pub(crate) mod items;

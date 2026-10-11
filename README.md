@@ -6,8 +6,10 @@ In spirit: a successor to Google Reader's social layer. In practice: a desktop a
 
 ## Status
 
-Early. Pre-alpha. The local reading loop, archive, offline search, and annotation
-review work. Two-device peer-to-peer self-sync is the next milestone.
+Early. Pre-alpha. The local reading loop, archive, offline search, annotation
+review and article URL capture work. Two-device peer-to-peer self-sync is
+implemented and integration tested; a physical two-machine check remains.
+Private sharing with trusted friends is the next milestone.
 
 This repository is the home of the project's design documents, code, and (eventually) releases. The design documents are stable enough to guide implementation, and the foundation crates are now taking shape: the Cargo workspace, Cozo schema, identity primitives, keystore, CLI, feed ingestion, readable article extraction, content-shape detection, and the first Tauri + Leptos desktop reader surfaces are implemented. The CLI remains a development surface rather than end-user software.
 
@@ -45,7 +47,7 @@ code, omit dependency debug symbols, and disable incremental caches to keep
 disk use manageable. For full debugger inspection, use `cargo build --profile
 debugging` or `cargo test --profile debugging`. Release builds are unaffected.
 
-The desktop app has an editorial reading layout, bundled fonts, a collapsible
+The desktop app has a Field reading layout, bundled fonts, a collapsible
 reader sidebar (Cmd+B), explicit reading completion, saved position restoration,
 highlights and notes, and local lists for Today, Reading, Library, Unread,
 Starred, and individual feeds. **Load older** extends lists through the archive.
@@ -56,7 +58,12 @@ text offline; `/` focuses search and `\` clears it. Every word matches a word
 beginning, within the current filter. The query and loaded results survive
 opening an article and returning. Highlights supports full note review, note
 editing, deliberate removal, and a complete Markdown export through a native
-save dialog. Two-device self-sync follows in
+save dialog. **Save article** in the destination band (Cmd+N) archives an article
+URL and its images without subscribing to the site. Saving preserves the current
+view and offers **Read article** or **View in Library** afterward. Existing
+articles retain their identity, archive, highlights and reading state. A failed
+capture keeps the URL available for retry; partial image caching is stated.
+**Add source** remains in Sources. Two-device self-sync is described in
 [`docs/SELF_SYNC_PLAN.md`](docs/SELF_SYNC_PLAN.md).
 
 The CLI can initialize a local data directory, print install info, run schema

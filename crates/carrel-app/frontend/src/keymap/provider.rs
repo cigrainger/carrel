@@ -104,6 +104,10 @@ pub fn KeymapProvider(children: Children) -> impl IntoView {
 #[component]
 pub fn GlobalKeymapActions() -> impl IntoView {
     let navigate = use_navigate();
+    let capture = crate::components::save_article::use_capture_dialog().0;
+    use_action_handler("save-article", move || {
+        capture.set(true);
+    });
 
     let today = navigate.clone();
     use_action_handler("go-today", move || {

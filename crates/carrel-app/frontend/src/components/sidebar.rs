@@ -19,6 +19,8 @@ pub(crate) fn FieldNavigation() -> impl IntoView {
     let sources = crate::navigation::use_reading_sidebar();
     let controller = use_feed_controller();
     let fetch_busy = RwSignal::new(false);
+    let capture = crate::components::save_article::use_capture_dialog();
+    let save_button = NodeRef::<leptos::html::Button>::new();
     let destination = Memo::new(move |_| {
         let path = location.pathname.get();
         let origin = if path.starts_with("/item/") {
@@ -54,7 +56,7 @@ pub(crate) fn FieldNavigation() -> impl IntoView {
                         fetch_busy.try_set(false);
                     });
                 }><Icon name=IconName::Refresh/></button>
-                <button type="button" aria-label="Add source" title="Add source" on:click=move |_| controller.add_open.set(true)><Icon name=IconName::Add/></button>
+                <button node_ref=save_button type="button" aria-label="Save article" title="Save article (⌘N)" on:click=move |_| capture.open_from(save_button)><Icon name=IconName::Add/></button>
             </div>
         </header>
     }

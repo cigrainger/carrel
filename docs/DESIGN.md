@@ -677,6 +677,7 @@ a             archive (mark read and hide from main lists)
 cmd-B         show / hide sidebar while reading
 ?             keymap reference (overlay)
 cmd-k         command palette
+cmd-n         save an article URL
 cmd-,         settings
 ```
 
@@ -774,6 +775,26 @@ A small star icon, filled when starred, outlined when not. Single click to toggl
 Small lowercase labels with a subtle background tint, separated from titles. Clicking a tag filters the current view to items with that tag. No icons; just text.
 
 ### Feed management
+
+The destination band's plus control opens **Save article**; Cmd+N opens the same
+dialog through the keymap stack. The source drawer retains its separate **Add
+source** control. Saving accepts an HTTP(S) article link or a bare website
+address. It archives the page and its images, without subscribing to the site.
+The input stays visible while saving and remains intact on failure for retry.
+Cancel dismisses the dialog without navigating; an already submitted save may
+finish in the background and report its result in the status strip. It cannot
+close a newer dialog or navigate away from the user's current reading.
+
+Successful saving leaves the current reading context in place and offers **Read
+article** and **Done**, with an explicit **View in Library** link. A repeated URL
+opens the existing article without resetting its read state or replacing its
+archive. Partial image caching is stated beside the result. Esc closes the
+dialog, focus returns to its initiating control, and no clipboard is read
+automatically. A new article is unread; saving does not star or complete it.
+Recent saved links also appear in Today under its ordinary publication-date
+rule; the subtitle describes the library rather than only subscriptions.
+When a saved page supplies no title or description, its opening excerpt supplies
+the heading consistently in the confirmation, Library and reader.
 
 The Sources drawer lists subscribed feed titles, falling back to host or URL
 when the feed has not been fetched yet. Feed rows are plain navigation rows

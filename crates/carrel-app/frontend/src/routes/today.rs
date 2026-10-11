@@ -52,7 +52,7 @@ pub fn Today() -> impl IntoView {
             "/today",
             "No posts published in the past 24 hours.",
         );
-        spec.subtitle = Some("Published in the past 24 hours · from your subscriptions".into());
+        spec.subtitle = Some("Published in the past 24 hours · from your library".into());
         spec
     })
 }
@@ -627,7 +627,10 @@ async fn fetch_archive(
 #[component]
 fn EmptyListAddFeed() -> impl IntoView {
     let controller = crate::feeds::use_feed_controller();
+    let capture = crate::components::save_article::use_capture_dialog();
+    let save_button = NodeRef::<leptos::html::Button>::new();
     view! { <Show when=move || controller.feeds().get().is_empty()>
+        <button node_ref=save_button type="button" on:click=move |_| capture.open_from(save_button)>"Save an article"</button>
         <button type="button" on:click=move |_| controller.add_open.set(true)>"Add a feed"</button>
         <crate::components::SubscriptionFiles export=false/>
     </Show> }

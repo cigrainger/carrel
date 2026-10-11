@@ -186,6 +186,19 @@ Feed refresh preserves an existing item's first `discovered_at`. It records
 arrival, independently of `published_at`, rather than the last fetch. Publisher
 dates may be updated when feed metadata changes.
 
+Saving an article URL uses these same relations without creating a subscription.
+The supplied address, final redirect address, and publisher's canonical address
+become URL identifiers after conservative normalization. An existing matching
+item keeps its ID, metadata, discovery date, feed association, reading state,
+annotations and readable cache. A missing readable cache may be filled; saving
+again does not refresh or replace an archived page. Conflicting aliases that
+already identify different items are rejected rather than merging annotation
+targets. New item metadata, identifiers, readable content, shape and search text
+commit together, after the referenced blobs have been stored. Existing dirty-item
+triggers make URL captures available to private replication without a new wire
+format. Failed extraction leaves no half-saved item; image failures may retain
+the readable article with an explicit partial-cache notice.
+
 **Trust:** signed when shared (a share carries item facts to peers who don't have them yet); local otherwise.
 
 ### Identifiers

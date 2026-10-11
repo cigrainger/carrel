@@ -42,12 +42,14 @@ pub fn App() -> impl IntoView {
     item_actions::provide_item_actions();
     annotation_actions::provide_annotation_actions();
     progress::provide_progress_writer();
+    components::save_article::provide_capture_dialog();
     desktop::install_close_handler();
 
     view! {
         <Router>
             <KeymapProvider>
                 <GlobalKeymapActions/>
+                <components::save_article::ArticleCapture/>
                 <div class="app-shell" class:reader-sidebar-open=move || reading_sidebar.0.get() data-theme=move || theme.current().get().as_str()>
                     <components::FieldNavigation/>
                     <Sidebar/>

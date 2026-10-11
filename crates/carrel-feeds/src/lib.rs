@@ -6,6 +6,7 @@
 #![deny(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod article;
 pub mod discovery;
 mod error;
 mod fetch;

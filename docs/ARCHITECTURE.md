@@ -226,6 +226,19 @@ older caches produced by the previous comma-splitting parser. If the fallback
 fails, presentation collapses the broken image without changing article text or
 highlight offsets. It does not fetch or cache resources outside the engine.
 
+Explicit article URL capture uses the same fetcher, extraction and image-cache
+boundaries without adding a subscription. `carrel-app::commands::capture` runs
+the pipeline on a worker and serializes writes with feed ingestion. Known URLs
+with a readable local blob return immediately without HTTP. Otherwise,
+`carrel-feeds::article` retains redirect aliases, canonical URL and explicit
+publication metadata; the app stores readable HTML and image blobs before
+`carrel-store::articles` atomically commits metadata, identifiers, content,
+search text and shape. Existing identity, annotations, personal state and
+archives are preserved; only an absent cache or the exact missing blob
+reference may be recovered. Existing dirty-item triggers supply the ordinary
+signed private-library replication path. A failed extraction creates no item;
+partial image caching returns a quiet warning with the saved article.
+
 ### 3. Sync with a peer
 
 ```

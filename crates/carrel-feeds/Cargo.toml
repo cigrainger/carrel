@@ -19,6 +19,7 @@ readable-readability = { workspace = true }
 reqwest = { workspace = true }
 texting_robots = { workspace = true }
 thiserror = { workspace = true }
+time = { workspace = true, features = ["parsing"] }
 tokio = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }

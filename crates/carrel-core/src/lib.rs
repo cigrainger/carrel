@@ -9,6 +9,9 @@
 /// Highlight and annotation selector primitives.
 pub mod annotation;
 
+/// Cached open-web article ingestion contracts.
+pub mod article;
+
 /// Feed fetching and parsing data structures shared across crates.
 pub mod feed;
 

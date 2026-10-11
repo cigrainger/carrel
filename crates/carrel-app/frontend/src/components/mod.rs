@@ -4,6 +4,7 @@ mod devices;
 mod icon;
 mod item_row;
 mod modal;
+pub(crate) mod save_article;
 mod sidebar;
 mod status_strip;
 

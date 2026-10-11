@@ -8,6 +8,9 @@ pub type Result<T> = std::result::Result<T, AppError>;
 /// Errors raised by the desktop shell.
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
+    /// Explicit article capture failed before it could be archived.
+    #[error("{0}")]
+    Capture(String),
     /// Explicit desktop pairing or private synchronization failed.
     #[error(transparent)]
     Sync(#[from] carrel_sync::SyncError),
@@ -69,6 +72,7 @@ impl Serialize for AppError {
         S: serde::Serializer,
     {
         let kind = match self {
+            Self::Capture(_) => "capture",
             Self::Sync(_) => "sync",
             Self::Config(_) => "config",
             Self::Store(carrel_store::StoreError::AnnotationConflict { .. }) => {
