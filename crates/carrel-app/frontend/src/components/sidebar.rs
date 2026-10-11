@@ -37,7 +37,7 @@ pub(crate) fn FieldNavigation() -> impl IntoView {
         }
     });
     view! {
-        <header class="field-navigation">
+        <header class="field-navigation" data-tauri-drag-region="deep">
             <div class="field-brand"><span class="field-mark" aria-hidden="true"></span><span>"carrel"</span></div>
             <nav class="field-destinations" aria-label="Primary">
                 <A href="/today" attr:class=move || if destination.get() == "today" { "is-active" } else { "" }><Icon name=IconName::Today/><span>"Today"</span></A>

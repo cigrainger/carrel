@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>Counterform — a C with an open page in its counter</title>
+  <rect x="64" y="64" width="896" height="896" rx="196" fill="#eaf0d8"/>
+  <path d="M752 264H512a248 248 0 0 0 0 496h240V632H512a120 120 0 0 1 0-240h240Z" fill="#153c32"/>
+  <path d="M608 440h144v144H608Z" fill="#cd663f"/>
+</svg>

@@ -122,6 +122,9 @@ fn apply_theme(theme: Theme) {
     {
         let _ = root.set_attribute("data-theme", theme.as_str());
     }
+    wasm_bindgen_futures::spawn_local(async move {
+        let _ = crate::api::set_window_appearance(theme.as_str()).await;
+    });
 }
 
 #[cfg(not(target_arch = "wasm32"))]

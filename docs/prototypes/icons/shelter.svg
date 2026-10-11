@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>Shelter — an arch opening into printed lines</title>
+  <rect x="64" y="64" width="896" height="896" rx="196" fill="#eaf0d8"/>
+  <path d="M272 504a240 240 0 0 1 480 0Z" fill="#153c32"/>
+  <g fill="#153c32">
+    <path d="M272 504h40v256h-40zM352 504h40v256h-40zM432 504h40v256h-40zM512 504h40v256h-40zM592 504h40v256h-40z"/>
+  </g>
+  <path d="M672 504h80v256h-80z" fill="#cd663f"/>
+</svg>

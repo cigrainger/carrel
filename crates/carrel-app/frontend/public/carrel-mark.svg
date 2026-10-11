@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="224 256 608 512">
+  <title>Carrel</title>
+  <g fill="none" stroke="#000" stroke-width="58">
+    <path d="M768 300H484a212 212 0 0 0 0 424h284"/>
+    <path d="M768 386H484a126 126 0 0 0 0 252h284"/>
+    <path d="M768 472H484a40 40 0 0 0 0 80h284"/>
+  </g>
+</svg>

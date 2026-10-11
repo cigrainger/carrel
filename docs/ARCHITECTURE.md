@@ -377,6 +377,14 @@ controls a drawer in list views and a left sidebar in the desktop reader.
 Calendar DTOs are derived from publication metadata, with explicitly labelled
 arrival dates for undated posts; the webview only renders and groups them.
 
+The native shell marks macOS webviews at initialization so Field can share the
+overlay titlebar with real window controls. Tauri's drag-region implementation
+owns dragging and the platform double-click action; interactive header controls
+exclude themselves. A typed appearance command maps the four reading themes to
+native light/dark controls and matching window backing colors. Window focus
+events only adjust the presentation of inactive chrome. No reading state is
+stored in the native window layer.
+
 Newly saved subscriptions enter the sidebar in the same URL order returned by
 the store. Background fetch metadata therefore cannot reposition a row after
 the add dialog closes.

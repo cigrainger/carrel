@@ -105,8 +105,12 @@ instead of the URL. The remaining text can appear underneath without repeating
 the heading. This is a display fallback, including for older saved entries;
 the original article metadata remains intact.
 
-The application mark is a page sheltered by an architectural frame, using
-paper, charcoal and rust. Its editable source is
+The application mark uses three printed lines turning into a C, with a small
+coral cut at the end of the outer line. Forest and mint connect it to Field;
+the repeated curves draw on the striped poster references. Ribbon is the
+selected direction in `docs/prototypes/carrel-icon-directions.html`; Shelter
+and Counterform remain comparisons. A monochrome version appears in the header.
+Its editable source is
 `crates/carrel-app/icons/app-icon.svg`; native PNG, ICNS and ICO assets are
 derived with `cargo tauri icon`. The app tile follows native rounded icon
 conventions while application controls retain square corners.
@@ -127,7 +131,8 @@ The user picks one of these. We do not offer a free font picker; that's a rabbit
 
 For users who really want sans-serif body, we offer **Inter** (Rasmus Andersson, OFL). One option. No second sans.
 
-For menus and settings labels we use **Inter**. Field's navigation and article
+For menus and settings labels we use the **platform system font**, with bundled
+Inter as fallback. Field's navigation and article
 headings use `--font-display` (Helvetica Neue, with bundled Inter as fallback).
 Article prose retains its independently chosen reading font.
 
@@ -333,7 +338,7 @@ For night reading on OLED screens. Pure black saves power and reduces light blee
 
 ### Theme switching
 
-The current implementation stores the theme in webview local storage and applies `data-theme` to the application shell. The Appearance control in the status strip opens the theme choices. Moving preferences into `:self` Cozo state is future work. Theme switches are instant; only the colors change.
+The current implementation stores the theme in webview local storage and applies `data-theme` to the application shell. The Appearance control in the status strip opens the theme choices. Moving preferences into `:self` Cozo state is future work. Theme switches are instant; only the colors change. Native window and dialog appearance follows the selected reading theme: Light and Sepia use light native controls, Dark and Black use dark controls. The native window backing color matches the navigation field so exposed window edges remain coherent.
 
 We do not auto-switch based on system theme by default. Some users want their reading app to be different from their system. The user can opt in to system-following in settings.
 
@@ -344,6 +349,18 @@ We do not auto-switch based on system theme by default. Some users want their re
 The desktop layout has a destination band, main content area, and status strip.
 Sources are a deliberate drawer, hidden by default. The destination band
 contracts while reading; sources then occupy an optional left sidebar.
+
+On macOS, Field extends into the native titlebar. Native traffic lights and
+window decorations remain in place; the separate title text is hidden. The
+integrated band is 112px high in lists and 70px in the reader. The list brand
+sits below the traffic lights; the reader reserves a 104px leading inset for
+them and omits the repeated wordmark. Blank header space can drag the window
+and supports double-click zoom through Tauri. Navigation links and
+toolbar buttons remain ordinary clickable controls. The toolbar uses quiet
+borderless square buttons, with a hover or pressed fill. Chrome dims gently
+when the window is inactive. Other desktop platforms keep their native titlebar.
+The chrome uses the platform system font; article headings retain Field's
+grotesk and article prose retains the chosen reading face.
 
 ```
 ┌───────────────────────────────────────────────────┐

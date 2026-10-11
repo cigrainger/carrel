@@ -44,19 +44,26 @@ a {
 }
 
 .app-shell.reader-sidebar-open .sidebar { display: flex; }
-.field-navigation { grid-row: 1; grid-column: 1 / -1; display: grid; grid-template-columns: 160px minmax(0, 1fr) 112px; align-items: center; gap: var(--space-8); padding: 20px 32px; color: var(--color-nav-text); background: var(--color-nav-bg); }
+.field-navigation { grid-row: 1; grid-column: 1 / -1; display: grid; grid-template-columns: 160px minmax(0, 1fr) 112px; align-items: center; gap: var(--space-8); padding: 20px 32px; color: var(--color-nav-text); background: var(--color-nav-bg); user-select: none; -webkit-user-select: none; }
 .field-brand { display: flex; align-items: center; gap: 12px; font-family: var(--font-display); font-weight: 650; font-size: 22px; letter-spacing: -.045em; }
-.field-mark { display: block; position: relative; width: 25px; height: 30px; border-top: 5px solid currentColor; border-left: 5px solid currentColor; border-right: 5px solid currentColor; }
-.field-mark::after { content: ""; position: absolute; width: 9px; height: 16px; left: 3px; top: 5px; background: currentColor; }
+.field-mark { display: block; flex: 0 0 auto; width: 30px; height: 26px; background: currentColor; mask: url("/public/carrel-mark.svg") center / contain no-repeat; -webkit-mask: url("/public/carrel-mark.svg") center / contain no-repeat; }
 .field-destinations { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; align-items: end; }
 .field-destinations a { position: relative; display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-end; gap: 14px; height: 88px; padding-bottom: 12px; border-bottom: 2px solid transparent; font-family: var(--font-display); font-size: var(--text-nav-label); font-weight: 550; letter-spacing: -.04em; line-height: 1; opacity: .75; }
 .field-destinations a.is-active { opacity: 1; border-color: currentColor; font-size: var(--text-nav-active); font-weight: 650; }
 .field-destinations a:hover { opacity: 1; }
 .field-destinations a:focus-visible, .field-tools button:focus-visible { outline-color: var(--color-nav-text); }
 .field-tools { display: flex; gap: 4px; }
-.field-tools button { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; padding: 0; background: transparent; border: 1px solid color-mix(in srgb, var(--color-nav-text) 25%, transparent); color: inherit; cursor: pointer; }
+.field-tools button { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; padding: 0; background: transparent; border: 0; color: inherit; cursor: default; }
 .field-tools button:hover, .field-tools button.active { background: color-mix(in srgb, var(--color-nav-text) 12%, transparent); }
 .field-tools button:disabled { opacity: .5; cursor: default; }
+
+:root[data-platform="macos"] .app-shell { --navigation-height: 112px; }
+:root[data-platform="macos"] .field-navigation { grid-template-columns: 144px minmax(0, 1fr) 112px; gap: 24px; padding: 40px 24px 14px; }
+:root[data-platform="macos"] .field-brand { align-self: end; padding-bottom: 2px; font-size: 20px; }
+:root[data-platform="macos"] .field-destinations a { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: 18px 32px; align-items: end; justify-items: start; justify-content: stretch; height: 58px; gap: 6px; padding-bottom: 0; }
+:root[data-platform="macos"][data-window-active="false"] .field-brand,
+:root[data-platform="macos"][data-window-active="false"] .field-destinations,
+:root[data-platform="macos"][data-window-active="false"] .field-tools { opacity: .55; }
 
 .sidebar-section {
   min-width: 0;
@@ -290,6 +297,11 @@ a {
 .app-shell:has(.reading-route) .field-destinations { display: flex; gap: 28px; }
 .app-shell:has(.reading-route) .field-destinations a { height: 40px; flex-direction: row; align-items: center; gap: 8px; padding-bottom: 0; font-size: 14px; font-weight: 550; letter-spacing: 0; }
 
+:root[data-platform="macos"] .app-shell:has(.reading-route) { --navigation-height: 70px; }
+:root[data-platform="macos"] .app-shell:has(.reading-route) .field-navigation { grid-template-columns: 80px minmax(0, 1fr) 112px; padding: 14px 24px; gap: 0; }
+:root[data-platform="macos"] .app-shell:has(.reading-route) .field-brand { visibility: hidden; padding: 0; }
+:root[data-platform="macos"] .app-shell:has(.reading-route) .field-destinations a { display: flex; }
+
 .app-shell:has(.reading-route) .sidebar {
   display: none;
 }
@@ -334,14 +346,14 @@ a {
 .reader-action-link {
   height: 30px;
   padding: 0 var(--space-3);
-  border: 1px solid var(--color-rule);
+  border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--color-text-secondary);
-  cursor: pointer;
+  cursor: default;
   font: inherit;
   font-size: var(--text-sm);
-  line-height: 28px;
+  line-height: 30px;
 }
 
 .reader-action-link {
@@ -1367,6 +1379,7 @@ button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px soli
   .field-destinations a { font-size: 18px; }
   .field-destinations a.is-active { font-size: 27px; }
   .app-shell:has(.reading-route) .field-destinations { gap: 14px; }
+  :root[data-platform="macos"] .field-navigation { grid-template-columns: 112px minmax(0, 1fr) 112px; gap: 16px; }
 }
 
 @media (max-width: 720px) {
@@ -1379,6 +1392,11 @@ button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px soli
   .field-destinations a, .app-shell:has(.reading-route) .field-destinations a { height: 42px; flex-direction: row; gap: 6px; align-items: center; justify-content: flex-start; padding-bottom: 4px; font-size: 14px; letter-spacing: -.025em; }
   .field-destinations a.is-active { font-size: 18px; }
   .field-destinations .icon { display: none; }
+  :root[data-platform="macos"] .app-shell, :root[data-platform="macos"] .app-shell:has(.reading-route) { --navigation-height: 132px; }
+  :root[data-platform="macos"] .field-navigation, :root[data-platform="macos"] .app-shell:has(.reading-route) .field-navigation { grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: 30px 42px; gap: 12px; padding: 30px 16px 16px; }
+  :root[data-platform="macos"] .field-brand { align-self: center; padding: 0; padding-left: 88px; font-size: 18px; }
+  :root[data-platform="macos"] .field-mark { display: none; }
+  :root[data-platform="macos"] .field-destinations a { display: flex; height: 42px; gap: 6px; padding-bottom: 4px; }
   .sidebar { flex-direction: column; padding: 16px; gap: 16px; }
   .app-shell:has(.reading-route).reader-sidebar-open { grid-template-columns: minmax(0, 1fr); grid-template-rows: var(--navigation-height) auto minmax(0, 1fr) var(--status-strip-height); }
   .app-shell:has(.reading-route).reader-sidebar-open .sidebar { flex-direction: column; max-height: 180px; border-right: 0; border-bottom: 1px solid var(--color-rule); }

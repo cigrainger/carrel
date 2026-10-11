@@ -3,6 +3,7 @@
 #![deny(unsafe_code)]
 
 mod background;
+mod chrome;
 mod close;
 mod commands;
 mod config;
@@ -33,6 +34,7 @@ pub fn run() -> Result<()> {
     let background_state = app_state.clone();
 
     tauri::Builder::default()
+        .append_invoke_initialization_script(chrome::initialization_script())
         .plugin(tauri_plugin_dialog::init())
         .plugin(
             tauri_plugin_opener::Builder::new()
@@ -40,7 +42,10 @@ pub fn run() -> Result<()> {
                 .build(),
         )
         .manage(close::CloseState::default())
-        .on_window_event(close::on_window_event)
+        .on_window_event(|window, event| {
+            close::on_window_event(window, event);
+            chrome::on_window_event(window, event);
+        })
         .register_uri_scheme_protocol(BLOB_URI_SCHEME, move |_ctx, request| {
             blob_protocol_response(&protocol_blobs, request.uri())
         })
@@ -52,6 +57,7 @@ pub fn run() -> Result<()> {
         })
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![
+            chrome::set_window_appearance,
             close::frontend_ready,
             close::finish_app_close,
             close::cancel_app_close,

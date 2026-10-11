@@ -905,6 +905,21 @@ pub async fn feed_status() -> Result<FeedStatusSummary, ApiError> {
     Ok(FeedStatusSummary::default())
 }
 
+/// Match native window controls and backing to the reading theme.
+#[cfg(target_arch = "wasm32")]
+pub(crate) async fn set_window_appearance(appearance: &str) -> Result<(), ApiError> {
+    #[derive(Serialize)]
+    struct Args<'a> {
+        appearance: &'a str,
+    }
+    let args = serde_wasm_bindgen::to_value(&Args { appearance })
+        .map_err(|error| ApiError::new(error.to_string()))?;
+    tauri_invoke("set_window_appearance", args)
+        .await
+        .map(|_| ())
+        .map_err(api_error_from_js)
+}
+
 /// Inform the native close coordinator that the frontend listener is mounted.
 #[cfg(target_arch = "wasm32")]
 pub(crate) async fn frontend_ready() -> Result<(), ApiError> {
