@@ -42,7 +42,9 @@ pub(crate) fn set_window_appearance(
 
 pub(crate) fn initialization_script() -> &'static str {
     if cfg!(target_os = "macos") {
-        r#"(() => {
+        // Tauri concatenates this after its invoke script, which ends in `})()`.
+        // The leading semicolon prevents JavaScript from calling that result.
+        r#";(() => {
           const apply = () => document.documentElement.setAttribute('data-platform', 'macos');
           if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', apply, { once: true });
@@ -72,6 +74,13 @@ pub(crate) fn on_window_event(window: &Window, event: &WindowEvent) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn macos_bootstrap_delimits_an_unterminated_preceding_script() {
+        assert!(initialization_script().trim_start().starts_with(';'));
+        assert!(initialization_script().trim_end().ends_with(';'));
+    }
 
     #[test]
     fn reading_themes_select_matching_native_control_appearance() {
