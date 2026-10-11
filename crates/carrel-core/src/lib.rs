@@ -25,6 +25,9 @@ pub mod keymap;
 /// Library filters and stable archive pagination contracts.
 pub mod library;
 
+/// Installation-local reading presentation preferences.
+pub mod reading;
+
 /// Rule-based structural content-shape facts.
 pub mod shape;
 

@@ -48,7 +48,7 @@ pub(crate) fn FieldNavigation() -> impl IntoView {
                 <A href="/highlights" attr:class=move || if destination.get() == "highlights" { "is-active" } else { "" }><Icon name=IconName::Highlights/><span>"Highlights"</span></A>
             </nav>
             <div class="field-tools">
-                <button type="button" class:active=move || sources.0.get() aria-label="Show or hide sources" title="Show or hide sources (⌘B in reader)" aria-controls="reading-sidebar" aria-expanded=move || sources.0.get().to_string() on:click=move |_| sources.toggle()>{move || view! { <Icon name=if sources.0.get() { IconName::SidebarClose } else { IconName::SidebarOpen }/> }}</button>
+                <button type="button" class:active=move || sources.0.get() aria-label="Show or hide sources" title="Show or hide sources (⌘B)" aria-controls="reading-sidebar" aria-expanded=move || sources.0.get().to_string() on:click=move |_| sources.toggle()>{move || view! { <Icon name=if sources.0.get() { IconName::SidebarClose } else { IconName::SidebarOpen }/> }}</button>
                 <button type="button" aria-label="Refresh feeds" title="Refresh feeds" disabled=move || fetch_busy.get() || controller.status().get().is_fetching on:click=move |_| {
                     fetch_busy.set(true);
                     spawn_feed_task(async move {
@@ -71,6 +71,9 @@ pub fn Sidebar() -> impl IntoView {
     let add_open = feed_controller.add_open;
     let remove_target = RwSignal::new(None::<FeedSummary>);
     let remove_busy = RwSignal::new(false);
+    let activity_button = NodeRef::<html::Button>::new();
+    let commands_button = NodeRef::<html::Button>::new();
+    let help_button = NodeRef::<html::Button>::new();
 
     view! {
         <aside class="sidebar" id="reading-sidebar" aria-label="Sources">
@@ -125,8 +128,20 @@ pub fn Sidebar() -> impl IntoView {
                 </Show>
             </div>
             <div class="sidebar-utilities">
+                <button node_ref=activity_button type="button" on:click=move |_| {
+                    if let Some(button) = activity_button.get_untracked() { let _ = button.focus(); }
+                    feed_controller.activity_open.set(true);
+                }><Icon name=IconName::Info/><span>"Source activity"</span></button>
                 <crate::components::devices::Devices/>
                 <SubscriptionFiles/>
+                <button node_ref=commands_button type="button" title="Commands (⌘K)" on:click=move |_| {
+                    if let Some(button) = commands_button.get_untracked() { let _ = button.focus(); }
+                    crate::keymap::open_palette();
+                }><Icon name=IconName::Search/><span>"Commands"</span></button>
+                <button node_ref=help_button type="button" title="Keyboard reference (?)" on:click=move |_| {
+                    if let Some(button) = help_button.get_untracked() { let _ = button.focus(); }
+                    crate::keymap::open_help();
+                }><Icon name=IconName::Keyboard/><span>"Keyboard reference"</span></button>
             </div>
         </aside>
             <Show when=move || add_open.get()>

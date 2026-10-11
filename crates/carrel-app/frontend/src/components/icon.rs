@@ -25,6 +25,8 @@ pub(crate) enum IconName {
     Info,
     Original,
     Appearance,
+    Search,
+    Keyboard,
 }
 
 /// Decorative icon; the containing control supplies its accessible name.
@@ -51,6 +53,8 @@ pub(crate) fn Icon(name: IconName) -> impl IntoView {
         IconName::Info => view! { <lucide::Info size=18/> }.into_any(),
         IconName::Original => view! { <lucide::ExternalLink size=18/> }.into_any(),
         IconName::Appearance => view! { <lucide::ChevronUp size=16/> }.into_any(),
+        IconName::Search => view! { <lucide::Search size=16/> }.into_any(),
+        IconName::Keyboard => view! { <lucide::Keyboard size=16/> }.into_any(),
     };
     view! { <span class="icon" aria-hidden="true">{icon}</span> }
 }

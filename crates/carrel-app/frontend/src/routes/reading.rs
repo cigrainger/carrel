@@ -798,7 +798,7 @@ pub fn ArticleContent(
                     {if has_text { "The full article is not cached. This is the saved feed summary." } else { "No article text is cached. Open the original when you are online." }}
                 </aside>
             </Show>
-            <div class="reader-body" node_ref=body_ref inner_html=content_html
+            <div class="reader-body" dir="auto" node_ref=body_ref inner_html=content_html
                 on:click=move |event| crate::links::article_link(event, body_ref, link_original.with_value(|url| url.clone()).as_deref(), status)
                 on:auxclick=move |event| crate::links::article_link(event, body_ref, link_original.with_value(|url| url.clone()).as_deref(), status)
             ></div>

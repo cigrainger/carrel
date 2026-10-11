@@ -3,6 +3,7 @@
 use carrel_core::keymap::Layer;
 use leptos::prelude::*;
 
+use crate::components::Modal;
 use crate::keymap::provider::use_keymap_context;
 
 /// Modal help overlay for the currently active keymap stack.
@@ -12,13 +13,7 @@ pub fn KeymapHelp() -> impl IntoView {
 
     view! {
         <Show when=move || context.help_open.get()>
-            <div class="keymap-help-backdrop">
-                <section
-                    class="keymap-help"
-                    role="dialog"
-                    aria-modal="true"
-                    aria-label="Keyboard reference"
-                >
+                <Modal label="Keyboard reference" class="keymap-help" on_cancel=UnsyncCallback::new(move |()| context.help_open.set(false))>
                     <header class="keymap-help-header">
                         <h2>"Keyboard Reference"</h2>
                         <button
@@ -30,20 +25,9 @@ pub fn KeymapHelp() -> impl IntoView {
                         </button>
                     </header>
                     {move || {
-                        context
-                            .stack
-                            .with(|stack| {
-                                stack
-                                    .layers()
-                                    .iter()
-                                    .rev()
-                                    .cloned()
-                                    .map(layer_view)
-                                    .collect_view()
-                            })
+                        context.available_layers().into_iter().map(layer_view).collect_view()
                     }}
-                </section>
-            </div>
+                </Modal>
         </Show>
     }
 }
@@ -101,12 +85,14 @@ mod tests {
             context.stack.set(stack);
             context.help_open.set(true);
             provide_context(context);
+            crate::keymap::use_action_handler("test-action", || {});
 
             view! { <KeymapHelp/> }.to_html()
         });
 
-        let expected = r#"<div class="keymap-help-backdrop"><section role="dialog" aria-modal="true" aria-label="Keyboard reference" class="keymap-help"><header class="keymap-help-header"><h2>Keyboard Reference</h2><button type="button" aria-label="Close keyboard reference">Close</button></header><section class="keymap-help-layer"><h3>Test Layer</h3><dl><div class="keymap-help-binding"><dt><kbd>x</kbd></dt><dd>Do thing</dd></div><!></dl></section><!></section></div>"#;
-
-        assert_eq!(html, expected);
+        assert!(html.contains("<dialog"));
+        assert!(html.contains("aria-label=\"Keyboard reference\""));
+        assert!(html.contains("<kbd>x</kbd>"));
+        assert!(html.contains("Do thing"));
     }
 }

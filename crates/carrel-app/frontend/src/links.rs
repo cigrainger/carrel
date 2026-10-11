@@ -49,6 +49,14 @@ pub(crate) fn article_link(
                 && body.contains(Some(&target))
             {
                 target.scroll_into_view();
+                // Continue keyboard traversal at the footnote/section rather
+                // than at the link whose scroll position we just left.
+                let _ = target.set_attribute("tabindex", "-1");
+                if let Ok(target) = target.dyn_into::<web_sys::HtmlElement>() {
+                    let options = web_sys::FocusOptions::new();
+                    options.set_prevent_scroll(true);
+                    let _ = target.focus_with_options(&options);
+                }
                 return;
             }
             if href.starts_with('#') {

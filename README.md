@@ -66,6 +66,15 @@ capture keeps the URL available for retry; partial image caching is stated.
 **Add source** remains in Sources. Two-device self-sync is described in
 [`docs/SELF_SYNC_PLAN.md`](docs/SELF_SYNC_PLAN.md).
 
+**Appearance** offers four bundled reading fonts, text size, line width and
+spacing, plus Editorial/Dense article lists. Preferences are remembered on this
+installation and changing layout preserves the visible passage or row. Cmd+,
+opens Appearance. Cmd+K finds working commands, sources and articles in the local
+archive; `?` shows the effective shortcuts with native modal focus behavior.
+**Source activity**, available in Sources or through a failure's **Details**
+control, explains incomplete updates and retries individual sources without
+interrupting the reader. Cmd+R refreshes feeds and Cmd+Shift+R opens Source activity.
+
 The CLI can initialize a local data directory, print install info, run schema
 migrations, execute raw Cozo queries, subscribe to feeds, fetch RSS/Atom/JSON
 Feed subscriptions, cache readable article HTML and images, inspect and

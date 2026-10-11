@@ -15,6 +15,22 @@
 }
 
 @font-face {
+  font-family: "Literata";
+  src: url("/public/fonts/literata-latin-variable.woff2") format("woff2-variations");
+  font-display: block;
+  font-style: normal;
+  font-weight: 200 900;
+}
+
+@font-face {
+  font-family: "EB Garamond";
+  src: url("/public/fonts/eb-garamond-latin-variable.woff2") format("woff2-variations");
+  font-display: block;
+  font-style: normal;
+  font-weight: 400 800;
+}
+
+@font-face {
   font-family: "JetBrains Mono";
   src: url("/public/fonts/jetbrains-mono-latin-variable.woff2") format("woff2-variations");
   font-display: swap;
@@ -23,6 +39,7 @@
 }
 
 :root {
+  /* Reading fonts include real italics; no network font requests at runtime. */
   color-scheme: light;
   --font-body: "Source Serif 4", Georgia, serif;
   --font-chrome: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", sans-serif;
@@ -77,6 +94,35 @@
   --sidebar-width: 216px;
   --status-strip-height: 28px;
   --navigation-height: 142px;
+}
+
+@font-face {
+  font-family: "Source Serif 4";
+  src: url("/public/fonts/source-serif-4-latin-italic-variable.woff2") format("woff2-variations");
+  font-display: swap;
+  font-style: italic;
+  font-weight: 200 900;
+}
+@font-face {
+  font-family: "Literata";
+  src: url("/public/fonts/literata-latin-italic-variable.woff2") format("woff2-variations");
+  font-display: block;
+  font-style: italic;
+  font-weight: 200 900;
+}
+@font-face {
+  font-family: "EB Garamond";
+  src: url("/public/fonts/eb-garamond-latin-italic-variable.woff2") format("woff2-variations");
+  font-display: block;
+  font-style: italic;
+  font-weight: 400 800;
+}
+@font-face {
+  font-family: "Inter";
+  src: url("/public/fonts/inter-latin-italic-variable.woff2") format("woff2-variations");
+  font-display: swap;
+  font-style: italic;
+  font-weight: 100 900;
 }
 
 [data-theme="dark"] {

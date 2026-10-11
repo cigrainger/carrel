@@ -77,7 +77,11 @@ The backend supplies calendar labels, explicitly distinguishing publication
 from saved dates when the publisher provides none. Article titles use a 29px
 grotesk; metadata precedes them, excerpts follow, and read/star icons sit at the
 right. Long titles wrap. Source Serif 4 remains the default reader face.
-Controls remain square. Dense mode is a later addition.
+Controls remain square. Appearance offers Editorial and Dense list density.
+Dense keeps the same rows, dates, read/star controls and keyboard selection,
+with a smaller date gutter, 18px headings and no excerpt. Titles still wrap.
+Switching density preserves the visible row and selection rather than remounting
+the list. It applies to article lists; annotations keep their reading measure.
 
 Section headings are 18px; the navigation carries the primary hierarchy.
 The reader title is 2.25rem. The optional reader sidebar is 216px wide.
@@ -128,6 +132,14 @@ We ship three serif options for body text and let the user pick one. The default
 **EB Garamond** (OFL). For users who want a classic Garalde feel. Lower x-height than the others, so it reads visually smaller at the same nominal size — we tune the size up by ~1pt when this is selected.
 
 The user picks one of these. We do not offer a free font picker; that's a rabbit hole, and the three choices already cover the distinct aesthetic preferences a serious reader is likely to have.
+
+Appearance exposes these four reading fonts together with text size (14–26px),
+line width (52–82ch) and line spacing (1.45–1.85). Changes preview directly in the
+current article and retain the visible passage. Reset reading restores the
+default typography without changing theme or density. Preferences are local to
+this installation, using the existing webview preference storage; synchronization
+of presentation settings remains future work. Every font is bundled for offline
+use. Controls use the system font and native select/range elements.
 
 For users who really want sans-serif body, we offer **Inter** (Rasmus Andersson, OFL). One option. No second sans.
 
@@ -234,13 +246,22 @@ Drop caps and first-line small caps are user-toggleable. They look great on essa
 
 ### Math, code, CJK, RTL
 
-**Math**: KaTeX rendered in the webview. Articles with math markup get rendered on display. Server-side pre-rendering during ingest is a v2 optimization.
+**Math**: recognized TeX spans are converted to MathML during extraction using
+KaTeX. The webview renders native MathML, retaining display layout and structural
+operators through cache sanitization. Display equations scroll within their own
+region rather than widening the article.
 
-**Code**: syntax highlighting via Tree-sitter at ingest time. Themes match the active reading theme.
+**Code**: bundled JetBrains Mono, with long lines scrolling inside their own
+region and a background matching the selected theme. Syntax highlighting at
+ingest remains planned; plain code is retained without an extra frontend runtime.
 
-**CJK**: Source Han Serif as the CJK companion to Source Serif. The font stack handles per-character glyph selection automatically. Line height tightens to 1.5 for CJK content; size scales up slightly because Han characters need more pixels.
+**CJK**: native per-character font fallback currently supplies glyphs outside
+the bundled Latin faces. A Source Han Serif companion and tuned CJK typography
+remain planned.
 
-**RTL languages**: `dir="rtl"` set on the reading view based on detected article language. Logical CSS properties (`margin-inline-start`, etc.) used throughout to keep the layout correct in either direction.
+**RTL languages**: the body uses `dir="auto"` and cached blocks retain the
+publisher's `dir` and `lang` attributes. Lists and quotations use logical padding
+and borders so indentation follows the text direction.
 
 ## Color and theming
 
@@ -346,6 +367,12 @@ the open state. Theme choices use 30px system-font controls and identify the
 selected theme. Choosing a theme closes the panel and restores trigger focus.
 Escape closes it before any underlying reader action; clicking outside or
 tabbing away also dismisses it without taking focus from the next control.
+The same panel includes Reading and Article lists below Theme. Font and range
+changes stay open for direct comparison; selecting a theme closes the panel.
+Cmd+, opens Appearance and focuses its trigger. Theme and reading settings are
+independent. Layout changes retain a visible text character or article row at
+its viewport position, including delayed loading of a bundled font.
+The bundled faces include real italic files for quoted and emphasized prose.
 
 We do not auto-switch based on system theme by default. Some users want their reading app to be different from their system. The user can opt in to system-following in settings.
 
@@ -678,7 +705,10 @@ cmd-B         show / hide sidebar while reading
 ?             keymap reference (overlay)
 cmd-k         command palette
 cmd-n         save an article URL
-cmd-,         settings
+cmd-shift-n   add a source
+cmd-r         refresh feeds
+cmd-shift-r   source activity and recovery
+cmd-,         appearance
 ```
 
 **Within reading view, additional:**
@@ -701,6 +731,16 @@ When a text input or contenteditable has focus, keymap dispatch is suspended exc
 A sequence like `g g` is implemented with a small key buffer that times out after 500ms. Within the timeout, a second key extends the previous one. Outside the timeout, the second key starts fresh.
 
 The help overlay shows multi-key sequences in their declared form (`g g`, `g e`).
+Help uses a native modal with contained focus and restores the initiating
+control. It lists only implemented actions and effective bindings in the current
+stack, respecting custom overrides and shadowing. Unimplemented actions remain
+known configuration names for compatibility but never consume keys or appear as
+available commands. Text inputs permit only explicitly allowed bindings; native
+dialog controls cannot dispatch reading actions behind them.
+Sources also offers named Commands and Keyboard reference controls, so neither
+surface depends on learning its shortcut first. Cmd+B toggles Sources from lists
+as well as the reader. Cached footnote/section jumps move keyboard focus to the
+destination so subsequent Tab navigation continues there.
 
 ### Customization
 
@@ -835,6 +875,15 @@ the failure quietly, preserving the working list or article.
 
 Feed fetch progress and non-fatal errors surface in the status strip. The band
 exposes an explicit refresh icon; it never animates or prompts for attention.
+Source failures offer a quiet Details action opening Source activity, also
+available from Sources and the command palette. Each source has its last check,
+a plain explanation, deliberately opened technical details, and Refresh source
+or Retry source. Retrying leaves the current reader and list context intact.
+Problems remain until that source recovers or is removed; an unrelated fetch
+does not erase them. A not-modified response clears a connection failure but
+retains failed article caching, which requires a full retry. These diagnostics
+are local session state, with stored consecutive failures supplying a quiet
+last-update notice after restart. No status badges or problem counts are shown.
 
 An explicit **Fetch** obtains the feed body again so failed article caching can
 recover even when the publisher's feed has not changed. Scheduled polling keeps
@@ -863,21 +912,33 @@ The audience selector is a small set of chips for the user's audiences; clicking
 
 `cmd-k` opens the command palette. It is the power-user surface and the universal escape hatch.
 
-The palette is a single text input plus a results list. Typing fuzzy-matches against:
+The implemented palette is a native modal with a single focused text input and
+a bounded results list. Commands and sources match in-order abbreviations;
+article search uses the same literal title/cached-text word prefixes as Library.
+Commands come from the current keymap's implemented actions and display their
+actual shortcut. Sources can be opened directly. Article results open the reader
+with a Library search return context, retaining the query for continued browsing.
+Up/down selects, Return activates, Escape dismisses and restores focus. A failed
+article query retains working commands and sources. Request generations discard
+late results after another query or dismissal. Searching never marks an item read.
 
-- Commands: every action in the app, by name and keyboard shortcut
-- Items: titles of saved items
-- Feeds: subscribed feed titles
+The eventual wider palette can additionally match:
+
 - Peers: pet names and self-described names
 - Tags: every tag you've used
 
-Matches from different categories are interleaved by relevance. Results have a small category badge to distinguish them.
+Current results use a quiet textual category and shortcut, without count badges.
+Command/source matches are ordered by text match; article results retain Library
+order. Peers and tags wait until their own useful flows exist.
 
 Sublime-quality fuzzy matching: characters in the query must appear in order in the target, but not contiguously; matches earlier in the string and at word boundaries score higher.
 
 `Enter` activates the selected result. `Esc` closes the palette without action. Up/down arrows navigate.
 
 The palette is *always* available — even inside a modal, even while typing in a note. It's the user's ripcord.
+When another dialog is open, the palette offers Return to current dialog and
+keyboard reference. Navigation and mutation commands resume after that dialog
+is finished or closed. Opening the palette never discards a note or URL draft.
 
 ## Anti-patterns
 

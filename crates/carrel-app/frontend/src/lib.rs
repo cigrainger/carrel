@@ -13,6 +13,7 @@ mod item_actions;
 mod keymap;
 mod links;
 mod navigation;
+mod preferences;
 mod progress;
 #[cfg(target_arch = "wasm32")]
 mod reader_images;
@@ -39,6 +40,7 @@ pub fn App() -> impl IntoView {
     let reading_sidebar = navigation::use_reading_sidebar();
     feeds::provide_feed_controller();
     status::provide_status_controller();
+    preferences::provide_preferences();
     item_actions::provide_item_actions();
     annotation_actions::provide_annotation_actions();
     progress::provide_progress_writer();
@@ -50,6 +52,7 @@ pub fn App() -> impl IntoView {
             <KeymapProvider>
                 <GlobalKeymapActions/>
                 <components::save_article::ArticleCapture/>
+                <components::FeedActivity/>
                 <div class="app-shell" class:reader-sidebar-open=move || reading_sidebar.0.get() data-theme=move || theme.current().get().as_str()>
                     <components::FieldNavigation/>
                     <Sidebar/>

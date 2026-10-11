@@ -31,7 +31,7 @@ fn sanitize_with_cached_resources(html: &str, cached: bool) -> String {
         .tags(allowed_tags())
         .clean_content_tags(clean_content_tags())
         .tag_attributes(tag_attributes())
-        .generic_attributes(HashSet::from(["class", "id", "title", "lang"]))
+        .generic_attributes(HashSet::from(["class", "id", "title", "lang", "dir"]))
         .url_schemes(schemes)
         .url_relative(UrlRelative::PassThrough)
         .link_rel(None);
@@ -91,6 +91,13 @@ fn allowed_tags() -> HashSet<&'static str> {
         "math",
         "mark",
         "mfrac",
+        "menclose",
+        "mover",
+        "munder",
+        "munderover",
+        "mroot",
+        "mstyle",
+        "msubsup",
         "mi",
         "mn",
         "mo",
@@ -157,7 +164,7 @@ fn tag_attributes() -> HashMap<&'static str, HashSet<&'static str>> {
             "img",
             HashSet::from(["alt", "height", "src", "srcset", "width"]),
         ),
-        ("math", HashSet::from(["xmlns"])),
+        ("math", HashSet::from(["xmlns", "display"])),
         ("ol", HashSet::from(["start"])),
         ("q", HashSet::from(["cite"])),
         ("source", HashSet::from(["src", "srcset", "type"])),
@@ -305,4 +312,22 @@ fn render_katex_math(tex: &str, display: bool) -> Option<String> {
         .build()
         .ok()?;
     katex::render_with_opts(tex, opts).ok()
+}
+
+#[cfg(test)]
+mod presentation_tests {
+    use super::*;
+    #[test]
+    fn cached_math_and_text_direction_survive_repeated_sanitizing_without_executable_attributes() {
+        let html = r#"<p dir="rtl" lang="ar" onclick="bad()">نص عربي</p><math display="block" onclick="bad()"><mroot><msubsup><mi>x</mi><mn>1</mn><mn>2</mn></msubsup><mn>3</mn></mroot></math><script>bad()</script>"#;
+        let clean = sanitize_html(html);
+        let cached = sanitize_cached_html(&clean);
+        assert!(cached.contains(r#"dir="rtl""#));
+        assert!(cached.contains(r#"display="block""#));
+        assert!(cached.contains("<mroot>"));
+        assert!(cached.contains("<msubsup>"));
+        assert!(!cached.contains("onclick"));
+        assert!(!cached.contains("bad()"));
+        assert!(cached.contains("نص عربي"));
+    }
 }

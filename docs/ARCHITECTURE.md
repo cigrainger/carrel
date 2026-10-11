@@ -398,6 +398,16 @@ controls a drawer in list views and a left sidebar in the desktop reader.
 Calendar DTOs are derived from publication metadata, with explicitly labelled
 arrival dates for undated posts; the webview only renders and groups them.
 
+Bounded reading preferences live in `carrel-core::reading`; the webview owns
+their presentation and local preference storage, following the existing theme
+exception. Typography changes preserve a visible text range through reflow;
+density changes preserve a visible article row. No article or annotation fact
+changes and no new synced relation is introduced. Preferences are per installation.
+The command palette reuses the keymap's available-action projection and the
+ordinary native Library search. Effective bindings exclude unimplemented and
+shadowed actions in dispatch, help and command discovery. Native modal controls
+cannot dispatch underlying reading shortcuts.
+
 The native shell marks macOS webviews at initialization so Field can share the
 overlay titlebar with real window controls. Tauri's drag-region implementation
 owns dragging and the platform double-click action; interactive header controls
@@ -500,6 +510,14 @@ code remains text while executable tags are still removed.
 
 The frontend never does business logic. It composes commands and renders results. This is enforced by code review, not by the type system, and is the most important UI architectural rule we have.
 
+Source recovery retains one bounded sample per failure kind and source in the
+native feed-status handle. Completed reports replace only the touched source's
+diagnostics; a 304 retains failed content caching. Explicit retry uses the normal
+polite full-refresh path, preserving reading and list context. Diagnostic state
+is session-local and is never replicated. Stored consecutive failures still
+identify unsuccessful source checks after restart. Technical messages are opened
+deliberately rather than displayed as the primary status copy.
+
 ## Mobile
 
 Carrel is desktop-first in v1. Mobile is a v2 commitment, not v1, but the architecture is designed so adding mobile is purely additive rather than requiring a rewrite. This section documents the architectural assumptions that keep that path open.
@@ -585,7 +603,7 @@ Tokio is the runtime. The Tauri app launches it explicitly. All I/O goes through
 
 User configuration lives in two places:
 
-- **The keymap and theme settings** in `~/.config/carrel/` (or platform-equivalent), as TOML files the user can edit directly. We watch them for changes and reload.
+- **The keymap** in `~/.config/carrel/` (or platform-equivalent), as TOML the user can edit directly. Theme and reading presentation currently use installation-local webview preference storage; moving them into a portable configuration path remains future work.
 - **Application state** (peers, audiences, fetch intervals, device configurations) in Cozo, edited through the UI.
 
 This split exists because keymaps and themes are *texts the user maintains*, like a `.vimrc`; everything else is *state the app maintains for the user*. Texts go in files; state goes in the database.

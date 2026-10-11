@@ -382,6 +382,8 @@ pub struct FeedStatusSummary {
     pub content_errors: usize,
     pub feed_errors: usize,
     pub revision: u64,
+    #[serde(default)]
+    pub issues: Vec<FeedIssue>,
 }
 
 impl Default for FeedStatusSummary {
@@ -395,8 +397,19 @@ impl Default for FeedStatusSummary {
             content_errors: 0,
             feed_errors: 0,
             revision: 0,
+            issues: Vec::new(),
         }
     }
+}
+
+/// Source-scoped problems from the current native session.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FeedIssue {
+    pub feed_url: String,
+    pub kind: String,
+    pub message: String,
+    pub detail: String,
 }
 
 /// Error returned while invoking a native command.

@@ -16,6 +16,8 @@ pub(crate) struct FeedController {
     status: RwSignal<FeedStatusSummary>,
     error: RwSignal<Option<String>>,
     pub(crate) add_open: RwSignal<bool>,
+    pub(crate) activity_open: RwSignal<bool>,
+    pub(crate) manual_fetch_busy: RwSignal<bool>,
     pub(crate) file_busy: RwSignal<bool>,
     pub(crate) search_status: RwSignal<crate::api::SearchStatus>,
     pub(crate) sync_revision: RwSignal<u64>,
@@ -57,6 +59,8 @@ pub(crate) fn provide_feed_controller() -> FeedController {
         status: RwSignal::new(FeedStatusSummary::default()),
         error: RwSignal::new(None),
         add_open: RwSignal::new(false),
+        activity_open: RwSignal::new(false),
+        manual_fetch_busy: RwSignal::new(false),
         file_busy: RwSignal::new(false),
         search_status: RwSignal::new(crate::api::SearchStatus::default()),
         sync_revision: RwSignal::new(0),
@@ -189,8 +193,19 @@ pub(crate) async fn remove(_controller: FeedController, _url: String) -> Result<
 
 #[cfg(target_arch = "wasm32")]
 pub(crate) async fn fetch_all(controller: FeedController) -> Result<(), String> {
-    let _ = api::fetch_all_feeds().await.map_err(message)?;
-    refresh_after_mutation(controller).await
+    if controller.manual_fetch_busy.get_untracked() || controller.status.get_untracked().is_fetching
+    {
+        return Ok(());
+    }
+    controller.manual_fetch_busy.set(true);
+    controller.status.update(|status| {
+        status.is_fetching = true;
+        status.message = "Refreshing feeds".into();
+    });
+    let result = api::fetch_all_feeds().await.map_err(message);
+    refresh_after_mutation(controller).await?;
+    controller.manual_fetch_busy.set(false);
+    result.map(|_| ())
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -200,8 +215,19 @@ pub(crate) async fn fetch_all(_controller: FeedController) -> Result<(), String>
 
 #[cfg(target_arch = "wasm32")]
 pub(crate) async fn fetch_one(controller: FeedController, url: String) -> Result<(), String> {
-    let _ = api::fetch_feed(url).await.map_err(message)?;
-    refresh_after_mutation(controller).await
+    if controller.manual_fetch_busy.get_untracked() || controller.status.get_untracked().is_fetching
+    {
+        return Ok(());
+    }
+    controller.manual_fetch_busy.set(true);
+    controller.status.update(|status| {
+        status.is_fetching = true;
+        status.message = "Refreshing source".into();
+    });
+    let result = api::fetch_feed(url).await.map_err(message);
+    refresh_after_mutation(controller).await?;
+    controller.manual_fetch_busy.set(false);
+    result.map(|_| ())
 }
 
 #[cfg(target_arch = "wasm32")]

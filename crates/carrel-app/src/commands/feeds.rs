@@ -11,7 +11,7 @@ use url::Url;
 use crate::Result;
 use crate::error::AppError;
 use crate::feed_runner::{self, FetchMode, FetchOutcome, FetchReport};
-use crate::state::{AppState, FeedStatusCounts, FeedStatusSnapshot};
+use crate::state::{AppState, FeedIssue, FeedStatusCounts, FeedStatusSnapshot};
 
 /// List feed subscriptions.
 #[tauri::command]
@@ -69,6 +69,7 @@ pub fn remove_feed(state: State<'_, AppState>, url: String) -> Result<bool> {
         .store
         .remove_private_feed(&url, feed_runner::now_micros(), &device)?;
     if removed {
+        state.feed_status.forget_source(&url);
         state.feed_status.set_idle(
             "Feed removed; saved items remain",
             FeedStatusCounts::default(),
@@ -169,7 +170,13 @@ fn fetch_records_blocking(
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
-        .map_err(|error| AppError::Feed(format!("could not start feed worker: {error}")))?;
+        .map_err(|error| {
+            app_state.feed_status.set_idle(
+                "Could not start source refresh. Try again.",
+                feed_failure_counts(),
+            );
+            AppError::Feed(format!("could not start feed worker: {error}"))
+        })?;
 
     for feed in feeds {
         debug!(feed_url = %feed.url, "fetching feed");
@@ -184,7 +191,9 @@ fn fetch_records_blocking(
 
     let counts = status_counts(&reports);
     let message = status_message(&reports, counts);
-    app_state.feed_status.set_idle(message, counts);
+    app_state
+        .feed_status
+        .finish_reports(message, counts, &reports);
 
     Ok(reports.iter().map(FeedFetchSummary::from_report).collect())
 }
@@ -369,6 +378,46 @@ fn status_counts(reports: &[FetchReport]) -> FeedStatusCounts {
     counts
 }
 
+pub(crate) fn report_issues(report: &FetchReport) -> Vec<FeedIssue> {
+    let make = |kind: &str, message: &str, detail: String| FeedIssue {
+        feed_url: report.url.clone(),
+        kind: kind.into(),
+        message: message.into(),
+        detail: detail.chars().take(1024).collect(),
+    };
+    let mut issues = Vec::new();
+    match &report.outcome {
+        FetchOutcome::HttpStatus { status } => issues.push(make(
+            "feed",
+            "This source could not be updated. Saved articles remain available.",
+            format!("The publisher returned HTTP {status}."),
+        )),
+        FetchOutcome::Error { message } => issues.push(make(
+            "feed",
+            "This source could not be updated. Saved articles remain available.",
+            message.clone(),
+        )),
+        FetchOutcome::Updated { stats } => {
+            if let Some(error) = stats.errors.first() {
+                issues.push(make(
+                    "entry",
+                    "Some entries could not be saved. Retry this source.",
+                    error.message.clone(),
+                ));
+            }
+        }
+        FetchOutcome::NotModified => {}
+    }
+    if let Some(error) = report.content_errors.first() {
+        issues.push(make(
+            "content",
+            "Some article content or images could not be cached. Saved text remains available.",
+            error.message.clone(),
+        ));
+    }
+    issues
+}
+
 fn status_message(reports: &[FetchReport], counts: FeedStatusCounts) -> String {
     if reports.is_empty() {
         return "No feeds due".to_string();
@@ -391,7 +440,7 @@ fn status_message(reports: &[FetchReport], counts: FeedStatusCounts) -> String {
         if counts.feed_errors == 0 && counts.entry_errors == 0 {
             return "Feeds updated; some content could not be cached".to_string();
         }
-        return format!("Feed fetch finished with {issue_count} issues");
+        return "Some sources could not be updated. Saved articles remain available".into();
     }
 
     if counts.new_items > 0 || counts.updated_items > 0 {
@@ -473,7 +522,7 @@ mod tests {
                     ..counts
                 }
             ),
-            "Feed fetch finished with 26 issues"
+            "Some sources could not be updated. Saved articles remain available"
         );
     }
 }

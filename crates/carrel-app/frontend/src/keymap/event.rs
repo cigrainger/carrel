@@ -3,12 +3,6 @@
 #[cfg(target_arch = "wasm32")]
 use carrel_core::keymap::{Key, KeyCode, Modifiers};
 
-/// Return true when this key may bypass text-input suspension.
-#[cfg(target_arch = "wasm32")]
-pub fn is_global_passthrough_key(key: Key) -> bool {
-    key.is_escape() || key.is_meta_character('k') || key.is_meta_enter()
-}
-
 /// Translate a browser keyboard event to the core key representation.
 #[cfg(target_arch = "wasm32")]
 pub fn key_from_event(event: &web_sys::KeyboardEvent) -> Option<Key> {

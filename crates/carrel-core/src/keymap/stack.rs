@@ -124,25 +124,56 @@ impl KeymapStack {
 
     /// Dispatch a key sequence against the active stack.
     pub fn dispatch(&self, sequence: &Sequence) -> DispatchResult {
+        self.dispatch_available(sequence, |_| true)
+    }
+
+    /// Dispatch only implemented actions; unavailable bindings do not consume keys.
+    pub fn dispatch_available(
+        &self,
+        sequence: &Sequence,
+        available: impl Fn(&Action) -> bool,
+    ) -> DispatchResult {
         for layer in self.layers.iter().rev() {
             if let Some(binding) = layer
                 .bindings
                 .iter()
-                .find(|binding| binding.sequence == *sequence)
+                .find(|binding| available(&binding.action) && binding.sequence == *sequence)
             {
                 return DispatchResult::Action(binding.action.clone());
             }
 
-            if layer
-                .bindings
-                .iter()
-                .any(|binding| sequence.is_prefix_of(&binding.sequence))
-            {
+            if layer.bindings.iter().any(|binding| {
+                available(&binding.action) && sequence.is_prefix_of(&binding.sequence)
+            }) {
                 return DispatchResult::PartialMatch;
             }
         }
 
         DispatchResult::NoMatch
+    }
+
+    /// Effective, implemented layers for help and command discovery, top first.
+    pub fn available_layers(&self, available: impl Fn(&Action) -> bool) -> Vec<Layer> {
+        let mut seen: Vec<Sequence> = Vec::new();
+        self.layers
+            .iter()
+            .rev()
+            .filter_map(|layer| {
+                let mut visible = layer.clone();
+                visible.bindings.retain(|binding| {
+                    if !available(&binding.action)
+                        || seen
+                            .iter()
+                            .any(|sequence| sequence.conflicts_with(&binding.sequence))
+                    {
+                        return false;
+                    }
+                    seen.push(binding.sequence.clone());
+                    true
+                });
+                (!visible.bindings.is_empty()).then_some(visible)
+            })
+            .collect()
     }
 
     /// Return active bindings from top layer to bottom layer.
@@ -295,6 +326,42 @@ mod tests {
             result,
             Err(KeymapError::ConflictingBinding { .. })
         ));
+    }
+
+    #[test]
+    fn help_and_dispatch_skip_unimplemented_and_shadowed_actions() {
+        let mut stack = KeymapStack::new();
+        stack
+            .push(layer(
+                "global",
+                vec![binding('j', "global-next"), binding('x', "planned")],
+            ))
+            .unwrap();
+        stack
+            .push(layer("route", vec![binding('j', "next")]))
+            .unwrap();
+        let available = |action: &Action| action.name() != "planned";
+        assert_eq!(
+            stack.dispatch_available(&Sequence::parse("x").unwrap(), available),
+            DispatchResult::NoMatch
+        );
+        let visible = stack.available_layers(available);
+        assert_eq!(visible.len(), 1);
+        assert_eq!(visible[0].bindings()[0].action.name(), "next");
+        stack
+            .push(layer(
+                "modal",
+                vec![Binding::new(
+                    Sequence::parse("g g").unwrap(),
+                    Action::named("planned"),
+                    "Planned",
+                )],
+            ))
+            .unwrap();
+        assert_eq!(
+            stack.dispatch_available(&Sequence::parse("g").unwrap(), available),
+            DispatchResult::NoMatch
+        );
     }
 
     proptest! {

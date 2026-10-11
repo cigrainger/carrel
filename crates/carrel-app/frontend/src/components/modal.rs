@@ -22,6 +22,30 @@ pub(crate) fn Modal(
             if let Some(dialog) = dialog.try_get_untracked().flatten() {
                 dialog.close();
             }
+            // A successful retry can remove the warning control that opened
+            // this dialog. Keep keyboard access in the surviving reading view.
+            if let Some(document) = web_sys::window().and_then(|window| window.document())
+                && document
+                    .active_element()
+                    .is_none_or(|element| element.tag_name() == "BODY")
+            {
+                use wasm_bindgen::JsCast;
+                for selector in [
+                    ".is-selected .item-open",
+                    ".is-selected .highlight-open",
+                    ".reader-actions button",
+                    ".field-destinations a.is-active",
+                ] {
+                    if let Ok(Some(element)) = document.query_selector(selector)
+                        && let Ok(element) = element.dyn_into::<web_sys::HtmlElement>()
+                    {
+                        let options = web_sys::FocusOptions::new();
+                        options.set_prevent_scroll(true);
+                        let _ = element.focus_with_options(&options);
+                        break;
+                    }
+                }
+            }
         });
     }
     view! {

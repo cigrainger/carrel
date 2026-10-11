@@ -47,6 +47,7 @@ pub(crate) struct KeymapContext {
     overrides: LocalSignal<Vec<BindingOverride>>,
     pub(crate) warnings: LocalSignal<Vec<String>>,
     pub(crate) help_open: LocalSignal<bool>,
+    pub(crate) palette_open: LocalSignal<bool>,
     next_handler_id: LocalSignal<u64>,
 }
 
@@ -60,8 +61,27 @@ impl KeymapContext {
             overrides: RwSignal::new_local(Vec::new()),
             warnings: RwSignal::new_local(Vec::new()),
             help_open: RwSignal::new_local(false),
+            palette_open: RwSignal::new_local(false),
             next_handler_id: RwSignal::new_local(1),
         }
+    }
+}
+
+impl KeymapContext {
+    pub(crate) fn available_layers(self) -> Vec<Layer> {
+        let actions = self.handlers.with(|handlers| {
+            handlers
+                .iter()
+                .map(|handler| handler.action.clone())
+                .collect::<std::collections::BTreeSet<_>>()
+        });
+        self.stack.with(|stack| {
+            stack.available_layers(|action| {
+                action.name() == "show-keymap-help"
+                    || action.name() == "open-command-palette"
+                    || actions.contains(action.name())
+            })
+        })
     }
 }
 
@@ -97,6 +117,7 @@ pub fn KeymapProvider(children: Children) -> impl IntoView {
     view! {
         {children}
         <KeymapHelp/>
+        <crate::keymap::palette::CommandPalette/>
     }
 }
 
@@ -107,6 +128,32 @@ pub fn GlobalKeymapActions() -> impl IntoView {
     let capture = crate::components::save_article::use_capture_dialog().0;
     use_action_handler("save-article", move || {
         capture.set(true);
+    });
+    let preferences = crate::preferences::use_preferences();
+    use_action_handler("open-settings", move || {
+        preferences.appearance_open.set(true);
+        #[cfg(target_arch = "wasm32")]
+        if let Some(document) = web_sys::window().and_then(|window| window.document()) {
+            use wasm_bindgen::JsCast;
+            if let Ok(Some(trigger)) = document.query_selector(".appearance-menu summary")
+                && let Ok(trigger) = trigger.dyn_into::<web_sys::HtmlElement>()
+            {
+                let _ = trigger.focus();
+            }
+        }
+    });
+    let feeds = crate::feeds::use_feed_controller();
+    use_action_handler("add-source", move || feeds.add_open.set(true));
+    use_action_handler("source-activity", move || feeds.activity_open.set(true));
+    let sources = crate::navigation::use_reading_sidebar();
+    use_action_handler("toggle-reading-sidebar", move || sources.toggle());
+    use_action_handler("refresh-feeds", move || {
+        #[cfg(target_arch = "wasm32")]
+        wasm_bindgen_futures::spawn_local(async move {
+            if let Err(message) = crate::feeds::fetch_all(feeds).await {
+                feeds.error().set(Some(message));
+            }
+        });
     });
 
     let today = navigate.clone();
@@ -119,11 +166,6 @@ pub fn GlobalKeymapActions() -> impl IntoView {
         reading("/reading", NavigateOptions::default());
     });
 
-    let friends = navigate.clone();
-    use_action_handler("go-friends", move || {
-        friends("/friends", NavigateOptions::default());
-    });
-
     let library = navigate.clone();
     use_action_handler("go-library", move || {
         library("/library", NavigateOptions::default());
@@ -132,10 +174,6 @@ pub fn GlobalKeymapActions() -> impl IntoView {
     let highlights = navigate.clone();
     use_action_handler("go-highlights", move || {
         highlights("/highlights", NavigateOptions::default());
-    });
-
-    use_action_handler("go-lists", move || {
-        navigate("/lists", NavigateOptions::default());
     });
 }
 
@@ -262,12 +300,7 @@ fn push_warning(context: KeymapContext, warning: String) {
 
 #[cfg(target_arch = "wasm32")]
 fn handle_keydown(context: KeymapContext, event: web_sys::KeyboardEvent) {
-    if event.default_prevented()
-        || web_sys::window()
-            .and_then(|window| window.document())
-            .and_then(|document| document.query_selector("dialog[open]").ok().flatten())
-            .is_some()
-    {
+    if event.default_prevented() || event.is_composing() {
         return;
     }
     let native_control = web_sys::window()
@@ -291,7 +324,41 @@ fn handle_keydown(context: KeymapContext, event: web_sys::KeyboardEvent) {
         return;
     };
 
-    if event::is_text_input_focused() && !event::is_global_passthrough_key(key) {
+    let input_focused = event::is_text_input_focused();
+    let layers = context.available_layers();
+    let input_binding = layers
+        .iter()
+        .flat_map(Layer::bindings)
+        .any(|binding| binding.allow_in_input && binding.sequence.keys().first() == Some(&key));
+    if input_focused && !key.is_escape() && !input_binding {
+        context.pending.set(None);
+        return;
+    }
+
+    // Native dialogs own their inputs and buttons. Global reading keys must
+    // never mutate the article behind a modal; the palette remains a ripcord.
+    let modal_open = web_sys::window()
+        .and_then(|window| window.document())
+        .is_some_and(|document| {
+            document
+                .query_selector("dialog[open]")
+                .ok()
+                .flatten()
+                .is_some()
+        });
+    let palette_binding = layers.iter().flat_map(Layer::bindings).any(|binding| {
+        binding.action.name() == "open-command-palette"
+            && binding.sequence.keys().first() == Some(&key)
+    });
+    if modal_open && !palette_binding {
+        if layers
+            .iter()
+            .flat_map(Layer::bindings)
+            .any(|binding| binding.sequence.keys().first() == Some(&key))
+        {
+            event.prevent_default();
+        }
+        context.pending.set(None);
         return;
     }
 
@@ -311,10 +378,14 @@ fn handle_keydown(context: KeymapContext, event: web_sys::KeyboardEvent) {
         return;
     };
 
-    match context
-        .stack
-        .with_untracked(|stack| stack.dispatch(&sequence))
-    {
+    match context.stack.with_untracked(|stack| {
+        stack.dispatch_available(&sequence, |action| {
+            layers
+                .iter()
+                .flat_map(Layer::bindings)
+                .any(|binding| binding.action == *action)
+        })
+    }) {
         DispatchResult::Action(action) => {
             context.pending.set(None);
             event.prevent_default();
@@ -343,7 +414,7 @@ fn native_activation(key: &str, control_focused: bool, modified: bool) -> bool {
 }
 
 #[cfg(target_arch = "wasm32")]
-fn dispatch_action(context: KeymapContext, action: Action) {
+pub(crate) fn dispatch_action(context: KeymapContext, action: Action) {
     if context.help_open.get_untracked() && action.name() == "go-back" {
         context.help_open.set(false);
         return;
@@ -351,6 +422,13 @@ fn dispatch_action(context: KeymapContext, action: Action) {
 
     if action.name() == "show-keymap-help" {
         context.help_open.set(true);
+        return;
+    }
+
+    if action.name() == "open-command-palette" {
+        context
+            .palette_open
+            .set(!context.palette_open.get_untracked());
         return;
     }
 

@@ -3,6 +3,7 @@
 mod binding;
 pub mod default;
 mod error;
+pub mod palette;
 mod stack;
 
 pub use binding::{Action, Binding, Key, KeyCode, Modifiers, Sequence};

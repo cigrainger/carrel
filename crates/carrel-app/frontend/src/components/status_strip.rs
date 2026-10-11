@@ -16,9 +16,21 @@ pub fn StatusStrip() -> impl IntoView {
     let keymap_warnings = use_keymap_warnings();
     let feed_status = use_feed_controller().status();
     let app_status = use_status_controller().message();
+    let controller = use_feed_controller();
+    let details_button = NodeRef::<html::Button>::new();
     let menu = NodeRef::<html::Details>::new();
     let trigger = NodeRef::<html::Summary>::new();
-    let expanded = RwSignal::new(false);
+    let expanded = crate::preferences::use_preferences().appearance_open;
+    Effect::new(move |_| {
+        let open = expanded.get();
+        if let Some(menu) = menu.get() {
+            if open {
+                let _ = menu.set_attribute("open", "");
+            } else {
+                let _ = menu.remove_attribute("open");
+            }
+        }
+    });
     let close = UnsyncCallback::new(move |restore_focus: bool| {
         if let Some(menu) = menu.get_untracked() {
             let _ = menu.remove_attribute("open");
@@ -58,6 +70,12 @@ pub fn StatusStrip() -> impl IntoView {
                         view! { <span class=class title=title>{status.message}</span> }.into_any()
                     })
             }}
+            <Show when=move || { let status = feed_status.get(); !status.issues.is_empty() || status.feed_errors + status.entry_errors + status.content_errors > 0 }>
+                <button node_ref=details_button class="status-details" type="button" on:click=move |_| {
+                    if let Some(button) = details_button.get_untracked() { let _ = button.focus(); }
+                    controller.activity_open.set(true);
+                }>"Details"</button>
+            </Show>
             <details class="appearance-menu" node_ref=menu
                 on:toggle=move |_| {
                     expanded.set(menu.get_untracked().is_some_and(|menu| menu.has_attribute("open")));
@@ -96,7 +114,9 @@ pub fn StatusStrip() -> impl IntoView {
                 <Icon name=IconName::Appearance/><span>"Appearance"</span>
             </summary>
             <Show when=move || expanded.get()><AppearanceDismissal menu=menu on_close=close/></Show>
-            <div id="appearance-options" class="theme-switcher" role="group" aria-label="Theme">
+            <div id="appearance-options" class="appearance-panel">
+            <fieldset class="appearance-theme"><legend>"Theme"</legend>
+            <div class="theme-switcher" role="group" aria-label="Theme">
                 {Theme::ALL.into_iter().map(|option| {
                     let current = theme.current();
 
@@ -113,6 +133,9 @@ pub fn StatusStrip() -> impl IntoView {
                         </button>
                     }
                 }).collect_view()}
+            </div>
+            </fieldset>
+            <crate::preferences::ReadingControls/>
             </div>
             </details>
         </footer>

@@ -70,6 +70,8 @@ pub(crate) struct FeedStatusSnapshot {
     pub feed_errors: usize,
     /// Monotonic revision incremented whenever status changes.
     pub revision: u64,
+    /// Latest unresolved source problems, retained across unrelated fetches.
+    pub issues: Vec<FeedIssue>,
 }
 
 impl Default for FeedStatusSnapshot {
@@ -83,6 +85,7 @@ impl Default for FeedStatusSnapshot {
             content_errors: 0,
             feed_errors: 0,
             revision: 0,
+            issues: Vec::new(),
         }
     }
 }
@@ -95,6 +98,16 @@ pub(crate) struct FeedStatusCounts {
     pub(crate) entry_errors: usize,
     pub(crate) content_errors: usize,
     pub(crate) feed_errors: usize,
+}
+
+/// A source-scoped recovery message; diagnostic detail is deliberately opened.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct FeedIssue {
+    pub feed_url: String,
+    pub kind: String,
+    pub message: String,
+    pub detail: String,
 }
 
 /// Shared feed status updated by commands and background workers.
@@ -140,6 +153,41 @@ impl FeedStatusHandle {
         })
     }
 
+    pub(crate) fn finish_reports(
+        &self,
+        message: String,
+        counts: FeedStatusCounts,
+        reports: &[crate::feed_runner::FetchReport],
+    ) {
+        self.update(|snapshot| {
+            snapshot.is_fetching = false;
+            snapshot.message = message;
+            snapshot.new_items = counts.new_items;
+            snapshot.updated_items = counts.updated_items;
+            snapshot.entry_errors = counts.entry_errors;
+            snapshot.content_errors = counts.content_errors;
+            snapshot.feed_errors = counts.feed_errors;
+            for report in reports {
+                // A 304 proves the feed is reachable, not that a previously
+                // failed article cache has recovered.
+                snapshot.issues.retain(|issue| {
+                    issue.feed_url != report.url
+                        || (!matches!(
+                            report.outcome,
+                            crate::feed_runner::FetchOutcome::Updated { .. }
+                        ) && issue.kind != "feed")
+                });
+                snapshot
+                    .issues
+                    .extend(crate::commands::feeds::report_issues(report));
+            }
+        });
+    }
+
+    pub(crate) fn forget_source(&self, url: &str) {
+        self.update(|snapshot| snapshot.issues.retain(|issue| issue.feed_url != url));
+    }
+
     fn update(&self, apply: impl FnOnce(&mut FeedStatusSnapshot)) -> FeedStatusSnapshot {
         let mut snapshot = self
             .inner
@@ -148,5 +196,99 @@ impl FeedStatusHandle {
         apply(&mut snapshot);
         snapshot.revision = snapshot.revision.saturating_add(1);
         snapshot.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::feed_runner::{FetchOutcome, FetchReport};
+
+    fn report(url: &str, outcome: FetchOutcome) -> FetchReport {
+        FetchReport {
+            url: url.into(),
+            outcome,
+            content_errors: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn unrelated_checks_and_304_do_not_hide_failed_article_caches() {
+        let status = FeedStatusHandle::new();
+        let mut partial = report(
+            "a",
+            FetchOutcome::Updated {
+                stats: Default::default(),
+            },
+        );
+        partial
+            .content_errors
+            .push(carrel_store::feeds::EntryError {
+                feed_guid: "one".into(),
+                message: "cache failed".into(),
+            });
+        status.finish_reports("Updated".into(), Default::default(), &[partial]);
+        status.finish_reports(
+            "Checked".into(),
+            Default::default(),
+            &[report("b", FetchOutcome::NotModified)],
+        );
+        status.finish_reports(
+            "Checked".into(),
+            Default::default(),
+            &[report("a", FetchOutcome::NotModified)],
+        );
+        assert_eq!(status.snapshot().issues.len(), 1);
+        status.set_fetching("Retrying");
+        assert_eq!(status.snapshot().issues.len(), 1);
+        status.finish_reports(
+            "Offline".into(),
+            Default::default(),
+            &[report("a", FetchOutcome::HttpStatus { status: 503 })],
+        );
+        assert_eq!(status.snapshot().issues.len(), 2);
+        status.finish_reports(
+            "Checked".into(),
+            Default::default(),
+            &[report("a", FetchOutcome::NotModified)],
+        );
+        assert_eq!(status.snapshot().issues.len(), 1);
+        status.finish_reports(
+            "Updated".into(),
+            Default::default(),
+            &[report(
+                "a",
+                FetchOutcome::Updated {
+                    stats: Default::default(),
+                },
+            )],
+        );
+        assert!(status.snapshot().issues.is_empty());
+    }
+
+    #[test]
+    fn recovered_and_removed_sources_drop_only_their_own_problems() {
+        let status = FeedStatusHandle::new();
+        status.finish_reports(
+            "Failed".into(),
+            Default::default(),
+            &[
+                report("a", FetchOutcome::HttpStatus { status: 500 }),
+                report(
+                    "b",
+                    FetchOutcome::Error {
+                        message: "offline".into(),
+                    },
+                ),
+            ],
+        );
+        status.finish_reports(
+            "Checked".into(),
+            Default::default(),
+            &[report("a", FetchOutcome::NotModified)],
+        );
+        assert_eq!(status.snapshot().issues[0].feed_url, "b");
+        status.forget_source("b");
+        assert!(status.snapshot().issues.is_empty());
     }
 }
