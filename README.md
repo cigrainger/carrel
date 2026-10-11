@@ -48,7 +48,7 @@ disk use manageable. For full debugger inspection, use `cargo build --profile
 debugging` or `cargo test --profile debugging`. Release builds are unaffected.
 
 The desktop app has a Field reading layout, bundled fonts, a collapsible
-reader sidebar (Cmd+B), explicit reading completion, saved position restoration,
+navigation and source sidebar (Cmd+B), explicit reading completion, saved position restoration,
 highlights and notes, and local lists for Today, Reading, Library, Unread,
 Starred, and individual feeds. **Load older** extends lists through the archive.
 **Import OPML** and **Export OPML** use native file dialogs; importing keeps
@@ -58,7 +58,7 @@ text offline; `/` focuses search and `\` clears it. Every word matches a word
 beginning, within the current filter. The query and loaded results survive
 opening an article and returning. Highlights supports full note review, note
 editing, deliberate removal, and a complete Markdown export through a native
-save dialog. **Save article** in the destination band (Cmd+N) archives an article
+save dialog. **Save article** in the window toolbar (Cmd+N) archives an article
 URL and its images without subscribing to the site. Saving preserves the current
 view and offers **Read article** or **View in Library** afterward. Existing
 articles retain their identity, archive, highlights and reading state. A failed

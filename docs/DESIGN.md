@@ -54,8 +54,11 @@ alternatives using the same archive content and reader interactions:
   an expressive navigation band with 22px labels / a 32px active destination,
   and 29px grotesk article titles. The band contracts in the reader.
 
-Field is the selected production direction; Index and Fold remain comparison
-proposals. Their names describe layout choices, not user-selectable app themes.
+Field is the selected visual direction; Index and Fold remain comparison
+proposals. The production layout now puts navigation and Sources in one left
+sidebar, keeping Field's color fields and chronological composition. The original
+prototypes document the exploration, not the current application chrome.
+Their names are not user-selectable app themes.
 The reader keeps the user's body font, a comfortable measure, and restrained
 chrome. All alternatives
 retain Today / Reading / Library / Highlights, explicit read and star actions,
@@ -64,14 +67,14 @@ introduce no unread counts or rankings.
 
 ### Layout and type
 
-The primary navigation is a forest color field with four typographic columns:
-Today, Reading, Library, Highlights. Labels use a Helvetica-style grotesk at
-22px, with the selected destination at 32px and a square-ended underline. The
-band contracts to compact icon-and-label navigation in the reader. Sources are
-tucked away until the user opens the drawer; in the reader they form a left
-sidebar. Cmd+B and the sidebar button toggle the same source presentation.
+The primary navigation and Sources share one left sidebar. Today, Reading,
+Library and Highlights sit above the source index; quieter utilities sit at the
+bottom. Destination labels use equal-size 16px system type, with a narrow accent
+rule and background for selection. Selection never changes font size or weight.
+A 56px forest window toolbar carries the Ribbon mark, sidebar toggle, refresh
+and Save article. Cmd+B toggles the same sidebar in lists and the reader.
 
-Lists occupy the full available width. A chronological gutter shows a prominent
+Lists occupy the available content width. A chronological gutter shows a prominent
 56px day at each new date and a quieter date on subsequent rows from that day.
 The backend supplies calendar labels, explicitly distinguishing publication
 from saved dates when the publisher provides none. Article titles use a 29px
@@ -83,20 +86,24 @@ with a smaller date gutter, 18px headings and no excerpt. Titles still wrap.
 Switching density preserves the visible row and selection rather than remounting
 the list. It applies to article lists; annotations keep their reading measure.
 
-Section headings are 18px; the navigation carries the primary hierarchy.
-The reader title is 2.25rem. The optional reader sidebar is 216px wide.
+Section headings are 18px. The reader title is 2.25rem. The sidebar is 216px wide.
+When the content pane is 760px or narrower, Editorial rows use a 66px date
+gutter, 40px day and 22px title, with read/star controls stacked on the right.
+Dense retains 18px titles and its smaller dates. This responds to the available
+content width, so the open sidebar does not squeeze a large gutter and heading
+into the minimum desktop window.
 Default light surfaces are pale mint `#eaf0d8` and elevated mint `#f1f5e3`,
 with forest ink `#153c32`, secondary text `#466257`, rules `#b5c8a9` /
 `#8ba585`, and accent `#17694e`. The navigation field uses `#153c32` with
-`#eaf0d8` text; the source drawer uses `#d2dfbb`. Dark surfaces use `#1c211b`
+`#eaf0d8` text; the sidebar uses `#d2dfbb`. Dark surfaces use `#1c211b`
 with pale text and a quieter `#132e24` navigation field. Sepia and black remain
 available, retaining readable navigation pairs. These additions are production
 tokens: `--font-display`, `--text-list-title`, `--text-nav-label`,
-`--text-nav-active`, `--text-calendar`, `--navigation-height`,
+`--text-calendar`, `--navigation-height`,
 `--color-nav-bg`, `--color-nav-text`, and `--color-source-bg`.
 
-Navigation uses Lucide icons with labels and an underline for the active
-destination. Sources, Devices, and OPML actions belong to the source drawer.
+Navigation uses Lucide icons with labels and a left rule for the active
+destination. Sources, Devices, and OPML actions belong to the left sidebar.
 Icons use the maintained `lucide-leptos` integration, with only the required
 categories enabled, 16–18px sizes and a 1.5px stroke. Icons inside named controls
 are decorative. Read, star and compact reader controls are icon-only native
@@ -144,8 +151,8 @@ use. Controls use the system font and native select/range elements.
 For users who really want sans-serif body, we offer **Inter** (Rasmus Andersson, OFL). One option. No second sans.
 
 For menus and settings labels we use the **platform system font**, with bundled
-Inter as fallback. Field's navigation and article
-headings use `--font-display` (Helvetica Neue, with bundled Inter as fallback).
+Inter as fallback. Field's wordmark and article headings use `--font-display`
+(Helvetica Neue, with bundled Inter as fallback).
 Article prose retains its independently chosen reading font.
 
 For code blocks within articles we use **JetBrains Mono** (OFL), with programming ligatures off (this is a reading context, not editing).
@@ -165,8 +172,7 @@ For code blocks within articles we use **JetBrains Mono** (OFL), with programmin
   --text-display: 3rem;
   --text-reader-title: 2.25rem;
   --text-list-title: 1.8125rem; /* article heading */
-  --text-nav-label: 1.375rem;
-  --text-nav-active: 2rem;
+  --text-nav-label: 1rem;
   --text-calendar: 3.5rem;
   
   /* Reading view - separate scale, user-configurable */
@@ -288,7 +294,7 @@ Color is functional, not decorative. The accent color appears sparingly and only
 }
 ```
 
-The mint field and forest destination band establish Field's composition.
+The mint field and forest toolbar establish Field's composition.
 Selection and action affordances use the green accent sparingly. Publisher
 images keep a neutral paper backing across themes.
 
@@ -380,15 +386,26 @@ We do not auto-switch based on system theme by default. Some users want their re
 
 ### Application chrome
 
-The desktop layout has a destination band, main content area, and status strip.
-Sources are a deliberate drawer, hidden by default. The destination band
-contracts while reading; sources then occupy an optional left sidebar.
+The desktop layout has one compact toolbar, a left sidebar, main content area,
+and status strip. The sidebar starts visible and retains the user's visibility
+choice across lists and articles. Sources scroll independently, keeping primary
+navigation and utility controls reachable with a large subscription collection.
+Below the supported desktop minimum, the sidebar overlays the left edge rather
+than becoming a horizontal source strip; choosing a destination or source closes
+that narrow overlay.
+
+Source utilities share one quiet icon-and-label button style: 14px system type,
+30px minimum height, 8px icon gap, square corners and a transparent background.
+Hover and keyboard focus use the same treatments as the reader controls.
+Source activity, Devices, subscription files, Commands and Keyboard reference
+must not fall back to browser button chrome or different text scales.
+Import and Export share a compact row; their accessible labels and tooltips
+retain the OPML format name.
 
 On macOS, Field extends into the native titlebar. Native traffic lights and
 window decorations remain in place; the separate title text is hidden. The
-integrated band is 112px high in lists and 70px in the reader. The list brand
-sits below the traffic lights; the reader reserves a 104px leading inset for
-them and omits the repeated wordmark. Blank header space can drag the window
+toolbar is 56px high in lists and the reader. Its brand reserves a 104px leading
+inset for the traffic lights. Blank header space can drag the window
 and supports double-click zoom through Tauri. Navigation links and
 toolbar buttons remain ordinary clickable controls. The toolbar uses quiet
 borderless square buttons, with a hover or pressed fill. Chrome dims gently
@@ -398,19 +415,21 @@ grotesk and article prose retains the chosen reading face.
 
 ```
 ┌───────────────────────────────────────────────────┐
-│ carrel   Today  Reading  Library  Highlights   +   │
+│         carrel                         ◧  ↻  +   │
 ├───────────────────────────────────────────────────┤
-│ [optional sources drawer and utilities]            │
-├───────────────────────────────────────────────────┤
-│ date       source · length                actions │
-│            article heading                        │
-│            excerpt                                │
+│ Today       │ date   source · length     actions │
+│ Reading     │        article heading             │
+│ Library     │        excerpt                     │
+│ Highlights  │                                    │
+│ Sources     │                                    │
+│ …           │                                    │
+│ utilities   │                                    │
 ├───────────────────────────────────────────────────┤
 │ status                                 Appearance │
 └───────────────────────────────────────────────────┘
 ```
 
-The band has four primary destinations: Today, Reading, Library, and
+The sidebar has four primary destinations: Today, Reading, Library, and
 Highlights. All, Unread, and Starred are filters inside Library, with their
 existing routes retained. Friends and Lists appear when their first useful flows
 work. Subscriptions and utilities live in Sources. There are no counts or
@@ -421,9 +440,10 @@ Empty Today and Reading views offer a quiet Browse Library link so their
 suggested next step is directly available. Empty search results retain Clear
 search instead of taking the user out of the current view.
 
-There is one reader layout with a collapsible source sidebar. It starts
-hidden. Cmd+B and a visible reader control show or hide it without remounting
-the article or losing its scroll position. The choice carries across articles
+There is one reader layout with the same collapsible navigation sidebar.
+Cmd+B and a visible toolbar control show or hide it without remounting
+the article. The visible text passage or list row stays in place when the
+available width changes, including at the minimum desktop width. The choice carries across articles
 for the session. Returning to a list restores its filter, selected item, and
 scroll position. When an item leaves a filter, select the nearest remaining
 neighbor.
@@ -484,7 +504,7 @@ The header is small and quiet: title, byline, source/length/date in muted second
 The reader has a slim persistent action rail above the scrolling article area.
 It exposes a named return destination, plain Previous/Next navigation,
 star/unstar, mark read/unread, open original, and item info. Source visibility
-is controlled from the compact destination band or Cmd+B. Previous
+is controlled from the window toolbar or Cmd+B. Previous
 and Next only navigate. A separately labeled “Mark read & next” action and `n`
 explicitly complete the current article. At the final item, completion returns
 to the originating list. `p` browses backward without marking read. Existing
@@ -701,7 +721,7 @@ a             archive (mark read and hide from main lists)
 2             Reading
 3             Library
 4             Highlights
-cmd-B         show / hide sidebar while reading
+cmd-B         show / hide navigation sidebar
 ?             keymap reference (overlay)
 cmd-k         command palette
 cmd-n         save an article URL
@@ -816,8 +836,8 @@ Small lowercase labels with a subtle background tint, separated from titles. Cli
 
 ### Feed management
 
-The destination band's plus control opens **Save article**; Cmd+N opens the same
-dialog through the keymap stack. The source drawer retains its separate **Add
+The toolbar's plus control opens **Save article**; Cmd+N opens the same
+dialog through the keymap stack. The sidebar retains its separate **Add
 source** control. Saving accepts an HTTP(S) article link or a bare website
 address. It archives the page and its images, without subscribing to the site.
 The input stays visible while saving and remains intact on failure for retry.
@@ -836,7 +856,7 @@ rule; the subtitle describes the library rather than only subscriptions.
 When a saved page supplies no title or description, its opening excerpt supplies
 the heading consistently in the confirmation, Library and reader.
 
-The Sources drawer lists subscribed feed titles, falling back to host or URL
+The Sources section lists subscribed feed titles, falling back to host or URL
 when the feed has not been fetched yet. Feed rows are plain navigation rows
 with a small explicit remove affordance. Selecting a feed opens a normal item
 list filtered to that feed. No unread counts, badges, or freshness counters
@@ -956,10 +976,10 @@ These are design moves that conflict with the principles and that we explicitly 
 
 **Animation as decoration.** Every animation must convey something. "It looks nice" is not enough.
 
-**Variable-width chrome.** The desktop source sidebar is a fixed width; the
-reading measure has a fixed maximum. At narrow widths sources become a drawer
-above the content and the destination band uses compact labels. Reading text
-does not continuously scale to fill the window.
+**Variable-width chrome.** The desktop navigation sidebar is a fixed width; the
+reading measure has a fixed maximum. Below 720px the sidebar becomes a left
+overlay and closes when a destination or source is chosen. Destination labels
+retain the same size. Reading text does not continuously scale to fill the window.
 
 **Onboarding tutorials.** The first run shows OPML import (or skip) and that's it. Discovery happens through use. The keymap reference (`?`) is the user's reference, not a forced walkthrough.
 

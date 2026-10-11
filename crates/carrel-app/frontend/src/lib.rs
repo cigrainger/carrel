@@ -36,11 +36,11 @@ use crate::keymap::{GlobalKeymapActions, KeymapProvider};
 pub fn App() -> impl IntoView {
     provide_context(writes::PendingWrites::default());
     let theme = theme::provide_theme_controller();
+    preferences::provide_preferences();
     navigation::provide_list_navigation_context();
     let reading_sidebar = navigation::use_reading_sidebar();
     feeds::provide_feed_controller();
     status::provide_status_controller();
-    preferences::provide_preferences();
     item_actions::provide_item_actions();
     annotation_actions::provide_annotation_actions();
     progress::provide_progress_writer();

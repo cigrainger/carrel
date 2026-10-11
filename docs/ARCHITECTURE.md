@@ -388,13 +388,18 @@ Leptos signals are the reactive primitive. Server-side state (Cozo facts) is ref
 The current reading loop uses command-backed route signals while the general
 `use_query` abstraction remains planned. Request generations reject responses
 after a newer request or route cleanup. Session-level list snapshots retain the
-return path, rows, selected identity/index, and scroll offset. The reader sidebar
+return path, rows, selected identity/index, and scroll offset. The navigation sidebar
 is one session signal; toggling it changes the shell grid without replacing the
-article. These are presentation caches; Cozo remains authoritative.
+article. A text-range or row anchor retains the visible passage through the
+resulting reflow. These are presentation caches; Cozo remains authoritative.
 
-Field's destination band remains mounted across list and article routes. Its
-active destination follows the list that opened the reader. The source signal
-controls a drawer in list views and a left sidebar in the desktop reader.
+Field's compact toolbar and left navigation sidebar remain mounted across list
+and article routes. The sidebar starts visible; one session signal controls
+visibility in both views without replacing the content. Its active destination
+follows the list that opened the reader, using constant-size labels. Sources
+scroll independently below the four destinations, with utility controls at the
+bottom. Below 720px the same sidebar overlays the left edge and closes when a
+destination or source is chosen.
 Calendar DTOs are derived from publication metadata, with explicitly labelled
 arrival dates for undated posts; the webview only renders and groups them.
 

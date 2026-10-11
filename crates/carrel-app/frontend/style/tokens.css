@@ -56,8 +56,7 @@
   --text-display: 3rem;
   --text-reader-title: 2.25rem;
   --text-list-title: 1.8125rem;
-  --text-nav-label: 1.375rem;
-  --text-nav-active: 2rem;
+  --text-nav-label: 1rem;
   --text-calendar: 3.5rem;
 
   --reading-size: 1.125rem;
@@ -93,7 +92,7 @@
   --radius-sm: 0;
   --sidebar-width: 216px;
   --status-strip-height: 28px;
-  --navigation-height: 142px;
+  --navigation-height: 56px;
 }
 
 @font-face {

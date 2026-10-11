@@ -46,12 +46,19 @@ pub(crate) fn restored_index(
     previous.min(ids.len().saturating_sub(1))
 }
 
-/// Session choice for the reader's navigation sidebar.
+/// Session visibility of the shared navigation sidebar.
 #[derive(Clone, Copy)]
-pub(crate) struct ReadingSidebar(pub(crate) RwSignal<bool>);
+pub(crate) struct ReadingSidebar(
+    pub(crate) RwSignal<bool>,
+    #[cfg(target_arch = "wasm32")] crate::preferences::PreferencesController,
+);
 
 impl ReadingSidebar {
     pub(crate) fn toggle(self) {
+        #[cfg(target_arch = "wasm32")]
+        self.1
+            .preserve_layout(|| self.0.update(|visible| *visible = !*visible));
+        #[cfg(not(target_arch = "wasm32"))]
         self.0.update(|visible| *visible = !*visible);
     }
 }
@@ -95,7 +102,11 @@ impl ListNavigationContext {
 
 /// Provide list navigation context for route children.
 pub fn provide_list_navigation_context() -> ListNavigationContext {
-    provide_context(ReadingSidebar(RwSignal::new(false)));
+    #[cfg(target_arch = "wasm32")]
+    let sidebar = ReadingSidebar(RwSignal::new(true), crate::preferences::use_preferences());
+    #[cfg(not(target_arch = "wasm32"))]
+    let sidebar = ReadingSidebar(RwSignal::new(true));
+    provide_context(sidebar);
     let context = ListNavigationContext {
         current: RwSignal::new(None),
         snapshots: RwSignal::new(BTreeMap::new()),

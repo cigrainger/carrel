@@ -12,6 +12,35 @@ pub(crate) struct PreferencesController {
 }
 
 impl PreferencesController {
+    /// Retain the visible passage when shell geometry changes before the next paint.
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn preserve_layout(self, change: impl FnOnce()) {
+        let anchor = self
+            .anchor
+            .get_value()
+            .filter(LayoutAnchor::reusable)
+            .or_else(|| {
+                web_sys::window()
+                    .and_then(|window| window.document())
+                    .and_then(|document| LayoutAnchor::capture(&document))
+            });
+        change();
+        self.anchor.set_value(anchor.clone());
+        if let Some(anchor) = anchor {
+            use wasm_bindgen::{JsCast, closure::Closure};
+            let expected_scroll = anchor.scroll.scroll_top();
+            let callback = Closure::once_into_js(move || {
+                // A route change or user scroll supersedes the pending restoration.
+                if anchor.connected() && anchor.scroll.scroll_top() == expected_scroll {
+                    anchor.restore();
+                }
+            });
+            if let Some(window) = web_sys::window() {
+                let _ = window.request_animation_frame(callback.unchecked_ref());
+            }
+        }
+    }
+
     pub(crate) fn change(self, update: impl FnOnce(&mut ReadingPreferences)) {
         let mut next = self.current.get_untracked();
         update(&mut next);
@@ -287,8 +316,18 @@ impl LayoutAnchor {
         }
     }
 
-    fn reusable(&self) -> bool {
+    fn connected(&self) -> bool {
         self.scroll.is_connected()
+            && match &self.target {
+                AnchorTarget::Text(range) => range
+                    .start_container()
+                    .is_ok_and(|node| node.is_connected()),
+                AnchorTarget::Row(row) => row.is_connected(),
+            }
+    }
+
+    fn reusable(&self) -> bool {
+        self.connected()
             && self.scroll.scroll_top() == self.last_scroll.get()
             && (self.current_top() - self.top).abs() <= 2.0
     }

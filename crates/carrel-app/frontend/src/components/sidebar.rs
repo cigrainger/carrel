@@ -4,52 +4,26 @@ use std::future::Future;
 
 use leptos::html;
 use leptos::prelude::*;
-use leptos_router::components::A;
 use leptos_router::hooks::use_location;
 
 use crate::api::{self, FeedCandidate, FeedSummary};
 use crate::components::{Icon, IconName, Modal};
 use crate::feeds::{self, use_feed_controller};
 
-/// Field's destination band contracts into a compact toolbar while reading.
+/// Compact window toolbar shared by lists and the reader.
 #[component]
 pub(crate) fn FieldNavigation() -> impl IntoView {
-    let location = use_location();
-    let navigation = crate::navigation::use_list_navigation_context();
     let sources = crate::navigation::use_reading_sidebar();
     let controller = use_feed_controller();
     let fetch_busy = RwSignal::new(false);
     let capture = crate::components::save_article::use_capture_dialog();
     let save_button = NodeRef::<leptos::html::Button>::new();
-    let destination = Memo::new(move |_| {
-        let path = location.pathname.get();
-        let origin = if path.starts_with("/item/") {
-            navigation
-                .get()
-                .map(|list| list.return_path)
-                .unwrap_or_else(|| "/library".into())
-        } else {
-            path
-        };
-        match origin.as_str() {
-            "/" | "/today" => "today",
-            "/reading" => "reading",
-            "/highlights" => "highlights",
-            _ => "library",
-        }
-    });
     view! {
         <header class="field-navigation" data-tauri-drag-region="deep">
             <div class="field-brand"><span class="field-mark" aria-hidden="true"></span><span>"carrel"</span></div>
-            <nav class="field-destinations" aria-label="Primary">
-                <A href="/today" attr:class=move || if destination.get() == "today" { "is-active" } else { "" }><Icon name=IconName::Today/><span>"Today"</span></A>
-                <A href="/reading" attr:class=move || if destination.get() == "reading" { "is-active" } else { "" }><Icon name=IconName::Reading/><span>"Reading"</span></A>
-                <A href="/library" attr:class=move || if destination.get() == "library" { "is-active" } else { "" }><Icon name=IconName::Library/><span>"Library"</span></A>
-                <A href="/highlights" attr:class=move || if destination.get() == "highlights" { "is-active" } else { "" }><Icon name=IconName::Highlights/><span>"Highlights"</span></A>
-            </nav>
             <div class="field-tools">
-                <button type="button" class:active=move || sources.0.get() aria-label="Show or hide sources" title="Show or hide sources (⌘B)" aria-controls="reading-sidebar" aria-expanded=move || sources.0.get().to_string() on:click=move |_| sources.toggle()>{move || view! { <Icon name=if sources.0.get() { IconName::SidebarClose } else { IconName::SidebarOpen }/> }}</button>
-                <button type="button" aria-label="Refresh feeds" title="Refresh feeds" disabled=move || fetch_busy.get() || controller.status().get().is_fetching on:click=move |_| {
+                <button type="button" class:active=move || sources.0.get() aria-label="Show or hide sidebar" title="Show or hide sidebar (⌘B)" aria-controls="reading-sidebar" aria-expanded=move || sources.0.get().to_string() on:click=move |_| sources.toggle()>{move || view! { <Icon name=if sources.0.get() { IconName::SidebarClose } else { IconName::SidebarOpen }/> }}</button>
+                <button type="button" aria-label="Refresh feeds" title="Refresh feeds (⌘R)" disabled=move || fetch_busy.get() || controller.manual_fetch_busy.get() || controller.status().get().is_fetching on:click=move |_| {
                     fetch_busy.set(true);
                     spawn_feed_task(async move {
                         if let Err(message) = feeds::fetch_all(controller).await { controller.error().try_set(Some(message)); }
@@ -62,9 +36,60 @@ pub(crate) fn FieldNavigation() -> impl IntoView {
     }
 }
 
-/// Source drawer, with subscription dialogs mounted outside its hidden surface.
+#[component]
+fn PrimaryNavigation() -> impl IntoView {
+    let path = use_navigation_path();
+    let sidebar = crate::navigation::use_reading_sidebar();
+    let destination = Memo::new(move |_| match path.get().as_str() {
+        "/" | "/today" => "today",
+        "/reading" => "reading",
+        "/highlights" => "highlights",
+        _ => "library",
+    });
+    view! {
+        <nav class="field-destinations" aria-label="Primary">
+            <a href="/today" aria-current=move || (destination.get() == "today").then_some("page") class=move || if destination.get() == "today" { "is-active" } else { "" } on:click=move |_| close_narrow_sidebar(sidebar)><Icon name=IconName::Today/><span>"Today"</span></a>
+            <a href="/reading" aria-current=move || (destination.get() == "reading").then_some("page") class=move || if destination.get() == "reading" { "is-active" } else { "" } on:click=move |_| close_narrow_sidebar(sidebar)><Icon name=IconName::Reading/><span>"Reading"</span></a>
+            <a href="/library" aria-current=move || (destination.get() == "library").then_some("page") class=move || if destination.get() == "library" { "is-active" } else { "" } on:click=move |_| close_narrow_sidebar(sidebar)><Icon name=IconName::Library/><span>"Library"</span></a>
+            <a href="/highlights" aria-current=move || (destination.get() == "highlights").then_some("page") class=move || if destination.get() == "highlights" { "is-active" } else { "" } on:click=move |_| close_narrow_sidebar(sidebar)><Icon name=IconName::Highlights/><span>"Highlights"</span></a>
+        </nav>
+    }
+}
+
+// The selected navigation entry follows the originating list, including search.
+fn use_navigation_path() -> Memo<String> {
+    let location = use_location();
+    let navigation = crate::navigation::use_list_navigation_context();
+    Memo::new(move |_| {
+        let path = location.pathname.get();
+        let origin = if path.starts_with("/item/") {
+            navigation
+                .get()
+                .map(|list| list.return_path)
+                .unwrap_or_else(|| "/library".into())
+        } else {
+            path
+        };
+        origin.split('?').next().unwrap_or_default().to_string()
+    })
+}
+
+fn close_narrow_sidebar(_sidebar: crate::navigation::ReadingSidebar) {
+    #[cfg(target_arch = "wasm32")]
+    if web_sys::window()
+        .and_then(|window| window.inner_width().ok())
+        .and_then(|width| width.as_f64())
+        .is_some_and(|width| width <= 720.0)
+    {
+        _sidebar.0.set(false);
+    }
+}
+
+/// One navigation sidebar, with subscription dialogs outside its hidden surface.
 #[component]
 pub fn Sidebar() -> impl IntoView {
+    let sidebar = crate::navigation::use_reading_sidebar();
+    let active_path = use_navigation_path();
     let feed_controller = use_feed_controller();
     let feeds = feed_controller.feeds();
     let controller_error = feed_controller.error();
@@ -76,7 +101,8 @@ pub fn Sidebar() -> impl IntoView {
     let help_button = NodeRef::<html::Button>::new();
 
     view! {
-        <aside class="sidebar" id="reading-sidebar" aria-label="Sources">
+        <aside class="sidebar" id="reading-sidebar" aria-label="Navigation and sources">
+            <PrimaryNavigation/>
             <div class="sidebar-section">
                 <div class="sidebar-section-header">
                     <h2>"Sources"</h2>
@@ -108,10 +134,11 @@ pub fn Sidebar() -> impl IntoView {
                         >
                             {
                                 let href = feeds::feed_href(&url);
+                                let selected_href = href.clone();
                                 let current = Memo::new(move |_| feeds.with(|feeds| feeds.iter().find(|feed| feed.url == url).cloned()));
                                 view! {
                                     <li class="feed-nav-row">
-                                        <A href=href>{move || current.with(|feed| feed.as_ref().map(|feed| feed.display_name.clone()).unwrap_or_default())}</A>
+                                        <a href=href aria-current=move || active_path.with(|path| (path == &selected_href).then_some("page")) title=move || current.with(|feed| feed.as_ref().map(|feed| feed.display_name.clone()).unwrap_or_default()) on:click=move |_| close_narrow_sidebar(sidebar)>{move || current.with(|feed| feed.as_ref().map(|feed| feed.display_name.clone()).unwrap_or_default())}</a>
                                         <button
                                             type="button"
                                             aria-label=move || current.with(|feed| format!("Remove {}", feed.as_ref().map(|feed| feed.display_name.as_str()).unwrap_or_default()))
@@ -128,17 +155,17 @@ pub fn Sidebar() -> impl IntoView {
                 </Show>
             </div>
             <div class="sidebar-utilities">
-                <button node_ref=activity_button type="button" on:click=move |_| {
+                <button class="utility-action" node_ref=activity_button type="button" on:click=move |_| {
                     if let Some(button) = activity_button.get_untracked() { let _ = button.focus(); }
                     feed_controller.activity_open.set(true);
                 }><Icon name=IconName::Info/><span>"Source activity"</span></button>
                 <crate::components::devices::Devices/>
-                <SubscriptionFiles/>
-                <button node_ref=commands_button type="button" title="Commands (⌘K)" on:click=move |_| {
+                <SubscriptionFiles compact=true/>
+                <button class="utility-action" node_ref=commands_button type="button" title="Commands (⌘K)" on:click=move |_| {
                     if let Some(button) = commands_button.get_untracked() { let _ = button.focus(); }
                     crate::keymap::open_palette();
                 }><Icon name=IconName::Search/><span>"Commands"</span></button>
-                <button node_ref=help_button type="button" title="Keyboard reference (?)" on:click=move |_| {
+                <button class="utility-action" node_ref=help_button type="button" title="Keyboard reference (?)" on:click=move |_| {
                     if let Some(button) = help_button.get_untracked() { let _ = button.focus(); }
                     crate::keymap::open_help();
                 }><Icon name=IconName::Keyboard/><span>"Keyboard reference"</span></button>
@@ -272,7 +299,10 @@ fn AddSource() -> impl IntoView {
 
 /// Quiet native OPML actions, also available in the empty library.
 #[component]
-pub(crate) fn SubscriptionFiles(#[prop(default = true)] export: bool) -> impl IntoView {
+pub(crate) fn SubscriptionFiles(
+    #[prop(default = true)] export: bool,
+    #[prop(default = false)] compact: bool,
+) -> impl IntoView {
     let controller = use_feed_controller();
     let run = move |import| {
         controller.file_busy.set(true);
@@ -285,8 +315,8 @@ pub(crate) fn SubscriptionFiles(#[prop(default = true)] export: bool) -> impl In
         });
     };
     view! { <div class="subscription-files">
-        <button type="button" disabled=move || controller.file_busy.get() on:click=move |_| run(true)><Icon name=IconName::Import/><span>"Import OPML"</span></button>
-        <Show when=move || export><button type="button" disabled=move || controller.file_busy.get() on:click=move |_| run(false)><Icon name=IconName::Export/><span>"Export OPML"</span></button></Show>
+        <button type="button" aria-label="Import OPML" title="Import OPML" disabled=move || controller.file_busy.get() on:click=move |_| run(true)><Icon name=IconName::Import/><span>{if compact { "Import" } else { "Import OPML" }}</span></button>
+        <Show when=move || export><button type="button" aria-label="Export OPML" title="Export OPML" disabled=move || controller.file_busy.get() on:click=move |_| run(false)><Icon name=IconName::Export/><span>{if compact { "Export" } else { "Export OPML" }}</span></button></Show>
     </div> }
 }
 
