@@ -55,7 +55,9 @@ Starred, individual feeds and source folders. **Load older** extends lists throu
 importing keeps existing subscription settings. Nested OPML folders become readable folder
 paths, exported as named groups. Assign an optional folder to each source in
 Settings → Sources; blank leaves it unfiled. Sidebar folder names open combined
-article lists, and their disclosure buttons collapse the source rows. Each article list can search titles and cached
+article lists, and their disclosure buttons collapse the source rows.
+Source and folder lists show the newest publication first, using arrival time
+only for undated posts. Each article list can search titles and cached
 text offline; `/` focuses search and `\` clears it. Every word matches a word
 beginning, within the current filter. The query and loaded results survive
 opening an article and returning. Highlights supports full note review, note

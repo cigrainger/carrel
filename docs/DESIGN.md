@@ -901,6 +901,9 @@ chronological list, with search, Load older and the usual reader-return context.
 Folder membership is exact, including imported paths such as Research / Papers;
 there is no hierarchy editor. A refresh never moves a source within its group.
 Folders carry no counts and do not change saved articles or their reading state.
+Source and folder article lists sort by publication date, newest first, with
+first-arrival time used only for undated posts. Equal dates use a stable item-ID
+tie breaker. A batch fetch or its feed-entry order cannot reverse the chronology.
 
 Subscriptions use canonical URL order from their first appearance, matching the
 store's list order. Fetching a title or updating fetch status does not reorder

@@ -65,12 +65,12 @@ pub enum ItemView {
     Reading,
     /// Starred items, newest star update first.
     Starred,
-    /// Items discovered through a particular subscription.
+    /// Articles from one subscription, newest publication first (arrival if undated).
     Feed {
         /// Canonical subscription URL.
         url: String,
     },
-    /// Saved articles from subscriptions currently assigned to this folder.
+    /// Articles from subscriptions in this folder, newest publication first.
     Folder {
         /// Exact source-folder label, including imported paths.
         folder: String,

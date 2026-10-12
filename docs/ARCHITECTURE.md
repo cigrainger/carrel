@@ -433,7 +433,8 @@ the add dialog closes.
 Archive filters and pagination contracts live in `carrel-core::library`.
 `carrel-store::library` filters before limiting and joins article metadata,
 read state, and stars in one query per page. Cursors use descending publication
-time for Today (first arrival for undated posts), discovery time for the archive,
+time for Today, sources and folders (first arrival for undated posts), discovery
+time for the archive,
 or action time for Reading and Starred, with an ascending item-ID tie breaker.
 Today's 24-hour publication window excludes future dates and both boundaries
 are fixed for subsequent pages. List snapshots also retain the continuation and

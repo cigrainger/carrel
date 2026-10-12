@@ -143,6 +143,88 @@ fn folders_filter_before_pagination_and_follow_current_subscription_membership()
     assert_eq!(all_ids(&store, ItemFilter::library()).len(), 230);
 }
 
+#[test]
+fn source_and_folder_chronology_uses_publication_not_batch_arrival_or_feed_order() {
+    use carrel_core::subscription::FeedSubscription;
+    let store = archive(8, true);
+    for url in ["https://a.example/feed", "https://b.example/feed"] {
+        store
+            .import_feed_subscriptions(&[FeedSubscription {
+                url: url.into(),
+                title: None,
+                folder: Some("Research".into()),
+            }])
+            .unwrap();
+    }
+    // A single batch arrived at time 100, with feed entries in oldest-first
+    // order. Both equal publisher dates and genuinely undated entries occur.
+    for (index, published) in [
+        (0, Some(10)),
+        (1, Some(30)),
+        (2, Some(20)),
+        (3, None),
+        (4, Some(30)),
+        (5, Some(-10)),
+        (6, Some(1000)),
+        (7, None),
+    ] {
+        let id = format!("item-{index:04}");
+        article(
+            &store,
+            &id,
+            if index < 6 {
+                "https://a.example/feed"
+            } else {
+                "https://b.example/feed"
+            },
+        );
+        store.query_with_params("?[id, kind, title, creators, primary_url, published_at, language, summary, discovered_at] := *item{id, kind, title, creators, primary_url, language, summary, discovered_at}, id = $id, published_at = $date :put item {id => kind, title, creators, primary_url, published_at, language, summary, discovered_at}", BTreeMap::from([("id".into(), DataValue::from(id)),("date".into(),published.map_or(DataValue::Null,validity))])).unwrap();
+    }
+    for (filter, expected) in [
+        (
+            ItemFilter::feed("https://a.example/feed".into()),
+            vec![
+                "item-0003",
+                "item-0001",
+                "item-0004",
+                "item-0002",
+                "item-0000",
+                "item-0005",
+            ],
+        ),
+        (
+            ItemFilter::folder("Research".into()),
+            vec![
+                "item-0006",
+                "item-0003",
+                "item-0007",
+                "item-0001",
+                "item-0004",
+                "item-0002",
+                "item-0000",
+                "item-0005",
+            ],
+        ),
+    ] {
+        let filter = ItemFilter {
+            limit: Some(2),
+            ..filter
+        };
+        let ids = all_ids(&store, filter.clone());
+        assert_eq!(ids, expected);
+        assert_eq!(ids.iter().collect::<BTreeSet<_>>().len(), expected.len());
+        let first = store.list_item_page(&filter, 0).unwrap();
+        assert_eq!(
+            first.next_cursor.unwrap().sort_at_micros,
+            if matches!(filter.view, ItemView::Feed { .. }) {
+                30
+            } else {
+                100
+            }
+        );
+    }
+}
+
 fn search(mut filter: ItemFilter, query: &str) -> ItemFilter {
     filter.search = Some(query.into());
     filter

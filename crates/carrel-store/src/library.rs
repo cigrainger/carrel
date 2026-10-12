@@ -89,13 +89,16 @@ impl Store {
                 "*item_star{item_id: id, starred: true, updated_at}, sort_at = to_int(updated_at)"
             }
             ItemView::Feed { .. } => {
-                "*item_article{item_id: id, feed_url: $feed_url}, sort_at = to_int(discovered_at)"
+                "*item_article{item_id: id, feed_url: $feed_url}, publication_date[id, sort_at]"
             }
             ItemView::Folder { .. } => {
-                "*item_article{item_id: id, feed_url}, *feed{url: feed_url, folder: $folder}, sort_at = to_int(discovered_at)"
+                "*item_article{item_id: id, feed_url}, *feed{url: feed_url, folder: $folder}, publication_date[id, sort_at]"
             }
         };
-        let publication_rules = if filter.view == ItemView::Today {
+        let publication_rules = if matches!(
+            filter.view,
+            ItemView::Today | ItemView::Feed { .. } | ItemView::Folder { .. }
+        ) {
             r#"
             publication_date[id, date] := *item{id, published_at}, published_at != null, date = to_int(published_at)
             publication_date[id, date] := *item{id, published_at: null, discovered_at}, date = to_int(discovered_at)
