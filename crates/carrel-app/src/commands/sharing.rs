@@ -16,7 +16,6 @@ pub(crate) struct PeopleSnapshot {
     contact_code: Option<String>,
     ready: bool,
     people: Vec<PersonSummary>,
-    shares: Vec<SentShareSummary>,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -70,10 +69,38 @@ pub(crate) async fn list_people(state: State<'_, AppState>) -> Result<PeopleSnap
             error: service.and_then(|worker| worker.error(&contact.master)),
         })
         .collect();
-    let shares = if binding.is_some() {
-        state
-            .store
-            .sent_social_shares(100)?
+    let contact_code = service
+        .and_then(|worker| worker.bridge.contact_card().ok())
+        .and_then(|card| card.to_text().ok());
+    Ok(PeopleSnapshot {
+        key: binding.map(|binding| binding.master_pubkey.to_hex()),
+        ready: contact_code.is_some(),
+        contact_code,
+        people,
+    })
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SentSharePage {
+    shares: Vec<SentShareSummary>,
+    next_cursor: Option<carrel_store::sharing::SentShareCursor>,
+}
+#[tauri::command]
+pub(crate) fn list_sent_shares(
+    state: State<'_, AppState>,
+    after: Option<carrel_store::sharing::SentShareCursor>,
+) -> Result<SentSharePage> {
+    if state.store.self_identity()?.is_none() {
+        return Ok(SentSharePage {
+            shares: Vec::new(),
+            next_cursor: None,
+        });
+    }
+    let page = state.store.sent_social_share_page(after.as_ref(), 50)?;
+    Ok(SentSharePage {
+        shares: page
+            .shares
             .into_iter()
             .map(|sent| SentShareSummary {
                 id: sent.share.id,
@@ -84,19 +111,8 @@ pub(crate) async fn list_people(state: State<'_, AppState>) -> Result<PeopleSnap
                 date: date(sent.share.created_at_micros),
                 retracted: sent.retracted,
             })
-            .collect()
-    } else {
-        Vec::new()
-    };
-    let contact_code = service
-        .and_then(|worker| worker.bridge.contact_card().ok())
-        .and_then(|card| card.to_text().ok());
-    Ok(PeopleSnapshot {
-        key: binding.map(|binding| binding.master_pubkey.to_hex()),
-        ready: contact_code.is_some(),
-        contact_code,
-        people,
-        shares,
+            .collect(),
+        next_cursor: page.next_cursor,
     })
 }
 

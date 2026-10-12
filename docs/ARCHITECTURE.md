@@ -425,10 +425,18 @@ scroll independently below the four destinations, with one Settings control at
 the bottom. Route-owned reader controls mount into the shared context bar and
 clean up with the route; article state remains in the reading view. Settings is
 a native webview dialog over the mounted reading/list view, with shared controls
-for reading preferences, subscriptions, devices and effective keyboard bindings.
+for reading preferences, subscriptions, people, devices and effective keyboard bindings.
 Device status observation belongs to app state and continues while Settings is
 closed. Below 720px the same sidebar overlays the left edge and closes when a
 destination or source is chosen.
+
+People's quiet contact refresh is independent of sent-history queries. Sender
+history uses exclusive creation-time/record-key pages filtered to the local
+master, with explicit extension and retained pages after retry or withdrawal.
+The webview owns only mounted-page and focus state. Clipboard writes start from
+explicit user activation, with complete-text selection as the fallback; nothing
+reads clipboard contents. Contact rows keep their identity during status updates
+so an in-progress confirmation stays mounted.
 Calendar DTOs are derived from publication metadata, with explicitly labelled
 arrival dates for undated posts; the webview only renders and groups them.
 

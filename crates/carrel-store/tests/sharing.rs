@@ -149,6 +149,137 @@ fn received_library_joins_latest_vouch_and_paginates_before_withdrawal() {
 }
 
 #[test]
+fn sent_history_reaches_older_vouches_with_stable_ties_withdrawals_and_new_arrivals() {
+    use carrel_store::sharing::SentShareCursor;
+    let a = person(131);
+    let b = person(133);
+    let c = person(135);
+    connect(&a, &b);
+    connect(&a, &c);
+    connect(&c, &a);
+    source(
+        &a.store,
+        "original",
+        "https://example.org/history",
+        "Café 文",
+    );
+    let mut expected = Vec::new();
+    for index in 0..151 {
+        let at = match index {
+            0 => i64::MIN,
+            150 => i64::MAX,
+            _ => (index / 3) as i64,
+        };
+        let share = a
+            .store
+            .create_social_share(
+                draft(&a, *b.master.public(), &format!("history-{index}")),
+                at,
+                &a.device,
+            )
+            .unwrap();
+        expected.push((at, format!("share/{}", share.id), share.id));
+    }
+    expected.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+    a.store
+        .retract_social_share(&expected[140].2, 3, &a.device)
+        .unwrap();
+    a.store.unfollow_social_contact(b.master.public()).unwrap();
+    source(
+        &c.store,
+        "original",
+        "https://example.org/foreign",
+        "Another person's vouch",
+    );
+    let foreign = c
+        .store
+        .create_social_share(
+            draft(&c, *a.master.public(), "foreign"),
+            i64::MAX,
+            &c.device,
+        )
+        .unwrap();
+    a.store
+        .accept_social_record(&ShareFact::Share(Box::new(foreign)), c.master.public(), 42)
+        .unwrap();
+    let first = a.store.sent_social_share_page(None, 50).unwrap();
+    assert_eq!(first.shares.len(), 50);
+    let cursor = first.next_cursor.unwrap();
+    // A new prefix entry must not shift an already issued exclusive cursor.
+    a.store
+        .follow_social_contact(*b.master.public(), "Renamed friend", None)
+        .unwrap();
+    a.store
+        .create_social_share(
+            draft(&a, *b.master.public(), "new-prefix"),
+            i64::MAX,
+            &a.device,
+        )
+        .unwrap();
+    let mut ids = first
+        .shares
+        .into_iter()
+        .map(|sent| sent.share.id)
+        .collect::<Vec<_>>();
+    let mut after = Some(cursor);
+    let mut found_withdrawal = false;
+    while let Some(cursor) = after {
+        let page = a.store.sent_social_share_page(Some(&cursor), 50).unwrap();
+        assert!(page.shares.iter().all(|sent| sent.name == "Renamed friend"));
+        for sent in page.shares {
+            if sent.share.id == expected[140].2 {
+                assert!(sent.retracted);
+                found_withdrawal = true;
+            }
+            ids.push(sent.share.id);
+        }
+        after = page.next_cursor;
+    }
+    assert_eq!(
+        ids,
+        expected
+            .into_iter()
+            .map(|(_, _, id)| id)
+            .collect::<Vec<_>>()
+    );
+    assert!(found_withdrawal);
+    assert!(
+        a.store
+            .sent_social_share_page(
+                Some(&SentShareCursor {
+                    at_micros: 0,
+                    key: "share/' :rm social_record".into()
+                }),
+                50
+            )
+            .is_err()
+    );
+    assert_eq!(
+        a.store
+            .sent_social_share_page(None, 0)
+            .unwrap()
+            .shares
+            .len(),
+        1
+    );
+    assert_eq!(
+        a.store
+            .sent_social_share_page(None, usize::MAX)
+            .unwrap()
+            .shares
+            .len(),
+        100
+    );
+    assert!(
+        b.store
+            .sent_social_share_page(None, 50)
+            .unwrap()
+            .shares
+            .is_empty()
+    );
+}
+
+#[test]
 fn explicit_contacts_pin_master_identity_without_granting_private_device_access() {
     let a = person(61);
     let b = person(63);

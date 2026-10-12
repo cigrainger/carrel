@@ -226,9 +226,8 @@ pub(crate) struct PeopleSnapshot {
     pub contact_code: Option<String>,
     pub ready: bool,
     pub people: Vec<PersonSummary>,
-    pub shares: Vec<SentShareSummary>,
 }
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 pub(crate) struct PersonSummary {
     pub key: String,
     pub name: String,
@@ -246,6 +245,18 @@ pub(crate) struct SentShareSummary {
     pub note: Option<String>,
     pub date: String,
     pub retracted: bool,
+}
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SentShareCursor {
+    pub at_micros: i64,
+    pub key: String,
+}
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SentSharePage {
+    pub shares: Vec<SentShareSummary>,
+    pub next_cursor: Option<SentShareCursor>,
 }
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]

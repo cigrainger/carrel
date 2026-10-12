@@ -14,9 +14,13 @@ pub(crate) struct Sharing {
     pub people: RwSignal<api::PeopleSnapshot>,
     pub error: RwSignal<Option<String>>,
     pub target: RwSignal<Option<ShareTarget>>,
+    history_revision: RwSignal<u64>,
     requests: StoredValue<Requests>,
 }
 impl Sharing {
+    fn history_changed(self) {
+        self.history_revision.try_update(|revision| *revision += 1);
+    }
     pub fn refresh(self) {
         let guard = self.requests.get_value();
         let request = guard.begin();
@@ -43,6 +47,7 @@ pub(crate) fn provide_sharing() {
         people: RwSignal::new(api::PeopleSnapshot::default()),
         error: RwSignal::new(None),
         target: RwSignal::new(None),
+        history_revision: RwSignal::new(0),
         requests: StoredValue::new(Requests::default()),
     };
     provide_context(sharing);
@@ -88,6 +93,7 @@ fn ShareForm(target: ShareTarget) -> impl IntoView {
             busy.set(true); error.set(None);
             spawn(async move {
                 let result = api::sharing_call::<api::SentShareSummary>("share_article", args).await; drop(write); sharing.refresh();
+                if result.is_ok() { sharing.history_changed(); }
                 if !requests.accepts(request) { return; }
                 match result { Ok(share) => { saved.try_set(Some(share.to)); }, Err(problem) => { error.try_set(Some(problem.message().into())); } }
                 busy.try_set(false);
@@ -130,8 +136,26 @@ pub(crate) fn PeoplePanel() -> impl IntoView {
     let cleanup = requests.get_value();
     on_cleanup(move || cleanup.invalidate());
     let writes = StoredValue::new(crate::writes::use_pending_writes());
-    let code = NodeRef::<html::Textarea>::new();
-    let key = NodeRef::<html::Input>::new();
+    let follow_input = NodeRef::<html::Textarea>::new();
+    let removed = RwSignal::new(None::<String>);
+    #[cfg(target_arch = "wasm32")]
+    Effect::new(move |_| {
+        if let Some(key) = removed.get()
+            && !sharing
+                .people
+                .get()
+                .people
+                .iter()
+                .any(|person| person.key == key && person.followed)
+        {
+            removed.set(None);
+            if let Some(input) = follow_input.get() {
+                let options = web_sys::FocusOptions::new();
+                options.set_prevent_scroll(true);
+                let _ = input.focus_with_options(&options);
+            }
+        }
+    });
     let change = move |command: &'static str, args: serde_json::Value| {
         if busy.get_untracked() {
             return;
@@ -141,15 +165,28 @@ pub(crate) fn PeoplePanel() -> impl IntoView {
         let guard = requests.get_value();
         let request = guard.begin();
         let write = writes.get_value().begin();
+        let removed_key = if command == "remove_person" {
+            args.get("key")
+                .and_then(|key| key.as_str())
+                .map(str::to_owned)
+        } else {
+            None
+        };
         spawn(async move {
             let result = api::sharing_call::<()>(command, args).await;
             drop(write);
             sharing.refresh();
+            if result.is_ok() {
+                sharing.history_changed();
+            }
             if !guard.accepts(request) {
                 return;
             }
             match result {
                 Ok(()) => {
+                    if let Some(key) = removed_key {
+                        removed.try_set(Some(key));
+                    }
                     if command == "follow_person" {
                         contact.try_set(String::new());
                         name.try_set(String::new());
@@ -166,9 +203,9 @@ pub(crate) fn PeoplePanel() -> impl IntoView {
     view! { <section class="people-panel"><h3>"People"</h3><p>"Choose the people whose reading you trust. Exchange contact codes directly and check their public key before following."</p>
         {move || error.get().or_else(|| sharing.error.get()).map(|message| view! { <p class="feed-error" role="alert">{message}</p> })}
         <Show when=move || sharing.people.get().key.is_some() fallback=|| view! { <p>"Set up your identity in Settings → Devices first."</p> }>
-            <label for="social-key">"Your public key — select and copy"</label><input node_ref=key id="social-key" readonly=true prop:value=move || sharing.people.get().key.unwrap_or_default() on:focus=move |_| { if let Some(input) = key.get() { input.select(); } }/>
+            <ContactCopy id="social-key" label="Your public key" button="Copy public key" text=Signal::derive(move || sharing.people.get().key.unwrap_or_default())/>
             <Show when=move || sharing.people.get().ready fallback=|| view! { <p>"Your contact code is preparing. Reading remains available."</p> }>
-                <label for="social-code">"Your contact code — select and copy"</label><textarea node_ref=code id="social-code" rows="3" readonly=true prop:value=move || sharing.people.get().contact_code.unwrap_or_default() on:focus=move |_| { if let Some(area) = code.get() { area.select(); } }/>
+                <ContactCopy id="social-code" label="Your contact code" button="Copy contact code" text=Signal::derive(move || sharing.people.get().contact_code.unwrap_or_default())/>
                 <p class="capture-notice">"This code identifies this desktop and its connection address. Send it only to a person you want to connect with."</p>
             </Show>
             <form class="follow-person" on:submit=move |event| {
@@ -182,20 +219,160 @@ pub(crate) fn PeoplePanel() -> impl IntoView {
                     busy.try_set(false);
                 });
             }>
-                <h4>"Follow a person"</h4><label for="person-code">"Public key or contact code"</label><textarea id="person-code" rows="3" maxlength="65536" readonly=move || busy.get() prop:value=move || contact.get() on:input=move |event| { contact.set(event_target_value(&event)); preview.set(None); }/>
+                <h4>"Follow a person"</h4><label for="person-code">"Public key or contact code"</label><textarea node_ref=follow_input id="person-code" rows="3" maxlength="65536" readonly=move || busy.get() prop:value=move || contact.get() on:input=move |event| { contact.set(event_target_value(&event)); preview.set(None); }/>
                 <label for="person-name">"Name for this person"</label><input id="person-name" maxlength="256" readonly=move || busy.get() prop:value=move || name.get() on:input=move |event| name.set(event_target_value(&event))/>
                 {move || preview.get().map(|person| view! { <div class="contact-preview"><p>"Check this public key with the person:"</p><code>{person.key}</code><p>{if person.connection_info {"Verified contact code. Follow only if you recognize this key."} else {"A public key is enough to follow. Exchange a contact code to connect your desktops."}}</p></div> })}
                 <button type="submit" disabled=move || busy.get() || contact.get().trim().is_empty() || name.get().trim().is_empty()>{move || if preview.get().is_some() {"Follow this person"} else {"Review public key"}}</button>
             </form>
         </Show>
-        <ul class="people-list"><For each={move || sharing.people.get().people.into_iter().filter(|person| person.followed).collect::<Vec<_>>()} key=|person| (person.key.clone(), person.name.clone(), person.connected, person.error.clone()) let:person>
+        <p>"Each person needs to follow the other's public key. Keep both desktops open for exchange; saved shares wait while either is offline."</p>
+        <ul class="people-list"><For each={move || sharing.people.get().people.into_iter().filter(|person| person.followed).collect::<Vec<_>>()} key=|person| person.key.clone() let:person>
             <PersonRow person=person busy=busy on_remove=UnsyncCallback::new(move |key: String| change("remove_person",json!({"key":key}))) on_retry=UnsyncCallback::new(move |()| change("refresh_shares",json!({})))/>
         </For></ul>
         <h4>"Sent articles"</h4><p>"Withdrawing removes your vouch. A person may keep an article they already received."</p>
-        <ul class="sent-shares"><For each=move || sharing.people.get().shares key=|share| (share.id.clone(),share.retracted) let:share>
-            <SentRow share=share busy=busy on_retract=UnsyncCallback::new(move |id: String| change("retract_share",json!({"id":id})))/>
-        </For></ul>
+        <SentHistory busy=busy on_retract=UnsyncCallback::new(move |id: String| change("retract_share",json!({"id":id})))/>
     </section> }
+}
+#[component]
+fn ContactCopy(
+    id: &'static str,
+    label: &'static str,
+    button: &'static str,
+    text: Signal<String>,
+) -> impl IntoView {
+    let field = NodeRef::<html::Textarea>::new();
+    let displayed = RwSignal::new(text.get_untracked());
+    let focused = RwSignal::new(false);
+    let message = RwSignal::new(None::<String>);
+    let busy = RwSignal::new(false);
+    let requests = StoredValue::new(Requests::default());
+    let cleanup = requests.get_value();
+    on_cleanup(move || cleanup.invalidate());
+    Effect::new(move |_| {
+        let next = text.get();
+        if !focused.get() && displayed.get_untracked() != next {
+            displayed.set(next);
+            message.set(None);
+        }
+    });
+    view! { <div class="contact-copy"><label for=id>{label}</label><textarea node_ref=field id=id rows="2" readonly=true prop:value=move ||displayed.get() on:focus=move |_| {focused.set(true);if let Some(area)=field.get(){area.select();}} on:blur=move |_|focused.set(false)/>
+        <button type="button" disabled=move ||busy.get() || displayed.get().is_empty() on:click=move |_| {
+            let guard=requests.get_value();let request=guard.begin();busy.set(true);message.set(None);
+            // Start within pointer/keyboard activation, before awaiting anything.
+            let copy=start_copy(&displayed.get_untracked());
+            spawn(async move {
+                let copied=finish_copy(copy).await;
+                if !guard.accepts(request) {return;}
+                if copied {message.try_set(Some(format!("{label} copied.")));}
+                else {if let Some(area)=field.get_untracked(){let _=area.focus();area.select();}message.try_set(Some("Clipboard access is unavailable. The complete text is selected; use Copy from the Edit menu or your usual copy shortcut.".into()));}
+                busy.try_set(false);
+            });
+        }>{button}</button>{move ||message.get().map(|text|view!{<p role="status" class="copy-status">{text}</p>})}
+    </div> }
+}
+#[cfg(target_arch = "wasm32")]
+fn start_copy(text: &str) -> Option<web_sys::js_sys::Promise> {
+    let clipboard = web_sys::window()?.navigator().clipboard();
+    let value: &wasm_bindgen::JsValue = clipboard.as_ref();
+    value.is_object().then(|| clipboard.write_text(text))
+}
+#[cfg(target_arch = "wasm32")]
+async fn finish_copy(copy: Option<web_sys::js_sys::Promise>) -> bool {
+    match copy {
+        Some(copy) => wasm_bindgen_futures::JsFuture::from(copy).await.is_ok(),
+        None => false,
+    }
+}
+#[cfg(not(target_arch = "wasm32"))]
+fn start_copy(_text: &str) -> Option<()> {
+    None
+}
+#[cfg(not(target_arch = "wasm32"))]
+async fn finish_copy(_copy: Option<()>) -> bool {
+    false
+}
+
+#[component]
+fn SentHistory(busy: RwSignal<bool>, on_retract: UnsyncCallback<String>) -> impl IntoView {
+    let sharing = use_sharing();
+    let shares = RwSignal::new(Vec::<api::SentShareSummary>::new());
+    let next = RwSignal::new(None::<api::SentShareCursor>);
+    let pages = RwSignal::new(1_usize);
+    let loading = RwSignal::new(false);
+    let error = RwSignal::new(None::<String>);
+    let retry_older = RwSignal::new(false);
+    let requests = StoredValue::new(Requests::default());
+    let cleanup = requests.get_value();
+    on_cleanup(move || cleanup.invalidate());
+    let load = UnsyncCallback::new(move |older: bool| {
+        if older && loading.get_untracked() {
+            return;
+        }
+        let guard = requests.get_value();
+        let request = guard.begin();
+        let wanted = pages.get_untracked();
+        let after = if older { next.get_untracked() } else { None };
+        let mut result = if older {
+            shares.get_untracked()
+        } else {
+            Vec::new()
+        };
+        loading.set(true);
+        error.set(None);
+        retry_older.set(older);
+        spawn(async move {
+            let mut cursor = after;
+            for _ in 0..if older { 1 } else { wanted } {
+                match api::sharing_call::<api::SentSharePage>(
+                    "list_sent_shares",
+                    json!({"after":cursor}),
+                )
+                .await
+                {
+                    Ok(page) => {
+                        if !guard.accepts(request) {
+                            return;
+                        }
+                        for share in page.shares {
+                            if !result.iter().any(|known| known.id == share.id) {
+                                result.push(share);
+                            }
+                        }
+                        cursor = page.next_cursor;
+                        if cursor.is_none() {
+                            break;
+                        }
+                    }
+                    Err(problem) => {
+                        if guard.accepts(request) {
+                            error.try_set(Some(problem.message().into()));
+                            loading.try_set(false);
+                        }
+                        return;
+                    }
+                }
+            }
+            if guard.accepts(request) {
+                shares.try_set(result);
+                next.try_set(cursor);
+                if older {
+                    pages.try_update(|pages| *pages += 1);
+                }
+                loading.try_set(false);
+            }
+        });
+    });
+    Effect::new(move |_| {
+        sharing.history_revision.get();
+        load.run(false);
+    });
+    view! { <div class="sent-history">{move ||error.get().map(|message|view!{<p class="feed-error" role="alert">{message}</p><button type="button" disabled=move ||loading.get() on:click=move |_|load.run(retry_older.get_untracked())>"Retry sent articles"</button>})}
+        <ul class="sent-shares"><For each=move ||shares.get() key=|share|share.id.clone() let:share>{
+            let id=StoredValue::new(share.id.clone());let fallback=StoredValue::new(share);
+            view!{<SentRow share=Signal::derive(move ||shares.with(|list| list.iter().find(|share|share.id==id.get_value()).cloned()).unwrap_or_else(||fallback.get_value())) busy=Signal::derive(move ||busy.get() || loading.get()) on_retract=on_retract/>}
+        }</For></ul>
+        <Show when=move ||next.get().is_some()><button type="button" disabled=move ||loading.get() || busy.get() on:click=move |_|load.run(true)>"Load older sent articles"</button></Show>
+    </div> }
 }
 #[component]
 fn PersonRow(
@@ -206,22 +383,43 @@ fn PersonRow(
 ) -> impl IntoView {
     let confirm = RwSignal::new(false);
     let key = StoredValue::new(person.key);
-    view! { <li><strong>{person.name}</strong><code>{key.get_value()}</code><p>{if person.connected {"Contact code available"} else {"Waiting for a contact code"}}</p>{person.error.map(|message| view! { <p class="feed-error">{message}</p> })}
+    let sharing = use_sharing();
+    let person = Memo::new(move |_| {
+        sharing
+            .people
+            .get()
+            .people
+            .into_iter()
+            .find(|person| person.key == key.get_value())
+    });
+    view! { <li><strong>{move || person.get().map(|person|person.name).unwrap_or_default()}</strong><code>{key.get_value()}</code><p>{move || if person.get().is_some_and(|person|person.connected) {"Contact code available"} else {"Waiting for a contact code. Ask this person for their current code and review it above using the same key."}}</p>{move || person.get().and_then(|person|person.error).map(|message| view! { <p class="feed-error">{message}</p> })}
         <Show when=move || confirm.get() fallback=move || view! { <button type="button" disabled=move || busy.get() on:click=move |_| confirm.set(true)>"Remove person"</button> }><p>"Stop exchanging articles with this person? Articles already received stay in Library."</p><button type="button" on:click=move |_| confirm.set(false)>"Cancel"</button><button type="button" disabled=move || busy.get() on:click=move |_| on_remove.run(key.get_value())>"Remove person"</button></Show>
         <button type="button" disabled=move || busy.get() on:click=move |_| on_retry.run(())>"Try connection again"</button>
     </li> }
 }
 #[component]
 fn SentRow(
-    share: api::SentShareSummary,
-    busy: RwSignal<bool>,
+    #[prop(into)] share: Signal<api::SentShareSummary>,
+    #[prop(into)] busy: Signal<bool>,
     on_retract: UnsyncCallback<String>,
 ) -> impl IntoView {
     let confirm = RwSignal::new(false);
-    let id = StoredValue::new(share.id);
+    let id = StoredValue::new(share.get_untracked().id);
+    let title = NodeRef::<html::A>::new();
     let preferences = crate::preferences::use_preferences();
-    view! { <li><p><a href=format!("/item/{}",share.item_id) on:click=move |_| preferences.settings_open.set(false)>{share.title}</a></p><p>{format!("To {} · {}",share.to,share.date)}</p>{share.note.map(|note| view! { <blockquote>{note}</blockquote> })}
-        <Show when=move || !share.retracted fallback=|| view! { <p>"Withdrawn"</p> }>
+    #[cfg(target_arch = "wasm32")]
+    Effect::new(move |_| {
+        if share.get().retracted && confirm.get() {
+            confirm.set(false);
+            if let Some(link) = title.get() {
+                let options = web_sys::FocusOptions::new();
+                options.set_prevent_scroll(true);
+                let _ = link.focus_with_options(&options);
+            }
+        }
+    });
+    view! { <li><p><a node_ref=title href=move ||format!("/item/{}",share.get().item_id) on:click=move |_| preferences.settings_open.set(false)>{move ||share.get().title}</a></p><p>{move ||format!("To {} · {}",share.get().to,share.get().date)}</p>{move ||share.get().note.map(|note| view! { <blockquote>{note}</blockquote> })}
+        <Show when=move || !share.get().retracted fallback=|| view! { <p>"Withdrawn"</p> }>
             <Show when=move || confirm.get() fallback=move || view! { <button type="button" disabled=move || busy.get() on:click=move |_| confirm.set(true)>"Withdraw share"</button> }><p>"Withdraw this vouch?"</p><button type="button" on:click=move |_| confirm.set(false)>"Cancel"</button><button type="button" disabled=move || busy.get() on:click=move |_| on_retract.run(id.get_value())>"Withdraw share"</button></Show>
         </Show>
     </li> }

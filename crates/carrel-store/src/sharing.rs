@@ -80,6 +80,23 @@ pub struct SentShare {
     pub retracted: bool,
 }
 
+/// Exclusive newest-first cursor for the local sender's immutable vouch history.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SentShareCursor {
+    /// Signed creation time; ties use the record key.
+    pub at_micros: i64,
+    /// Canonical share record key, never an arbitrary query fragment.
+    pub key: String,
+}
+/// A bounded sender-history page, including withdrawn vouches.
+pub struct SentSharePage {
+    /// Verified shares and local contact names.
+    pub shares: Vec<SentShare>,
+    /// Cursor for explicit extension; absent at the end of history.
+    pub next_cursor: Option<SentShareCursor>,
+}
+
 const PUT_RECORD: &str = r#"{
     ?[key, encoded, author, recipient, share_id, kind, created_at] <- [[$key,$encoded,$author,$recipient,$share_id,$kind,$created]]
     :put social_record {key => encoded, author, recipient, share_id, kind, created_at}
@@ -818,10 +835,40 @@ impl Store {
 
     /// Own recent vouches for deliberate review and withdrawal in People settings.
     pub fn sent_social_shares(&self, limit: usize) -> Result<Vec<SentShare>> {
+        Ok(self.sent_social_share_page(None, limit)?.shares)
+    }
+    /// Query sender history before limiting, with stable time/key pagination.
+    pub fn sent_social_share_page(
+        &self,
+        after: Option<&SentShareCursor>,
+        limit: usize,
+    ) -> Result<SentSharePage> {
         let binding = self.self_identity()?.ok_or(StoreError::IdentityUnbound)?;
-        let rows=self.query_with_params("?[key,created_at] := *social_record{key,kind:'share',author:$author,created_at} :sort -created_at,key :limit $limit",BTreeMap::from([("author".into(),key_value(binding.master_pubkey)),("limit".into(),DataValue::from(limit.clamp(1,100) as i64))]))?;
-        rows.rows
+        if after.is_some_and(|cursor| {
+            cursor.key.strip_prefix("share/").is_none_or(|id| {
+                id.len() != 64
+                    || !id
+                        .bytes()
+                        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+            })
+        }) {
+            return Err(invalid("invalid sent-share cursor"));
+        }
+        let limit = limit.clamp(1, 100);
+        let rows=self.query_with_params("?[key,created_at] := *social_record{key,kind:'share',author:$author,created_at}, (!$has_after || created_at < $at || (created_at == $at && key > $key)) :sort -created_at,key :limit $limit",BTreeMap::from([("author".into(),key_value(binding.master_pubkey)),("limit".into(),DataValue::from((limit+1) as i64)),("has_after".into(),DataValue::Bool(after.is_some())),("at".into(),DataValue::from(after.map_or(0,|cursor|cursor.at_micros))),("key".into(),DataValue::from(after.map_or("",|cursor|cursor.key.as_str())))]))?;
+        let next_cursor = if rows.rows.len() > limit {
+            let last = &rows.rows[limit - 1];
+            Some(SentShareCursor {
+                at_micros: integer(&last[1])?,
+                key: string(&last[0])?,
+            })
+        } else {
+            None
+        };
+        let shares = rows
+            .rows
             .iter()
+            .take(limit)
             .map(|row| {
                 let Some(ShareFact::Share(share)) = self.social_record(&string(&row[0])?)? else {
                     return Err(invalid("missing sent share"));
@@ -841,7 +888,11 @@ impl Store {
                     retracted,
                 })
             })
-            .collect()
+            .collect::<Result<Vec<_>>>()?;
+        Ok(SentSharePage {
+            shares,
+            next_cursor,
+        })
     }
     /// Bind once; cache loss can reopen the same namespace without changing identity.
     pub fn bind_social_document(&self, document: &SocialDocument) -> Result<()> {
@@ -890,6 +941,12 @@ fn boolean(value: &DataValue) -> Result<bool> {
     match value {
         DataValue::Bool(value) => Ok(*value),
         _ => Err(invalid("invalid stored boolean")),
+    }
+}
+fn integer(value: &DataValue) -> Result<i64> {
+    match value {
+        DataValue::Num(cozo::Num::Int(value)) => Ok(*value),
+        _ => Err(invalid("invalid stored time")),
     }
 }
 fn validity(time: i64) -> DataValue {

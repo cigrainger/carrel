@@ -79,3 +79,53 @@ The first flow connects one certified desktop per followed person. Another devic
 or changed connection address can be imported explicitly; automatic friend-device
 rotation and self-sync of contacts/outgoing vouches remain future scope. Received
 article archives, image scope and personal reading facts use ordinary self-sync.
+
+## First friend trial
+
+Use the same Carrel build on both desktops. Each person sets up their own
+identity through Settings → Devices → Set up sync, with their own recovery
+passphrase. Exchange contact codes from Settings → People. Desktop pairing
+in Devices connects your own installations; People connects distinct readers.
+
+1. On each desktop, Copy public key and Copy contact code. Exchange these
+   directly. Paste the other person's code into People, give them a local name,
+   review the complete public key against the key they sent, and Follow. Each
+   person follows the other. A bare key can wait until a contact code is supplied.
+2. Save an article with text and an image on desktop A. Add a private highlight
+   and note, then leave it unread and unstarred. Share article to B with a
+   different, explicit vouch note. A should report a locally saved share without
+   changing the read/star state or moving the visible passage.
+3. Keep both apps open, with Settings closed. On B, open Library → Shared with
+   you. Confirm the sender's name, vouch, readable text and cached image. A's
+   private highlight and note should be absent. If exchange needs recovery, open
+   People, check the saved key/contact code and Try connection again. Contact
+   code availability does not assert successful delivery; receipt in B's Library
+   is the evidence.
+4. After receipt, disconnect B from the network and reopen the article. Its text
+   and completed cached images should remain readable. Mark it read and add a
+   private note on B. A's read/star state and notes should remain independent.
+5. Reconnect B, close and restart both apps, then share another article. Confirm
+   background delivery again. If connection information changed, review the
+   person's new contact code against the same public key and follow/update it.
+6. On A, open People → Sent articles and Withdraw share. On B, the withdrawn
+   vouch should disappear from Shared with you and reader Info after exchange;
+   the archived article and B's personal notes should remain in Library. Load
+   older sent articles reaches earlier vouches for the same deliberate review.
+7. Remove the person in People. Further exchange should stop, with earlier
+   archives retained. Closing Settings must resume the original reader/list and
+   keyboard focus. If clipboard access was unavailable, complete-text selection
+   and the platform's ordinary Copy action should still allow exchanging codes.
+
+Record the two app versions, operating systems, direct/relay network conditions,
+which step failed, and the quiet People error if present. Keep article bodies,
+private notes, recovery passphrases and invitation text out of a shared bug report.
+This checklist is pending manual evidence; it does not turn local peer tests or
+headless browser review into a completed physical two-machine trial.
+
+The readiness pass passes 401 workspace tests, formatting, native/CSR lint and
+an actual CSR build. Temporary WebKit review covers clipboard success, denied
+and missing access, stable selected text, 151-share history with paging retry
+and withdrawal, contact confirmation updates, focus recovery, and late responses
+after closure. The existing sharing and full reader regressions also pass.
+Minimum-window Light/Dark screenshots were inspected. Native clipboard and
+physical two-desktop behavior remain part of the manual trial above.

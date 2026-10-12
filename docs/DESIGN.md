@@ -973,6 +973,19 @@ received vouches for an article. People offers quiet retry and review/retraction
 of sent shares. Retraction cannot erase a copy already received. No counts,
 notifications or engagement signals are added.
 
+People offers explicit Copy public key and Copy contact code controls. Copying
+confirms quietly in that section; unavailable clipboard access selects the
+complete text and explains how to copy it manually. It never reads the clipboard.
+Contact fields remain stable during background refresh while being selected.
+Both people explicitly follow the other's key before exchanging articles; a
+bare key waits for connection information. Contact-code availability is not a
+delivery receipt. Saved shares wait locally while a desktop is offline.
+
+Sent articles pages newest first, with explicit Load older. Withdrawal or retry
+keeps loaded pages and scroll; failures keep the current history available.
+Background contact updates preserve a pending removal confirmation and keyboard
+focus. The first friend trial checklist lives in PRIVATE_SHARING_PLAN.md.
+
 ### Highlight rendering
 
 User's own highlights: a flat yellow background (`--color-highlight`), text color unchanged.

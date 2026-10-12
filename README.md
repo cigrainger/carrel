@@ -84,6 +84,10 @@ available in reader Info. Settings → People lets you retry a connection, remov
 a person or withdraw a sent vouch. Withdrawal preserves an article already
 received. This initial flow connects one desktop per person; contact pins and
 sent history belong to that desktop.
+People offers Copy public key / Copy contact code, with a complete-text fallback
+if clipboard access is unavailable. Sent articles extend with Load older; retry
+and withdrawal keep the loaded history. The first two-desktop friend trial is
+described in [`docs/PRIVATE_SHARING_PLAN.md`](docs/PRIVATE_SHARING_PLAN.md#first-friend-trial).
 
 One context bar holds list or reader controls. **Aa** in the reader offers theme,
 four bundled reading fonts, text size, line width and spacing. **Settings** (Cmd+,)

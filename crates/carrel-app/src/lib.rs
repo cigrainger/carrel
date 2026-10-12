@@ -93,6 +93,7 @@ pub fn run() -> Result<()> {
             commands::status::search_status,
             commands::status::rebuild_search,
             commands::sharing::list_people,
+            commands::sharing::list_sent_shares,
             commands::sharing::inspect_person,
             commands::sharing::follow_person,
             commands::sharing::remove_person,
