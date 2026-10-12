@@ -125,6 +125,22 @@ pub struct ItemSummary {
     pub summary: Option<String>,
     /// Discovery timestamp in Unix microseconds.
     pub discovered_at_micros: i64,
+    /// Latest vouch in Shared with you; absent in other archive views.
+    pub shared: Option<SharedNoteSummary>,
+}
+
+/// Deliberate public note received from a manually followed person.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SharedNoteSummary {
+    /// Original immutable share identity.
+    pub id: String,
+    /// Local name for the author.
+    pub from: String,
+    /// Deliberately shared optional text.
+    pub note: Option<String>,
+    /// Share date, distinct from article publication.
+    pub date: String,
 }
 
 /// Calendar date supplied to the list without exposing timestamp selection to UI code.
@@ -194,6 +210,8 @@ pub struct ItemDetail {
     pub read_progress: Option<f64>,
     /// Discovery timestamp in Unix microseconds.
     pub discovered_at_micros: i64,
+    /// Received vouches; private article notes remain separate.
+    pub shared_notes: Vec<SharedNoteSummary>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -242,7 +260,15 @@ pub(crate) fn list_item_page_from_store(
                     item.primary_url.as_deref(),
                     item.summary.as_deref(),
                 );
-                ItemSummary {
+                let mut date = item_date(item.published_at_micros, item.discovered_at_micros);
+                if let Some(received) = &item.shared {
+                    date = item_date(Some(received.created_at_micros), 0).map(|mut date| {
+                        date.caption = Some("Shared".into());
+                        date.label = date.label.replacen("Published", "Shared", 1);
+                        date
+                    });
+                }
+                Ok(ItemSummary {
                     source_name: source_name(
                         item.primary_url.as_deref(),
                         item.site_name.as_deref(),
@@ -257,7 +283,17 @@ pub(crate) fn list_item_page_from_store(
                             .unwrap_or(item.discovered_at_micros),
                         now,
                     ),
-                    date: item_date(item.published_at_micros, item.discovered_at_micros),
+                    date,
+                    shared: item.shared.map(|share| SharedNoteSummary {
+                        id: share.id,
+                        from: share.from,
+                        note: share.note,
+                        date: time::OffsetDateTime::from_unix_timestamp_nanos(
+                            i128::from(share.created_at_micros) * 1000,
+                        )
+                        .map(|at| format!("Shared {}", at.date()))
+                        .unwrap_or_else(|_| "Shared on an unknown date".into()),
+                    }),
                     summary,
                     id: item.id,
                     title,
@@ -265,9 +301,9 @@ pub(crate) fn list_item_page_from_store(
                     starred: item.starred,
                     primary_url: item.primary_url,
                     discovered_at_micros: item.discovered_at_micros,
-                }
+                })
             })
-            .collect(),
+            .collect::<Result<Vec<_>>>()?,
         next_cursor: page.next_cursor,
     })
 }
@@ -297,7 +333,19 @@ pub(crate) fn get_item_from_parts(
         .and_then(|detail| detail.readable.map(|readable| readable.blob_id));
     let content_html = readable_blob_id
         .as_deref()
-        .map(|blob_id| readable_html(blobs, blob_id))
+        .map(|blob_id| {
+            let html = readable_html(blobs, blob_id)?;
+            Ok::<_, AppError>(
+                if let Some(images) = store.current_image_scope(id, blob_id)? {
+                    carrel_feeds::filter_cached_resources(
+                        &html,
+                        &images.into_iter().map(|image| image.blob_id).collect(),
+                    )
+                } else {
+                    html
+                },
+            )
+        })
         .transpose()?
         .filter(|html| !looks_like_network_error_page(html))
         .or_else(|| item.summary.as_deref().map(summary_content_html))
@@ -305,6 +353,11 @@ pub(crate) fn get_item_from_parts(
         .unwrap_or_default();
 
     Ok(Some(ItemDetail {
+        shared_notes: store
+            .received_item_shares(id, 100)?
+            .into_iter()
+            .map(shared_note_summary)
+            .collect(),
         id: summary.id,
         title: summary.title,
         source_name: summary.source_name,
@@ -673,6 +726,7 @@ fn summary_from_parts(
         item.summary.as_deref(),
     );
     ItemSummary {
+        shared: None,
         id: item.id.clone(),
         title,
         source_name: source_name(item.primary_url.as_deref(), article.site_name.as_deref()),
@@ -693,6 +747,19 @@ fn summary_from_parts(
 
 fn plain_text_summary(summary: &str) -> String {
     carrel_feeds::html_to_text(summary)
+}
+
+fn shared_note_summary(received: carrel_store::sharing::ReceivedShare) -> SharedNoteSummary {
+    SharedNoteSummary {
+        id: received.share.id,
+        from: received.name,
+        note: received.share.note,
+        date: time::OffsetDateTime::from_unix_timestamp_nanos(
+            i128::from(received.share.created_at_micros) * 1000,
+        )
+        .map(|at| format!("Shared {}", at.date()))
+        .unwrap_or_else(|_| "Shared on an unknown date".into()),
+    }
 }
 
 /// Display a publisher title, falling back to a bounded opening excerpt.

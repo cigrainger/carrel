@@ -3,6 +3,9 @@
 /// A private transport operation failed.
 #[derive(Debug, thiserror::Error)]
 pub enum SyncError {
+    /// Invalid social proof; private self facts are not social wire variants.
+    #[error(transparent)]
+    Share(#[from] carrel_core::sharing::ShareError),
     /// An invitation is malformed, expired, consumed, or fails its Root proof.
     #[error("invalid or expired pairing invitation")]
     InvalidInvitation,

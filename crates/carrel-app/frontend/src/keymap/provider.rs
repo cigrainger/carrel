@@ -164,6 +164,10 @@ pub fn GlobalKeymapActions() -> impl IntoView {
     });
 
     let highlights = navigate.clone();
+    let received = navigate.clone();
+    use_action_handler("go-friends", move || {
+        received("/friends", NavigateOptions::default())
+    });
     use_action_handler("go-highlights", move || {
         highlights("/highlights", NavigateOptions::default());
     });

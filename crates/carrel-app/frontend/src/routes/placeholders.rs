@@ -2,12 +2,6 @@
 
 use leptos::prelude::*;
 
-/// Friends route placeholder.
-#[component]
-pub fn Friends() -> impl IntoView {
-    placeholder("Friends")
-}
-
 /// Library route placeholder.
 #[component]
 pub fn Library() -> impl IntoView {

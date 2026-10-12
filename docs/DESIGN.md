@@ -406,9 +406,10 @@ than becoming a horizontal source strip; choosing a destination or source closes
 that narrow overlay.
 
 The sidebar ends with one Settings control. Settings opens a dedicated dialog
-(Cmd+,), with Reading, Sources, Devices and Keyboard sections. Reading holds
+(Cmd+,), with Reading, Sources, People, Devices and Keyboard sections. Reading holds
 theme, typography and list density; Sources holds subscriptions, OPML and source
-recovery; Devices holds desktop pairing; Keyboard shows the effective keymap.
+recovery; People holds trusted contacts and sent vouches; Devices holds desktop
+pairing; Keyboard shows the effective keymap.
 Closing Settings returns to the same article or list, with its focus and visible
 passage retained. Sections have equal-size labels and preserve drafts while the
 dialog stays open. Closing it clears device passphrases and cancels an unused
@@ -737,8 +738,8 @@ h             highlight selection (when text is selected)
 H             highlight + add note
 e             send to default ereader
 E             send to ereader picker
-c             share with last-used audience
-C             share with audience picker
+c             share with a person (explicit picker)
+C             share with a person (explicit picker)
 a             archive (mark read and hide from main lists)
 ```
 
@@ -957,7 +958,20 @@ feed from an incomplete article cache; diagnostic logs include a sample reason.
 
 ### Share affordance
 
-In a list, a subtle indicator on items you've shared (a small dot next to the title). In the reading view, the share button appears in the footer along with other actions. Hovering or focusing it reveals the audience(s).
+Share article belongs in the reader context bar and the current item's `c` / `C`
+actions. It opens a native dialog over the mounted article. Choose one
+person explicitly and optionally enter a brief note. Saving queues a signed
+vouch locally; failures retain the draft and retry identity. Sharing never
+completes or stars an article.
+
+People lives in Settings, alongside Reading, Sources, Devices and Keyboard.
+Add a trusted public key or verified contact code; show the full key before
+Follow. Contact information grants no private archive access. The four primary
+destinations remain. Library gains Shared with you, ordered by latest vouch;
+rows include the author's local name and note. Reader Info retains all active
+received vouches for an article. People offers quiet retry and review/retraction
+of sent shares. Retraction cannot erase a copy already received. No counts,
+notifications or engagement signals are added.
 
 ### Highlight rendering
 
@@ -969,9 +983,12 @@ When multiple friends have highlighted the same passage, we show the underline o
 
 ### Share-with-note
 
-A modal-like overlay (centered, focus-trapped) with two fields: the note (autofocused), and the audience selector (defaults to last-used). Submitting (`cmd-Enter` or click) closes and shares; `Esc` cancels.
-
-The audience selector is a small set of chips for the user's audiences; clicking toggles inclusion. The selector remembers the last-used set — for most users sharing happens to the same audience repeatedly, and we should make that one keystroke.
+A native dialog has an explicit recipient select and a brief optional note.
+The recipient starts unselected; the dialog focuses that choice first. Submit
+through the ordinary form or Cmd+Enter; Escape cancels. Settings, palette and
+keyboard overlay guards preserve the draft. Archived content includes only the
+chosen article and approved current images, with personal annotations excluded.
+Group audiences and public sharing remain future work.
 
 ## The command palette
 

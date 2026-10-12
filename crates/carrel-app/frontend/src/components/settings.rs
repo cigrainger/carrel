@@ -9,6 +9,7 @@ use leptos::prelude::*;
 enum Section {
     Reading,
     Sources,
+    People,
     Devices,
     Keyboard,
 }
@@ -31,7 +32,7 @@ fn SettingsDialog() -> impl IntoView {
             <header class="settings-heading"><h2>"Settings"</h2><button type="button" aria-label="Close settings" on:click=move |_| close.run(())>"Done"</button></header>
             <div class="settings-layout">
                 <nav class="settings-sections" aria-label="Settings sections">
-                    {[(Section::Reading,"Reading",IconName::Reading),(Section::Sources,"Sources",IconName::Library),(Section::Devices,"Devices",IconName::Devices),(Section::Keyboard,"Keyboard",IconName::Keyboard)].into_iter().map(|(section,label,icon)| view! {
+                    {[(Section::Reading,"Reading",IconName::Reading),(Section::Sources,"Sources",IconName::Library),(Section::People,"People",IconName::People),(Section::Devices,"Devices",IconName::Devices),(Section::Keyboard,"Keyboard",IconName::Keyboard)].into_iter().map(|(section,label,icon)| view! {
                         <button type="button" class:active=move || selected.get() == section aria-pressed=move || (selected.get() == section).to_string() on:click=move |_| selected.set(section)><Icon name=icon/>{label}</button>
                     }).collect_view()}
                 </nav>
@@ -48,6 +49,7 @@ fn SettingsDialog() -> impl IntoView {
                         <SourceActivityContent manage=true on_open=close/>
                     </section>
                     <section hidden=move || selected.get() != Section::Devices aria-label="Device settings"><super::devices::DevicesPanel/></section>
+                    <section hidden=move || selected.get() != Section::People aria-label="People settings"><crate::sharing::PeoplePanel/></section>
                     <section hidden=move || selected.get() != Section::Keyboard aria-label="Keyboard settings">
                         <h3>"Keyboard"</h3><p>"Commands (⌘K) finds actions, sources and saved articles. These bindings reflect your current view and keymap."</p>
                         <crate::keymap::KeyboardReference/>

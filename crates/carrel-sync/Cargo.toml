@@ -15,6 +15,7 @@ iroh-docs = { workspace = true }
 iroh-gossip = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+ciborium = { workspace = true }
 time = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }

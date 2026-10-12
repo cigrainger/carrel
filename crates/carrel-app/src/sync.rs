@@ -8,6 +8,7 @@ use carrel_store::{
     blobs::BlobId,
     keystore::{Keystore, KeystoreError},
 };
+use carrel_sync::sharing::runtime::SocialSyncWorker;
 use carrel_sync::{
     bridge::SelfBridge,
     pairing::{PairingInvitation, PairingSession},
@@ -27,6 +28,7 @@ pub(crate) struct SyncState {
     error: Option<String>,
     seen_revision: u64,
     capture_after: Option<String>,
+    pub(crate) social: Option<SocialSyncWorker>,
 }
 
 #[derive(Serialize)]
@@ -82,7 +84,11 @@ pub(crate) async fn sync_status(state: State<'_, AppState>) -> Result<SyncSnapsh
         active: sync.worker.is_some() && authorized,
         can_invite: master_available(&Keystore::open(&state.paths.keys))?
             && (binding.is_none() || authorized),
-        revision: sync.worker.as_ref().map_or(0, SelfSyncWorker::revision),
+        revision: sync
+            .worker
+            .as_ref()
+            .map_or(0, SelfSyncWorker::revision)
+            .saturating_add(state.store.social_revision()),
         error: sync.error.clone(),
         devices,
     })
@@ -263,7 +269,7 @@ pub(crate) async fn revoke_sync_device(
     Ok(())
 }
 
-async fn ensure_worker(state: &AppState, sync: &mut SyncState) -> Result<()> {
+pub(crate) async fn ensure_worker(state: &AppState, sync: &mut SyncState) -> Result<()> {
     if sync.worker.is_some() {
         return Ok(());
     }
@@ -278,6 +284,9 @@ async fn ensure_worker(state: &AppState, sync: &mut SyncState) -> Result<()> {
     let host = Arc::new(start_host(state, &device).await?);
     let bridge =
         Arc::new(SelfBridge::resume(state.store.clone(), state.blobs.clone(), host).await?);
+    if let Some(service) = bridge.sharing() {
+        sync.social = Some(SocialSyncWorker::start(service));
+    }
     sync.worker = Some(SelfSyncWorker::start(bridge).await?);
     sync.error = None;
     Ok(())
@@ -327,7 +336,11 @@ pub(crate) fn spawn(state: AppState) {
                                 Some("Some cached articles could not be prepared for sync.".into())
                         }
                     }
-                    let revision = sync.worker.as_ref().map_or(0, SelfSyncWorker::revision);
+                    let revision = sync
+                        .worker
+                        .as_ref()
+                        .map_or(0, SelfSyncWorker::revision)
+                        .saturating_add(state.store.social_revision());
                     if revision != sync.seen_revision {
                         sync.seen_revision = revision;
                         crate::background::spawn_search_rebuild(state.clone());
@@ -364,6 +377,11 @@ fn capture_article(state: &AppState, id: &str, device: &Keypair) -> Result<()> {
         return Ok(());
     };
     let mut resources = BTreeMap::new();
+    if let Some(images) = &capture.item.current_images {
+        for image in images {
+            resources.insert(image.blob_id.clone(), image.clone());
+        }
+    }
     for head in state.store.private_item_heads(id)? {
         for reference in head.item.resources {
             resources.insert(reference.blob_id.clone(), reference);
@@ -433,12 +451,23 @@ fn collect_resources(
 
 pub(crate) async fn shutdown(state: &AppState) {
     let mut sync = state.sync.lock().await;
+    if let Some(worker) = sync.social.take() {
+        worker.stop();
+    }
     if let Some(invitation) = sync.invitation.take() {
         invitation.cancel().await;
     }
     if let Some(worker) = sync.worker.take() {
         worker.stop().await;
     }
+}
+
+pub(crate) async fn refresh_sharing_authorization(state: &AppState) -> Result<()> {
+    let sync = state.sync.lock().await;
+    if let Some(worker) = &sync.worker {
+        worker.bridge.refresh_authorization().await?;
+    }
+    Ok(())
 }
 
 fn master_available(keys: &Keystore) -> Result<bool> {
@@ -460,10 +489,11 @@ fn now_micros() -> i64 {
 async fn start_host(state: &AppState, device: &Keypair) -> carrel_sync::Result<SelfTransport> {
     #[cfg(test)]
     {
-        SelfTransport::start_with_builder(
+        SelfTransport::start_with_sharing_builder(
             state.store.clone(),
             &state.paths.root.join("sync"),
             device,
+            state.blobs.clone(),
             iroh::Endpoint::builder(iroh::endpoint::presets::Minimal)
                 .bind_addr("127.0.0.1:0")
                 .unwrap(),
@@ -472,7 +502,13 @@ async fn start_host(state: &AppState, device: &Keypair) -> carrel_sync::Result<S
     }
     #[cfg(not(test))]
     {
-        SelfTransport::start(state.store.clone(), &state.paths.root.join("sync"), device).await
+        SelfTransport::start_with_sharing(
+            state.store.clone(),
+            &state.paths.root.join("sync"),
+            device,
+            state.blobs.clone(),
+        )
+        .await
     }
 }
 

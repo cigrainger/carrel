@@ -151,6 +151,8 @@ async fn subscription_file_command(command: &str) -> Result<bool, ApiError> {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ItemSummary {
+    #[serde(default)]
+    pub shared: Option<SharedNoteSummary>,
     pub id: String,
     pub title: String,
     pub source_name: String,
@@ -181,6 +183,8 @@ pub struct ItemDate {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ItemDetail {
+    #[serde(default)]
+    pub shared_notes: Vec<SharedNoteSummary>,
     pub id: String,
     pub title: String,
     pub source_name: String,
@@ -204,6 +208,71 @@ pub struct ItemDetail {
     pub last_scroll: Option<f64>,
     pub read_progress: Option<f64>,
     pub discovered_at_micros: i64,
+}
+
+/// Explicit vouch delivered with a received article.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct SharedNoteSummary {
+    pub id: String,
+    pub from: String,
+    pub note: Option<String>,
+    pub date: String,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PeopleSnapshot {
+    pub key: Option<String>,
+    pub contact_code: Option<String>,
+    pub ready: bool,
+    pub people: Vec<PersonSummary>,
+    pub shares: Vec<SentShareSummary>,
+}
+#[derive(Clone, Debug, Deserialize)]
+pub(crate) struct PersonSummary {
+    pub key: String,
+    pub name: String,
+    pub connected: bool,
+    pub followed: bool,
+    pub error: Option<String>,
+}
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SentShareSummary {
+    pub id: String,
+    pub item_id: String,
+    pub title: String,
+    pub to: String,
+    pub note: Option<String>,
+    pub date: String,
+    pub retracted: bool,
+}
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ContactPreview {
+    pub key: String,
+    pub connection_info: bool,
+}
+
+#[cfg(target_arch = "wasm32")]
+pub(crate) async fn sharing_call<T: serde::de::DeserializeOwned>(
+    command: &str,
+    args: serde_json::Value,
+) -> Result<T, ApiError> {
+    let args = args
+        .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+        .map_err(|error| ApiError::new(error.to_string()))?;
+    let value = tauri_invoke(command, args)
+        .await
+        .map_err(api_error_from_js)?;
+    serde_wasm_bindgen::from_value(value).map_err(|error| ApiError::new(error.to_string()))
+}
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) async fn sharing_call<T: serde::de::DeserializeOwned>(
+    _command: &str,
+    _args: serde_json::Value,
+) -> Result<T, ApiError> {
+    Err(ApiError::new("Sharing requires the desktop app"))
 }
 
 /// Highlight creation request passed to the native shell.

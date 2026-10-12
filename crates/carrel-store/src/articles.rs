@@ -29,7 +29,7 @@ impl Store {
         self.article_by_urls_unlocked(urls)
     }
 
-    fn article_by_urls_unlocked(&self, urls: &[String]) -> Result<Option<String>> {
+    pub(crate) fn article_by_urls_unlocked(&self, urls: &[String]) -> Result<Option<String>> {
         let urls = urls
             .iter()
             .map(|url| article_url(url))
@@ -125,6 +125,7 @@ impl Store {
             }),
             identifiers: Vec::new(),
             resources: Vec::new(),
+            current_images: None,
             contents: vec![ContentReference {
                 format: "html_readable".into(),
                 blob: BlobReference {

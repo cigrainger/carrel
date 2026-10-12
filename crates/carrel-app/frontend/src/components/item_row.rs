@@ -75,6 +75,7 @@ pub fn ItemRow(
                 </p>
                 <h2><button class="item-open" type="button" on:click=move |_| on_open.run(index.get_untracked())>{move || item.get().title}</button></h2>
                 <p class="item-excerpt">{move || item.get().summary.unwrap_or_default()}</p>
+                {move || item.get().shared.map(|share| view! { <div class="received-vouch"><p>{format!("From {}", share.from)}</p>{share.note.map(|note| view! { <blockquote>{note}</blockquote> })}</div> })}
             </div>
                 <div class="item-row-actions">
                     <button class="item-state-action" type="button"
@@ -103,6 +104,7 @@ mod tests {
     fn an_existing_row_tracks_metadata_and_state_updates_without_changing_identity() {
         Owner::new().with(|| {
             let initial = ItemSummary {
+                shared: None,
                 id: "one".into(),
                 title: "Before".into(),
                 source_name: "Example".into(),
@@ -144,6 +146,7 @@ mod tests {
         let html = Owner::new().with(|| view! {
             <ItemList
                 items=Signal::stored(vec![ItemSummary {
+                    shared: None,
                     id: "item-1".into(), title: "The shape of a small reader".into(), source_name: "Example".into(),
                     length_label: "5 min".into(), time_label: "2h ago".into(), date: None, read_state: "unread".into(), starred: true,
                     primary_url: None, summary: Some("A compact summary.".into()), discovered_at_micros: 1,

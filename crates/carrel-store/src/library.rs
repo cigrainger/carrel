@@ -12,6 +12,8 @@ use crate::{Result, Store, StoreError};
 /// Article metadata and personal state fetched together for a list row.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LibraryItem {
+    /// Latest active vouch, joined with this page when viewing received shares.
+    pub shared: Option<LibraryShare>,
     /// Stable item identity.
     pub id: String,
     /// Display title.
@@ -34,6 +36,19 @@ pub struct LibraryItem {
     pub estimated_read_minutes: Option<i64>,
     /// Extracted word count, if known.
     pub word_count: Option<i64>,
+}
+
+/// Display context from the verified signed vouch selected for a received row.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LibraryShare {
+    /// Stable share identity.
+    pub id: String,
+    /// Locally chosen contact name.
+    pub from: String,
+    /// Explicitly shared note.
+    pub note: Option<String>,
+    /// Share creation time, independent of publication and arrival.
+    pub created_at_micros: i64,
 }
 
 impl Store {
@@ -88,6 +103,7 @@ impl Store {
             ItemView::Starred => {
                 "*item_star{item_id: id, starred: true, updated_at}, sort_at = to_int(updated_at)"
             }
+            ItemView::Shared => "shared[id, sort_at]",
             ItemView::Feed { .. } => {
                 "*item_article{item_id: id, feed_url: $feed_url}, publication_date[id, sort_at]"
             }
@@ -121,10 +137,20 @@ impl Store {
         } else {
             ("", "")
         };
+        let shared_context = if filter.view == ItemView::Shared {
+            r#"
+            chosen[id, min(key)] := page[_, at, id], *social_receipt{share_id, item_id: id}, *social_record{key, share_id, author, recipient, kind: 'share', created_at: at}, not retracted[share_id, author, recipient]
+            share_context[id, encoded, name] := chosen[id, key], *social_record{key, encoded, author}, *social_contact{master: author, name}
+            "#
+        } else {
+            "share_context[id, encoded, name] := page[_, _, id], encoded = null, name = null"
+        };
         let query = format!(
             r#"
             unread[id] := *read_state{{item_id: id, state: 'unread'}}
             unread[id] := *item{{id}}, not *read_state{{item_id: id}}
+            retracted[share_id, author, recipient] := *social_record{{share_id, author, recipient, kind: 'retraction'}}
+            shared[id, max(at)] := *social_receipt{{share_id, item_id: id}}, *social_record{{share_id, author, recipient, kind: 'share', created_at: at}}, not retracted[share_id, author, recipient]
             {search_rules}
             {publication_rules}
             eligible[id, sort_at] :=
@@ -141,10 +167,11 @@ impl Store {
             star[id, starred] := page[_, _, id], not *item_star{{item_id: id}}, starred = false
             article[id, site_name, minutes, words] := page[_, _, id], *item_article{{item_id: id, site_name, estimated_read_minutes: minutes, word_count: words}}
             article[id, site_name, minutes, words] := page[_, _, id], not *item_article{{item_id: id}}, site_name = null, minutes = null, words = null
-            ?[sort_at, id, title, primary_url, summary, discovered_at, state, starred, site_name, minutes, words, published_at] :=
+            {shared_context}
+            ?[sort_at, id, title, primary_url, summary, discovered_at, state, starred, site_name, minutes, words, published_at, encoded, name] :=
                 page[_, sort_at, id],
                 *item{{id, title, primary_url, summary, discovered_at, published_at}},
-                state[id, state], star[id, starred], article[id, site_name, minutes, words]
+                state[id, state], star[id, starred], article[id, site_name, minutes, words], share_context[id, encoded, name]
             :sort -sort_at, id
         "#
         );
@@ -237,6 +264,23 @@ impl Store {
             .take(limit)
             .map(|row| {
                 Ok(LibraryItem {
+                    shared: match &row[12] {
+                        DataValue::Null => None,
+                        DataValue::Bytes(bytes) => {
+                            match carrel_core::sharing::ShareFact::from_bytes(bytes)? {
+                                carrel_core::sharing::ShareFact::Share(share) => {
+                                    Some(LibraryShare {
+                                        id: share.id,
+                                        from: string(&row[13])?,
+                                        note: share.note,
+                                        created_at_micros: share.created_at_micros,
+                                    })
+                                }
+                                _ => return Err(unexpected("shared article", &row[12])),
+                            }
+                        }
+                        other => return Err(unexpected("shared article", other)),
+                    },
                     id: string(&row[1])?,
                     title: string(&row[2])?,
                     primary_url: optional_string(&row[3])?,

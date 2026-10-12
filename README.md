@@ -9,7 +9,8 @@ In spirit: a successor to Google Reader's social layer. In practice: a desktop a
 Early. Pre-alpha. The local reading loop, archive, offline search, annotation
 review and article URL capture work. Two-device peer-to-peer self-sync is
 implemented and integration tested; a physical two-machine check remains.
-Private sharing with trusted friends is the next milestone.
+Private article sharing with a trusted person is implemented and tested with
+isolated local peers. Physical two-machine networking remains a manual check.
 
 This repository is the home of the project's design documents, code, and (eventually) releases. The design documents are stable enough to guide implementation, and the foundation crates are now taking shape: the Cargo workspace, Cozo schema, identity primitives, keystore, CLI, feed ingestion, readable article extraction, content-shape detection, and the first Tauri + Leptos desktop reader surfaces are implemented. The CLI remains a development surface rather than end-user software.
 
@@ -70,6 +71,19 @@ capture keeps the URL available for retry; partial image caching is stated.
 **Add source** is available in the sidebar, Settings → Sources and the app menu.
 Two-device self-sync is described in
 [`docs/SELF_SYNC_PLAN.md`](docs/SELF_SYNC_PLAN.md).
+
+For private sharing, set up your identity in **Settings → Devices**, then use
+**Settings → People**. Exchange contact codes directly, review the full public
+key, and explicitly follow each other. A bare public key can be saved before
+connection information arrives. In the reader, **Share article** (`c` or `C`)
+opens a person picker with an optional note; saved shares wait locally until
+the desktops can connect. Only the chosen article, its cached images and that
+note are shared. Private highlights, notes and reading state stay private.
+**Library → Shared with you** shows received articles, with their vouches also
+available in reader Info. Settings → People lets you retry a connection, remove
+a person or withdraw a sent vouch. Withdrawal preserves an article already
+received. This initial flow connects one desktop per person; contact pins and
+sent history belong to that desktop.
 
 One context bar holds list or reader controls. **Aa** in the reader offers theme,
 four bundled reading fonts, text size, line width and spacing. **Settings** (Cmd+,)

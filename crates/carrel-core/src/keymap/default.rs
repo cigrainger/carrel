@@ -45,6 +45,7 @@ pub fn global_layer() -> Layer {
             bind("2", "go-reading", "Reading"),
             bind("3", "go-library", "Library"),
             bind("4", "go-highlights", "Highlights"),
+            bind("g f", "go-friends", "Shared with you"),
             bind("cmd-n", "save-article", "Save article").allow_in_input(),
             bind("?", "show-keymap-help", "Keymap reference"),
             bind("cmd-k", "open-command-palette", "Command palette").allow_in_input(),
@@ -112,8 +113,8 @@ pub fn item_action_layer() -> Layer {
             bind("H", "highlight-with-note", "Highlight and add note"),
             bind("e", "send-to-default-ereader", "Send to default ereader"),
             bind("E", "send-to-ereader-picker", "Send to ereader"),
-            bind("c", "share-last-audience", "Share with last-used audience"),
-            bind("C", "share-audience-picker", "Share with audience"),
+            bind("c", "share-last-audience", "Share with a person"),
+            bind("C", "share-audience-picker", "Share with a person"),
             bind("a", "archive-item", "Archive"),
         ],
     )

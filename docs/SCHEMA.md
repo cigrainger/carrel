@@ -738,6 +738,73 @@ Connections power some of the most interesting queries: "show me the network 2 h
 
 ## Social: follows, audiences, shares
 
+### Implemented private-sharing boundary (versions 9–10)
+
+The first private-sharing flow uses one explicit recipient per share. The
+general audiences, discussion and public-syndication relations below remain
+future scope. Version 9 adds the following bounded typed records without
+rewriting existing archives, self identities or private journals:
+
+```
+:create social_contact { master: Bytes => name: String, card: Bytes?, followed: Bool }
+:create social_record { key: String => encoded: Bytes, author: Bytes, recipient: Bytes, share_id: String, kind: String, created_at: Int }
+:create social_receipt { share_id: String => item_id: String }
+:create social_blob_pending { share_id: String, blob_id: String => byte_size: Int, is_body: Bool }
+:create social_document { singleton: Int => namespace: Bytes, capability: Bytes }
+```
+
+Contacts are local configuration. A contact code signs a certified device's
+connection information under that device and names its master public key;
+adding it explicitly pins the master. A bare public key can be followed before
+the connection information is supplied. A certificate or contact received from
+the network cannot create a follow or select an identity. Self authorization
+relations remain exclusive to the local bound master.
+
+`social_record` contains canonical signed creation or retraction bytes. Its
+indexed metadata is derived from the verified body, never trusted separately.
+Records are immutable and idempotent. Creation binds the recipient master,
+article snapshot, optional note, author device certificate and time. A master
+can retract only its own share addressed to that recipient; a verified
+retraction dominates a delayed creation regardless of clocks. Retraction does
+not erase an article or personal facts already saved by the recipient.
+
+Only current readable HTML and its referenced cached images travel. Portable
+article metadata excludes source subscription URLs, feed identifiers, private
+arrival history and all personal state or annotations. Incoming URL identity
+preserves an existing archive, title, annotations and reading state. Receipts
+and bounded pending blobs are local projections, not shareable facts.
+
+Received body references become readable only after the source supplies bytes
+matching their signed digest and length. Images likewise require source transfer,
+even if that digest already exists in the recipient's unrelated cache.
+Version 10 adds `item_current_image_scope {item_id: String, blob_id: String =>
+images: Json}` as the local current-body projection, separately from version 9.
+It preserves any in-flight development prototype relation and verified JSON
+grants; ID-only prototype rows remain retained and receive an empty conservative
+scope until a verified transfer or self snapshot provides lengths.
+`item_current_image_scope` binds approved image IDs to that exact readable body; rendering
+and subsequent sharing filter cached references through it. A received body
+starts with an empty scope, expanded only by verified image completion.
+
+Saved-item snapshots gain optional `current_images`, distinct from their retained
+historical resources. Version 2 item revisions sign this current-image scope so
+private self-sync preserves it across the user's own devices. Version 1 snapshots
+without the field retain their original bytes and signatures; the optional field
+is omitted when absent. Historical resources remain available for annotations
+but cannot grant access to another image through a current shared body. Scope
+changes mark the item dirty for ordinary causal self adoption.
+
+The social mirror is a separate Iroh namespace. Friends never receive its raw
+document capability or access the raw docs/blob protocols. The typed share
+protocol binds the authenticated device certificate to the signed recipient
+before enumerating records or allowing a referenced blob. Cozo is authoritative;
+only `carrel-sync` owns this mirror and incoming allow-list. Social peers cannot
+submit private self facts, relationship configuration, raw item rows or scripts.
+
+Migration 9 creates each new relation and immutable-record guard resumably,
+then records its version last. It neither signs legacy rows nor subscribes to
+any person or enables network access on its own.
+
 ```
 :create follow {
     follower: Bytes,          ;; you, on some device

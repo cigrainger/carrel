@@ -9,6 +9,9 @@ pub type Result<T> = std::result::Result<T, StoreError>;
 /// Errors raised by the Carrel store boundary.
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
+    /// Invalid signed recipient-scoped share or contact proof.
+    #[error(transparent)]
+    Share(#[from] carrel_core::sharing::ShareError),
     /// Invalid signed saved metadata or private wire fact.
     #[error("invalid private library fact: {0}")]
     LibraryFact(#[from] carrel_core::private_library::LibraryFactError),

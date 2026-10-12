@@ -989,6 +989,7 @@ version = "0.1.0"
 dependencies = [
  "carrel-core",
  "carrel-store",
+ "ciborium",
  "futures-core",
  "iroh",
  "iroh-blobs",

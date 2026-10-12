@@ -101,6 +101,10 @@ pub struct SavedItem {
     pub contents: Vec<ContentReference>,
     /// Sorted unique cached resources, including inline images and older bodies.
     pub resources: Vec<BlobReference>,
+    /// Authoritative current image references, separate from historical resources.
+    /// Absent on legacy snapshots; omitted to preserve their signed payloads.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_images: Option<Vec<BlobReference>>,
 }
 
 impl SavedItem {
@@ -110,6 +114,9 @@ impl SavedItem {
             .sort_by(|a, b| (&a.scheme, &a.value).cmp(&(&b.scheme, &b.value)));
         self.contents.sort_by(|a, b| a.format.cmp(&b.format));
         self.resources.sort_by(|a, b| a.blob_id.cmp(&b.blob_id));
+        if let Some(images) = &mut self.current_images {
+            images.sort_by(|a, b| a.blob_id.cmp(&b.blob_id));
+        }
     }
 
     /// Validate bounded metadata and canonical, unambiguous references.
@@ -170,6 +177,23 @@ impl SavedItem {
         for blob in &self.resources {
             check_blob(blob, &mut sizes)?;
         }
+        if let Some(images) = &self.current_images {
+            if images.len() > 2048
+                || images
+                    .windows(2)
+                    .any(|pair| pair[0].blob_id >= pair[1].blob_id)
+                || !self
+                    .contents
+                    .iter()
+                    .any(|body| body.format == "html_readable")
+                || images.iter().any(|image| !self.resources.contains(image))
+            {
+                return Err(LibraryFactError::Content);
+            }
+            for image in images {
+                check_blob(image, &mut sizes)?;
+            }
+        }
         if sizes
             .values()
             .try_fold(0u64, |sum, value| sum.checked_add(*value))
@@ -224,12 +248,13 @@ impl ItemRevision {
     ) -> Result<Self, LibraryFactError> {
         item.normalize();
         parents.sort();
+        let version = if item.current_images.is_some() { 2 } else { 1 };
         let mut record = Self {
             item,
             parents,
             author: *signer.public(),
             at_micros,
-            version: 1,
+            version,
             revision_id: String::new(),
             signature: Signature::from_bytes([0; 64]),
         };
@@ -265,7 +290,8 @@ impl ItemRevision {
 
     fn validate(&self) -> Result<(), LibraryFactError> {
         self.item.validate()?;
-        if self.version != 1
+        if !matches!(self.version, 1 | 2)
+            || (self.version == 1 && self.item.current_images.is_some())
             || self.parents.len() > 1024
             || self.parents.iter().any(|id| !valid_revision_id(id))
             || self.parents.windows(2).any(|pair| pair[0] >= pair[1])
@@ -365,6 +391,37 @@ pub fn resolve_item_heads(heads: &[ItemRevision]) -> Result<Option<SavedItem>, L
     }
     item.identifiers = identifiers.into_values().collect();
     item.contents = contents.into_values().collect();
+    // A historical resource is not a current-image grant. Merge only scoped
+    // references signed for the exact selected readable body.
+    item.current_images = item
+        .contents
+        .iter()
+        .find(|body| body.format == "html_readable")
+        .and_then(|body| {
+            let matching: Vec<_> = heads
+                .iter()
+                .filter(|head| {
+                    head.item.contents.iter().any(|content| {
+                        content.format == "html_readable"
+                            && content.blob.blob_id == body.blob.blob_id
+                    })
+                })
+                .filter_map(|head| head.item.current_images.as_ref())
+                .collect();
+            if matching.is_empty() {
+                None
+            } else {
+                Some(
+                    matching
+                        .into_iter()
+                        .flatten()
+                        .map(|image| (image.blob_id.clone(), image.clone()))
+                        .collect::<BTreeMap<_, _>>()
+                        .into_values()
+                        .collect(),
+                )
+            }
+        });
     item.resources = resources.into_values().collect();
     Ok(Some(item))
 }
@@ -485,6 +542,9 @@ impl PrivateRemoval {
 /// The complete explicit allow-list for private self synchronization.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "kind", content = "fact", rename_all = "snake_case")]
+// Pages are bounded; retain the existing value variants rather than allocate
+// another box for every saved-item fact when its optional image scope grows.
+#[allow(clippy::large_enum_variant)]
 pub enum PrivateFact {
     /// Saved metadata and signed cache references.
     Item(ItemRevision),
@@ -663,6 +723,7 @@ mod tests {
                 blob_id: "f".repeat(64),
                 byte_size: 5,
             }],
+            current_images: None,
         }
     }
 
@@ -699,6 +760,42 @@ mod tests {
         forged.item.summary = Some("replacement".into());
         let encoded = canonical_bytes(&PrivateFact::Item(forged)).unwrap();
         assert!(PrivateFact::from_bytes(&encoded).is_err());
+    }
+
+    #[test]
+    fn legacy_archives_keep_v1_signatures_and_current_image_grants_follow_only_the_selected_body() {
+        let key = Keypair::from_seed(&[92; 32]);
+        let legacy = ItemRevision::sign(item("Legacy", 'a'), vec![], 1, &key).unwrap();
+        assert_eq!(legacy.version, 1);
+        assert!(
+            !serde_json::to_string(&legacy.item)
+                .unwrap()
+                .contains("current_images")
+        );
+        let encoded = PrivateFact::Item(legacy.clone()).to_bytes().unwrap();
+        assert_eq!(
+            PrivateFact::from_bytes(&encoded).unwrap(),
+            PrivateFact::Item(legacy.clone())
+        );
+        let mut scoped = item("Scoped", 'b');
+        scoped.current_images = Some(scoped.resources.clone());
+        let scoped = ItemRevision::sign(scoped, vec![], 2, &key).unwrap();
+        assert_eq!(scoped.version, 2);
+        PrivateFact::Item(scoped.clone()).to_bytes().unwrap();
+        let mut refreshed = item("New body", 'c');
+        refreshed.contents[0].fetched_at_micros = 3;
+        let refreshed = ItemRevision::sign(refreshed, vec![], 3, &key).unwrap();
+        let merged = resolve_item_heads(&[legacy.clone(), scoped.clone(), refreshed])
+            .unwrap()
+            .unwrap();
+        assert!(merged.current_images.is_none());
+        let merged = resolve_item_heads(&[legacy, scoped.clone()])
+            .unwrap()
+            .unwrap();
+        assert_eq!(merged.current_images, scoped.item.current_images);
+        let mut forged = scoped;
+        forged.version = 1;
+        assert!(PrivateFact::Item(forged).to_bytes().is_err());
     }
 
     #[test]

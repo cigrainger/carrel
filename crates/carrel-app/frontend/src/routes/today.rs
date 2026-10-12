@@ -68,6 +68,17 @@ pub fn Library() -> impl IntoView {
     })
 }
 #[component]
+pub fn Friends() -> impl IntoView {
+    list_route_view(|| {
+        ListSpec::local(
+            "Shared with you",
+            ItemFilter::shared(),
+            "/friends",
+            "No articles shared with you yet. Add a trusted person in Settings → People.",
+        )
+    })
+}
+#[component]
 pub fn Unread() -> impl IntoView {
     list_route_view(|| {
         ListSpec::local(
@@ -502,9 +513,10 @@ pub(crate) fn list_route_view(
                 <div><h1>{move || spec.get().title}</h1>{move || spec.get().subtitle.map(|text| view! { <p>{text}</p> })}</div>
                 {move || spec.get().fetch_url.map(|url| view! { <FeedFetchButton url=url/> })}
             </header>
-            <Show when=move || matches!(spec.get().filter.view, ItemView::Library | ItemView::Unread | ItemView::Starred)>
+            <Show when=move || matches!(spec.get().filter.view, ItemView::Library | ItemView::Unread | ItemView::Starred | ItemView::Shared)>
                 <nav class="library-filters" aria-label="Library filter">
                     <A href=move || search_path("/library", Some(&draft.get())) exact=true>"All"</A><A href=move || search_path("/unread", Some(&draft.get())) exact=true>"Unread"</A><A href=move || search_path("/starred", Some(&draft.get())) exact=true>"Starred"</A>
+                    <A href=move || search_path("/friends", Some(&draft.get())) exact=true>"Shared with you"</A>
                 </nav>
             </Show>
             <form class="list-search" role="search" on:submit=move |event| { event.prevent_default(); submit_search.run(draft.get_untracked()); }>
@@ -540,7 +552,7 @@ pub(crate) fn list_route_view(
                                 " "<A href="/library" attr:class="quiet-link">"Browse Library"</A>
                             </Show>
                         </p>
-                        <EmptyListAddFeed/>
+                        <Show when=move || spec.get().filter.view != ItemView::Shared><EmptyListAddFeed/></Show>
                     }>
                         <p>"No articles match in this view."</p><button type="button" on:click=move |_| clear_search.run(())>"Clear search"</button>
                     </Show>

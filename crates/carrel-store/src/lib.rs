@@ -23,6 +23,7 @@ pub mod private_state;
 pub mod private_transport;
 pub mod schema;
 pub mod search;
+pub mod sharing;
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -52,6 +53,10 @@ pub struct Store {
     identity_lock: Arc<Mutex<()>>,
     // Serializes private register writes and their derived query projections.
     private_state_lock: Arc<Mutex<()>>,
+    // Serializes contacts and receipt facts; compound archive writes take the
+    // existing private-state lock before this lock.
+    social_lock: Arc<Mutex<()>>,
+    social_revision: Arc<std::sync::atomic::AtomicU64>,
     // Wake private transports after typed identity writes; Cozo remains
     // authoritative, and the signal contains no facts.
     identity_revision: watch::Sender<u64>,
@@ -71,6 +76,8 @@ impl Store {
             annotation_lock: Arc::new(Mutex::new(())),
             identity_lock: Arc::new(Mutex::new(())),
             private_state_lock: Arc::new(Mutex::new(())),
+            social_lock: Arc::new(Mutex::new(())),
+            social_revision: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             identity_revision: watch::channel(0).0,
         })
     }
@@ -83,6 +90,8 @@ impl Store {
             annotation_lock: Arc::new(Mutex::new(())),
             identity_lock: Arc::new(Mutex::new(())),
             private_state_lock: Arc::new(Mutex::new(())),
+            social_lock: Arc::new(Mutex::new(())),
+            social_revision: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             identity_revision: watch::channel(0).0,
         })
     }

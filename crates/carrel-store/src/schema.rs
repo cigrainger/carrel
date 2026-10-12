@@ -1,5 +1,52 @@
 //! Cozo schema scripts for Carrel's documented data model.
 
+/// Additive recipient-scoped sharing relations; private journals remain separate.
+pub const SOCIAL_RELATIONS: &[(&str, &str)] = &[
+    (
+        "social_contact",
+        ":create social_contact { master: Bytes => name: String, card: Bytes?, followed: Bool }",
+    ),
+    (
+        "social_record",
+        ":create social_record { key: String => encoded: Bytes, author: Bytes, recipient: Bytes, share_id: String, kind: String, created_at: Int }",
+    ),
+    (
+        "social_receipt",
+        ":create social_receipt { share_id: String => item_id: String }",
+    ),
+    (
+        "social_blob_pending",
+        ":create social_blob_pending { share_id: String, blob_id: String => byte_size: Int, is_body: Bool }",
+    ),
+    (
+        "social_document",
+        ":create social_document { singleton: Int => namespace: Bytes, capability: Bytes }",
+    ),
+];
+
+/// A separate additive projection keeps in-flight version-9 prototypes intact.
+pub const CURRENT_IMAGE_SCOPE: &str =
+    ":create item_current_image_scope { item_id: String, blob_id: String => images: Json }";
+
+/// Immutable signed records and local mirror binding; retractions append facts.
+pub const SOCIAL_GUARDS: &[&str] = &[
+    r#"::set_triggers social_record
+        on put {
+            ?[key] := _new[key, encoded, author, recipient, share_id, kind, created_at],
+                _old[key, old_encoded, old_author, old_recipient, old_share, old_kind, old_at],
+                [encoded, author, recipient, share_id, kind, created_at] != [old_encoded, old_author, old_recipient, old_share, old_kind, old_at]
+            :assert none
+        }
+        on rm { ?[key] := _old[key, _, _, _, _, _, _] :assert none }"#,
+    r#"::set_triggers social_document
+        on put {
+            ?[singleton] := _new[singleton, _, _], singleton != 0
+            ?[singleton] := _new[singleton, namespace, capability], _old[singleton, old_namespace, old_capability], [namespace, capability] != [old_namespace, old_capability]
+            :assert none
+        }
+        on rm { ?[singleton] := _old[singleton, _, _] :assert none }"#,
+];
+
 /// All base relation names in the current schema.
 pub const RELATIONS: &[&str] = &[
     "peer",

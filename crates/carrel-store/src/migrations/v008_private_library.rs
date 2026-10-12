@@ -62,7 +62,7 @@ mod tests {
             for (_, script) in schema::PRIVATE_LIBRARY_RELATIONS.iter().take(prefix) { store.query(script).unwrap(); }
             prop_assert_eq!(store.current_schema_version().unwrap(), 7);
             store.migrate().unwrap();
-            prop_assert_eq!(store.current_schema_version().unwrap(), 8);
+            prop_assert_eq!(store.current_schema_version().unwrap(), crate::CURRENT_SCHEMA_VERSION);
             prop_assert!(store.self_identity().unwrap().is_none());
             prop_assert!(store.private_document().unwrap().is_none());
             prop_assert!(store.private_fact_outbox(None, 100).unwrap().is_empty());

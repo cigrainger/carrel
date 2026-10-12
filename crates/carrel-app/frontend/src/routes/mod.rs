@@ -8,6 +8,6 @@ mod today;
 
 pub use feed::{FeedRoute, FolderRoute};
 pub use highlight_list::Highlights;
-pub use placeholders::{Friends, Lists, NotFound};
+pub use placeholders::{Lists, NotFound};
 pub use reading::ReadingView;
-pub use today::{Library, Reading, Starred, Today, Unread};
+pub use today::{Friends, Library, Reading, Starred, Today, Unread};

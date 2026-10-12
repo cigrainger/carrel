@@ -112,9 +112,33 @@ The private Iroh endpoint uses the installation's certified operational key as
 its TLS endpoint identity. Endpoint hooks check the locally bound master and
 active device certificates before outgoing dials and after every incoming or
 outgoing handshake, across docs, blobs, and gossip. A copied document or blob
-ticket does not grant private access. This endpoint has no social protocols.
+ticket does not grant private access. The optional `carrel/share/1` protocol has
+a separate manually followed-master gate. Its signed contact certificate must
+match the TLS device before the handler selects any recipient-scoped data;
+social authorization never grants raw docs, blobs or gossip access.
 The native pairing flow uses a separately bounded invitation protocol;
 receiving a certificate never chooses a local master identity.
+
+Private sharing is a bounded vertical flow described in
+[`PRIVATE_SHARING_PLAN.md`](PRIVATE_SHARING_PLAN.md). Cozo owns immutable signed
+shares and withdrawals, local contact pins and receipt/cache projections.
+`carrel-sync` repairs a distinct private mirror from those records and exchanges
+bounded typed pages through its audience filter. Friends receive no namespace
+capability. A blob request names a verified share and an exact signed digest and
+length, rather than granting generic cache access. Even a locally present digest
+requires proof of bytes from the source before a received body or image is
+installed. The current-body image grant is preserved in signed self snapshots;
+historical resources do not expand it. Native commands prepare the public article
+subset and compose these store operations. The frontend only renders people,
+vouches and archives and dispatches explicit commands.
+
+An app-owned social worker runs with the self transport while dialogs are closed.
+It repairs publication, receives pages and rotates failed cache transfers, with
+two bounded peer exchanges at a time. Store revision changes refresh the existing
+list/reader observer, including partial cache progress. Recovery is quiet and
+person-specific in Settings. The first flow pins one desktop per person; contacts
+and outgoing social history are local to that desktop. Automatic friend-device
+rotation, group/public audiences and social graph self-sync remain future scope.
 
 Settings' Devices section explicitly creates or resumes a passphrase-protected master,
 or accepts a one-time copy/paste invitation. Invitations last five minutes and

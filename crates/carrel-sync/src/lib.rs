@@ -11,6 +11,7 @@ pub mod bridge;
 mod error;
 pub mod pairing;
 pub mod runtime;
+pub mod sharing;
 pub mod transport;
 
 pub use error::{Result, SyncError};

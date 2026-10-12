@@ -29,6 +29,7 @@ pub struct SelfTransport {
     blobs: BlobStore,
     authorization: AuthorizationGate,
     authorization_task: JoinHandle<()>,
+    social: Option<std::sync::Arc<crate::sharing::SocialBridge>>,
 }
 
 impl SelfTransport {
@@ -47,7 +48,50 @@ impl SelfTransport {
         device: &Keypair,
         builder: Builder,
     ) -> Result<Self> {
-        let gate = AuthorizationGate::new(store.clone(), *device.public());
+        Self::start_inner(store, cache_dir, device, builder, None).await
+    }
+
+    /// Enable the separately filtered social protocol on the same certified device.
+    pub async fn start_with_sharing(
+        store: Store,
+        cache_dir: &Path,
+        device: &Keypair,
+        cache: carrel_store::blobs::BlobStore,
+    ) -> Result<Self> {
+        Self::start_with_sharing_builder(
+            store,
+            cache_dir,
+            device,
+            cache,
+            Endpoint::builder(presets::N0),
+        )
+        .await
+    }
+
+    /// Customize local addressing for isolated peer tests without changing gates.
+    pub async fn start_with_sharing_builder(
+        store: Store,
+        cache_dir: &Path,
+        device: &Keypair,
+        cache: carrel_store::blobs::BlobStore,
+        builder: Builder,
+    ) -> Result<Self> {
+        Self::start_inner(store, cache_dir, device, builder, Some(cache)).await
+    }
+
+    async fn start_inner(
+        store: Store,
+        cache_dir: &Path,
+        device: &Keypair,
+        builder: Builder,
+        cache: Option<carrel_store::blobs::BlobStore>,
+    ) -> Result<Self> {
+        let sharing = cache.is_some();
+        let gate = if sharing {
+            AuthorizationGate::with_sharing(store.clone(), *device.public())
+        } else {
+            AuthorizationGate::new(store.clone(), *device.public())
+        };
         let mut identity_changes = store.subscribe_identity_changes();
         gate.validate_local().await?;
         tokio::fs::create_dir_all(cache_dir)
@@ -109,11 +153,40 @@ impl SelfTransport {
         }
         let watcher_gate = gate.clone();
         let watcher_endpoint = endpoint.clone();
-        let router = Router::builder(endpoint)
+        let social = if let Some(cache) = cache {
+            match crate::sharing::SocialBridge::resume(
+                store,
+                cache,
+                &docs,
+                (*blobs).clone(),
+                Keypair::from_seed(&seed),
+                endpoint.clone(),
+            )
+            .await
+            {
+                Ok(service) => Some(service),
+                Err(error) => {
+                    iroh::protocol::ProtocolHandler::shutdown(&docs).await;
+                    let _ = gossip.shutdown().await;
+                    let _ = blobs.shutdown().await;
+                    endpoint.close().await;
+                    return Err(error);
+                }
+            }
+        } else {
+            None
+        };
+        let router_builder = Router::builder(endpoint)
             .accept(iroh_blobs::ALPN, BlobsProtocol::new(&blobs, None))
             .accept(iroh_gossip::ALPN, gossip)
-            .accept(iroh_docs::ALPN, docs.clone())
-            .spawn();
+            .accept(iroh_docs::ALPN, docs.clone());
+        let router = if let Some(service) = &social {
+            router_builder
+                .accept(crate::sharing::ALPN, service.clone())
+                .spawn()
+        } else {
+            router_builder.spawn()
+        };
         let authorization_task = tokio::spawn(async move {
             // Recheck once after setup in case authorization changed while the
             // persistent protocol stores were opening.
@@ -121,7 +194,13 @@ impl SelfTransport {
                 watcher_endpoint.close().await;
                 return;
             }
-            while identity_changes.changed().await.is_ok() {
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(1));
+            loop {
+                if sharing {
+                    tokio::select! { result=identity_changes.changed()=>if result.is_err(){return}, _=tick.tick()=>{} }
+                } else if identity_changes.changed().await.is_err() {
+                    return;
+                }
                 if watcher_gate.close_unauthorized().await.is_err() {
                     watcher_endpoint.close().await;
                     return;
@@ -134,6 +213,7 @@ impl SelfTransport {
             blobs: (*blobs).clone(),
             authorization: gate,
             authorization_task,
+            social,
         })
     }
 
@@ -155,6 +235,11 @@ impl SelfTransport {
     /// Private content mirror; downloads retain Iroh's content-hash verification.
     pub fn blobs(&self) -> &BlobStore {
         &self.blobs
+    }
+
+    /// Typed audience-filtered service; this does not distribute raw capabilities.
+    pub fn sharing(&self) -> Option<std::sync::Arc<crate::sharing::SocialBridge>> {
+        self.social.clone()
     }
 
     /// Close unauthorized live connections after a local authorization action.
@@ -179,6 +264,9 @@ impl SelfTransport {
     /// Stop and flush a shared host during the owning application's shutdown.
     pub async fn stop(&self) -> Result<()> {
         self.authorization_task.abort();
+        if let Some(service) = &self.social {
+            service.close().await;
+        }
         self.router
             .shutdown()
             .await

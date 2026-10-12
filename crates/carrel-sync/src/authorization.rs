@@ -22,6 +22,7 @@ pub(crate) struct AuthorizationGate {
     store: Store,
     local: PublicKey,
     connections: Arc<Mutex<Vec<WeakConnectionHandle>>>,
+    sharing: bool,
 }
 
 impl std::fmt::Debug for AuthorizationGate {
@@ -52,7 +53,14 @@ impl AuthorizationGate {
             store,
             local,
             connections: Arc::new(Mutex::new(Vec::new())),
+            sharing: false,
         }
+    }
+
+    pub(crate) fn with_sharing(store: Store, local: PublicKey) -> Self {
+        let mut gate = Self::new(store, local);
+        gate.sharing = true;
+        gate
     }
 
     fn active_devices(&self) -> Result<BTreeSet<PublicKey>> {
@@ -84,10 +92,26 @@ impl AuthorizationGate {
     }
 
     fn allows(&self, remote: EndpointId, alpn: &[u8]) -> bool {
-        private_protocol(alpn)
-            && self
-                .active_devices()
-                .is_ok_and(|active| active.contains(&key(remote)))
+        let Ok(active) = self.active_devices() else {
+            return false;
+        };
+        if private_protocol(alpn) {
+            return active.contains(&key(remote));
+        }
+        if !self.sharing || alpn != crate::sharing::ALPN {
+            return false;
+        }
+        self.store.social_contacts().is_ok_and(|contacts| {
+            contacts.iter().any(|contact| {
+                contact.followed
+                    && contact
+                        .card
+                        .as_ref()
+                        .is_some_and(|card| card.certificate.device_pubkey == key(remote))
+            }) || contacts
+                .iter()
+                .any(|contact| contact.followed && contact.card.is_none())
+        })
     }
 
     fn register(&self, connection: &Connection) -> bool {
@@ -119,7 +143,7 @@ impl AuthorizationGate {
                 };
                 if !active
                     .as_ref()
-                    .is_ok_and(|active| active.contains(&key(connection.remote_id())))
+                    .is_ok_and(|_| gate.allows(connection.remote_id(), connection.alpn()))
                 {
                     connection.close(VarInt::from_u32(DENIED_CODE), DENIED_REASON);
                     return false;

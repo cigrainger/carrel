@@ -40,3 +40,7 @@ pub mod private_state;
 
 #[cfg(feature = "identity")]
 pub mod private_library;
+
+/// Signed recipient-scoped article sharing, excluding private self state.
+#[cfg(feature = "identity")]
+pub mod sharing;

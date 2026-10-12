@@ -62,6 +62,7 @@ pub(crate) fn FieldNavigation() -> impl IntoView {
             "/library" => "Library".into(),
             "/unread" => "Library · Unread".into(),
             "/starred" => "Library · Starred".into(),
+            "/friends" => "Shared with you".into(),
             "/highlights" => "Highlights".into(),
             _ if path.starts_with("/folders/") => {
                 feeds::decode_feed_path(path.trim_start_matches("/folders/")).unwrap_or_default()

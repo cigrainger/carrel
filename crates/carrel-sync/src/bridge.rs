@@ -60,6 +60,10 @@ pub struct SelfBridge {
 }
 
 impl SelfBridge {
+    /// The separately filtered social service, if enabled by the native shell.
+    pub fn sharing(&self) -> Option<Arc<crate::sharing::SocialBridge>> {
+        self.host.sharing()
+    }
     /// Recover the bound document even when the expendable Iroh cache was lost.
     pub async fn resume(store: Store, cache: BlobStore, host: Arc<SelfTransport>) -> Result<Self> {
         let source = store.clone();

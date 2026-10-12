@@ -1,9 +1,11 @@
 //! Readable article extraction, sanitization, and asset rewriting.
 
+mod cached_images;
 mod extract;
 mod images;
 mod sanitize;
 
+pub use cached_images::{cached_image_ids, filter_cached_resources};
 pub use extract::{
     ExtractOptions, ExtractedArticle, ExtractorUsed, TrafilaturaConfig, extract_embedded_html,
     extract_from_html, extract_from_html_with_options, extract_from_url,

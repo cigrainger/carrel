@@ -1618,3 +1618,19 @@ button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px soli
 .device-list { list-style: none; padding: 0; }
 .device-list li { padding: .7rem 0; border-bottom: 1px solid var(--color-rule); }
 .dialog-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; }
+.people-panel input, .people-panel textarea, .share-dialog select, .share-dialog textarea {
+    width: 100%; min-width: 0; box-sizing: border-box;
+    padding: 8px; border: 1px solid var(--color-rule); border-radius: 0;
+    background: var(--color-bg); color: var(--color-text); font: inherit;
+}
+.people-panel label, .share-dialog label { display: block; margin: 12px 0 6px; }
+.people-panel code { display: block; overflow-wrap: anywhere; font-size: 12px; }
+.people-panel h4 { margin-top: 24px; }
+.people-panel .follow-person { margin: 20px 0; }
+.people-list, .sent-shares { list-style: none; padding: 0; }
+.people-list li, .sent-shares li { padding: 16px 0; border-top: 1px solid var(--color-rule); }
+.people-list button, .sent-shares button { margin: 4px 8px 4px 0; }
+.share-title { font-weight: 600; }
+.received-vouch { font-family: var(--font-chrome); margin-top: 12px; }
+.received-vouch p { margin: 0 0 6px; font-size: 13px; color: var(--color-text-secondary); }
+.received-vouch blockquote, .sent-shares blockquote { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; padding-left: 12px; border-left: 2px solid var(--color-accent); font-size: 14px; line-height: 1.5; }

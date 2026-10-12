@@ -72,6 +72,7 @@ pub fn ReadingView() -> impl IntoView {
     let status = use_status_controller();
     let feeds = use_feed_controller();
     let actions = use_item_actions();
+    let sharing = crate::sharing::use_sharing();
     let sidebar = use_reading_sidebar();
     let progress_writer = use_progress_writer();
     let writes = StoredValue::new(crate::writes::use_pending_writes());
@@ -185,6 +186,13 @@ pub fn ReadingView() -> impl IntoView {
     use_action_handler("toggle-star", move || {
         request_current(projected, actions, ItemAction::Star);
     });
+    for action in ["share-last-audience", "share-audience-picker"] {
+        use_action_handler(action, move || {
+            if let Some(article) = projected.get_untracked() {
+                sharing.open(article.id, article.title);
+            }
+        });
+    }
 
     use_action_handler("show-item-info", move || {
         info_open.update(|open| *open = !*open);
@@ -418,6 +426,7 @@ pub fn ReadingView() -> impl IntoView {
                             on_toggle_star=star_click
                             on_toggle_read=read_click
                             on_toggle_info=info_click
+                            on_share=UnsyncCallback::new(move |()| { if let Some(article) = projected.get_untracked() { sharing.open(article.id,article.title); } })
                             on_open_original=UnsyncCallback::new(move |url| crate::links::open_original(url, status))
                             back_label=list_navigation.get().map(|context| format!("Back to {}", context.return_label)).unwrap_or_else(|| "Back to Today".into())
                         /></crate::components::ContextControls>
@@ -526,9 +535,11 @@ pub fn ReaderActions(
     on_toggle_star: UnsyncCallback<()>,
     on_toggle_read: UnsyncCallback<()>,
     on_toggle_info: UnsyncCallback<()>,
+    #[prop(default = UnsyncCallback::new(|()| {}))] on_share: UnsyncCallback<()>,
     #[prop(default = String::from("Back"))] back_label: String,
     #[prop(default = UnsyncCallback::new(|_: String| {}))] on_open_original: UnsyncCallback<String>,
 ) -> impl IntoView {
+    let share_button = NodeRef::<html::Button>::new();
     view! {
         <nav class="reader-actions" aria-label="Reader controls">
             <div class="reader-action-group">
@@ -560,6 +571,7 @@ pub fn ReaderActions(
                 </button>
             </div>
             <div class="reader-action-group">
+                <button node_ref=share_button type="button" disabled=move || item.with(Option::is_none) aria-label="Share article" title="Share article (C)" on:click=move |_| { if let Some(button) = share_button.get_untracked() { let _ = button.focus(); } on_share.run(()); }><Icon name=IconName::Share/></button>
                 <Show when=move || item.with(|item| item.as_ref().is_some_and(|detail| detail.primary_url.is_some()))
                     fallback=|| view! { <button type="button" disabled=true aria-label="Open original" title="Open original"><Icon name=IconName::Original/></button> }>
                     <a class="reader-action-link" aria-label="Open original" title="Open original" href=move || item.with(|item| item.as_ref().and_then(|detail| detail.primary_url.clone()).unwrap_or_default()) target="_blank" rel="noreferrer"
@@ -652,6 +664,7 @@ pub fn ItemInfo(item: ItemDetail, on_close: UnsyncCallback<()>) -> impl IntoView
                     </div>
                 </Show>
             </dl>
+            {item.shared_notes.into_iter().map(|share| view! { <section class="received-vouch"><h3>{format!("Shared by {}",share.from)}</h3><p>{share.date}</p>{share.note.map(|note| view! { <blockquote>{note}</blockquote> })}</section> }).collect_view()}
         </aside>
     }
 }
@@ -1580,6 +1593,7 @@ mod tests {
 
     fn sample_item() -> ItemDetail {
         ItemDetail {
+            shared_notes: Vec::new(),
             id: "item-1".to_string(),
             title: "A quiet page".to_string(),
             source_name: "Example".to_string(),

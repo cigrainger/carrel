@@ -65,6 +65,8 @@ pub enum ItemView {
     Reading,
     /// Starred items, newest star update first.
     Starred,
+    /// Received vouches, newest share first; personal reading state remains local.
+    Shared,
     /// Articles from one subscription, newest publication first (arrival if undated).
     Feed {
         /// Canonical subscription URL.
@@ -150,6 +152,10 @@ impl ItemFilter {
     /// Starred archive.
     pub fn starred() -> Self {
         Self::new(ItemView::Starred)
+    }
+    /// Archived articles deliberately shared with this identity.
+    pub fn shared() -> Self {
+        Self::new(ItemView::Shared)
     }
     /// Archive from one feed.
     pub fn feed(url: String) -> Self {

@@ -20,6 +20,7 @@ mod reader_images;
 mod requests;
 mod routes;
 mod selection;
+mod sharing;
 mod status;
 mod theme;
 mod writes;
@@ -47,6 +48,7 @@ pub fn App() -> impl IntoView {
     annotation_actions::provide_annotation_actions();
     progress::provide_progress_writer();
     components::save_article::provide_capture_dialog();
+    sharing::provide_sharing();
     desktop::install_close_handler();
 
     view! {
@@ -54,6 +56,7 @@ pub fn App() -> impl IntoView {
             <KeymapProvider>
                 <GlobalKeymapActions/>
                 <components::save_article::ArticleCapture/>
+                <sharing::ShareDialog/>
                 <components::FeedActivity/>
                 <components::settings::Settings/>
                 <div class="app-shell" class:reader-sidebar-open=move || reading_sidebar.0.get() data-theme=move || theme.current().get().as_str()>

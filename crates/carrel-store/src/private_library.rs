@@ -464,6 +464,29 @@ impl Store {
         let Some(token) = self.item_dirty_token(id)? else {
             return Ok(None);
         };
+        let item = self.saved_item_snapshot_unlocked(id)?;
+        if self.item_dirty_token(id)?.as_ref() != Some(&token) {
+            return Ok(None);
+        }
+        Ok(item.map(|item| ItemCapture { item, token }))
+    }
+
+    /// Read an article snapshot consistently, including an already adopted archive.
+    /// Callers preparing a share must remove private fields before signing it.
+    pub fn saved_article_snapshot(&self, id: &str) -> Result<Option<SavedItem>> {
+        let _guard = self
+            .private_state_lock
+            .lock()
+            .expect("article snapshot lock");
+        let before = self.item_dirty_token(id)?;
+        let item = self.saved_item_snapshot_unlocked(id)?;
+        if before != self.item_dirty_token(id)? {
+            return Err(invalid("article changed while preparing its snapshot"));
+        }
+        Ok(item)
+    }
+
+    pub(crate) fn saved_item_snapshot_unlocked(&self, id: &str) -> Result<Option<SavedItem>> {
         if self.private_item_removed(id)? {
             return Ok(None);
         }
@@ -481,7 +504,7 @@ impl Store {
         let article = self.query_with_params("?[feed_url, word_count, estimated_read_minutes, site_name, byline] := *item_article{item_id: $id, feed_url, word_count, estimated_read_minutes, site_name, byline}", params.clone())?;
         let identifiers = self.query_with_params("?[scheme, value, is_canonical, discovered_at] := *item_identifier{item_id: $id, scheme, value, is_canonical, discovered_at} :sort scheme, value", params.clone())?;
         let contents = self.query_with_params("?[format, blob_id, fetched_at, extracted_with, byte_size] := *item_content{item_id: $id, format, blob_id, fetched_at, extracted_with, byte_size} :sort format", params)?;
-        let item = SavedItem {
+        let mut item = SavedItem {
             id: id.into(),
             kind: string(&row[0])?,
             title: string(&row[1])?,
@@ -536,13 +559,17 @@ impl Store {
                 })
                 .collect::<Result<_>>()?,
             resources: Vec::new(),
+            current_images: None,
         };
-        // Typed ingestion holds the same lock. Raw development writes are also
-        // detected by their trigger token, including changes between queries.
-        if self.item_dirty_token(id)?.as_ref() != Some(&token) {
-            return Ok(None);
+        if let Some(body) = item
+            .contents
+            .iter()
+            .find(|content| content.format == "html_readable")
+        {
+            item.current_images = self.current_image_scope(id, &body.blob.blob_id)?;
+            item.resources = item.current_images.clone().unwrap_or_default();
         }
-        Ok(Some(ItemCapture { item, token }))
+        Ok(Some(item))
     }
 
     /// Sign a captured source only if its token still identifies the current data.
@@ -932,6 +959,25 @@ impl Store {
                     .collect(),
             ),
         );
+        let image_scope = item
+            .contents
+            .iter()
+            .find(|body| body.format == "html_readable")
+            .zip(item.current_images.as_ref())
+            .map(|(body, images)| -> Result<DataValue> {
+                Ok(DataValue::List(vec![
+                    DataValue::from(item.id.as_str()),
+                    DataValue::from(body.blob.blob_id.as_str()),
+                    DataValue::Json(JsonData(
+                        serde_json::to_value(images)
+                            .map_err(|_| invalid("invalid current image scope"))?,
+                    )),
+                ]))
+            })
+            .transpose()?
+            .into_iter()
+            .collect();
+        params.insert("image_scope".into(), DataValue::List(image_scope));
         self.query_with_params(&format!(r#"
             {{ ?[id] := *self_item_dirty{{id: $id, token}}, id = $id, (is_null($expected_token) || token != $expected_token) :assert none }}
             {{ ?[id, revision_id, encoded, parents] <- [[$id, $rev, $encoded, $parents]] :put self_item_revision {{id, revision_id => encoded, parents}} }}
@@ -944,6 +990,7 @@ impl Store {
             {{ ?[item_id, scheme, value, is_canonical, discovered_at] <- $identifiers :put item_identifier {{item_id, scheme, value => is_canonical, discovered_at}} }}
             {{ ?[item_id, format] := *item_content{{item_id: $id, format}}, item_id = $id :rm item_content {{item_id, format}} }}
             {{ ?[item_id, format, blob_id, fetched_at, extracted_with, byte_size] <- $contents :put item_content {{item_id, format => blob_id, fetched_at, extracted_with, byte_size}} }}
+            {{ ?[item_id, blob_id, images] <- $image_scope :put item_current_image_scope {{item_id, blob_id => images}} }}
             {QUEUE_PRIVATE_FACT}
             {QUEUE_BLOBS}
             {{ ?[key] <- [[$pf_key]] :rm self_library_incoming {{key}} }}
