@@ -48,7 +48,7 @@ pub fn global_layer() -> Layer {
             bind("cmd-n", "save-article", "Save article").allow_in_input(),
             bind("?", "show-keymap-help", "Keymap reference"),
             bind("cmd-k", "open-command-palette", "Command palette").allow_in_input(),
-            bind("cmd-,", "open-settings", "Appearance").allow_in_input(),
+            bind("cmd-,", "open-settings", "Settings").allow_in_input(),
             bind("cmd-b", "toggle-reading-sidebar", "Show or hide sidebar"),
             bind("cmd-shift-n", "add-source", "Add source").allow_in_input(),
             bind("cmd-r", "refresh-feeds", "Refresh feeds").allow_in_input(),

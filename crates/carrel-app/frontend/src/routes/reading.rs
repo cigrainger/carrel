@@ -407,7 +407,7 @@ pub fn ReadingView() -> impl IntoView {
                 let info_click = UnsyncCallback::new(move |()| info_open.update(|open| *open = !*open));
 
                 view! {
-                    <ReaderActions
+                    <crate::components::ContextControls><ReaderActions
                             item=projected
                             can_previous=Signal::derive(move || can_navigate_adjacent(item.get(), list_navigation.get(), Direction::Previous))
                             can_next=Signal::derive(move || can_navigate_adjacent(item.get(), list_navigation.get(), Direction::Next))
@@ -420,7 +420,7 @@ pub fn ReadingView() -> impl IntoView {
                             on_toggle_info=info_click
                             on_open_original=UnsyncCallback::new(move |url| crate::links::open_original(url, status))
                             back_label=list_navigation.get().map(|context| format!("Back to {}", context.return_label)).unwrap_or_else(|| "Back to Today".into())
-                        />
+                        /></crate::components::ContextControls>
                 }
             }
             {move || {
@@ -532,7 +532,7 @@ pub fn ReaderActions(
     view! {
         <nav class="reader-actions" aria-label="Reader controls">
             <div class="reader-action-group">
-                <button type="button" class="reader-action-primary" on:click=move |_| on_back.run(())><Icon name=IconName::Back/>{back_label}</button>
+                <button type="button" class="reader-action-primary" aria-label=back_label.clone() on:click=move |_| on_back.run(())><Icon name=IconName::Back/><span class="reader-return-label">{back_label.clone()}</span></button>
                 <button type="button" disabled=move || !can_previous.get() aria-label="Previous item" title="Previous item (P)" on:click=move |_| on_previous.run(())><Icon name=IconName::Previous/></button>
                 <button type="button" disabled=move || !can_next.get() aria-label="Next item" title="Next item" on:click=move |_| on_next.run(())><Icon name=IconName::Next/></button>
             </div>

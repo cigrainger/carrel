@@ -13,11 +13,25 @@ pub(crate) fn FeedActivity() -> impl IntoView {
 #[component]
 fn ActivityDialog() -> impl IntoView {
     let controller = feeds::use_feed_controller();
-    let busy = RwSignal::new(false);
-    let error = RwSignal::new(None::<String>);
     view! {
         <Modal label="Source activity" class="feed-dialog source-activity" on_cancel=UnsyncCallback::new(move |()| controller.activity_open.set(false))>
             <h3>"Source activity"</h3>
+            <SourceActivityContent on_open=UnsyncCallback::new(move |()| controller.activity_open.set(false))/>
+            <div class="feed-dialog-actions"><button type="button" on:click=move |_| controller.activity_open.set(false)>"Done"</button></div>
+        </Modal>
+    }
+}
+
+#[component]
+pub(crate) fn SourceActivityContent(
+    on_open: UnsyncCallback<()>,
+    #[prop(default = false)] manage: bool,
+) -> impl IntoView {
+    let controller = feeds::use_feed_controller();
+    let busy = RwSignal::new(false);
+    let error = RwSignal::new(None::<String>);
+    view! {
+        <div class="source-activity">
             <p class="source-activity-intro">"Saved articles stay available when a source cannot be reached. Retry a source to recover missing content."</p>
             <p class="source-activity-status" role="status">{move || controller.status().get().message}</p>
             <ul>
@@ -25,6 +39,7 @@ fn ActivityDialog() -> impl IntoView {
                     {
                         let url = feed.url.clone();
                         let retry_url = feed.url.clone();
+                        let remove_button = NodeRef::<leptos::html::Button>::new();
                         let href = feeds::feed_href(&feed.url);
                         let state = Memo::new(move |_| controller.feeds().with(|feeds| feeds.iter().find(|feed| feed.url == url).cloned()));
                         let url = feed.url.clone();
@@ -32,7 +47,11 @@ fn ActivityDialog() -> impl IntoView {
                         view! {
                             <li>
                                 <div class="source-activity-heading">
-                                    <A href=href on:click=move |_| controller.activity_open.set(false)>{move || state.get().map(|feed| feed.display_name).unwrap_or_default()}</A>
+                                    <A href=href on:click=move |_| on_open.run(())>{move || state.get().map(|feed| feed.display_name).unwrap_or_default()}</A>
+                                    <Show when=move || manage><button node_ref=remove_button type="button" on:click=move |_| {
+                                        if let Some(button) = remove_button.get_untracked() { let _ = button.focus(); }
+                                        controller.remove_target.set(state.get_untracked());
+                                    }>"Remove"</button></Show>
                                     <button type="button" disabled=move || busy.get() || controller.manual_fetch_busy.get() || controller.status().get().is_fetching on:click=move |_| {
                                         busy.set(true); error.set(None);
                                         let url = retry_url.clone();
@@ -56,7 +75,6 @@ fn ActivityDialog() -> impl IntoView {
             </ul>
             <Show when=move || controller.feeds().get().is_empty()><p>"No sources yet. Add a source from Sources or import OPML."</p></Show>
             {move || error.get().map(|message| view! { <div class="source-problem" role="alert"><p>"Could not retry this source. Try again when your connection is available."</p><details><summary>"Technical details"</summary><p>{message}</p></details></div> })}
-            <div class="feed-dialog-actions"><button type="button" on:click=move |_| controller.activity_open.set(false)>"Done"</button></div>
-        </Modal>
+        </div>
     }
 }

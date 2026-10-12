@@ -51,29 +51,34 @@ The desktop app has a Field reading layout, bundled fonts, a collapsible
 navigation and source sidebar (Cmd+B), explicit reading completion, saved position restoration,
 highlights and notes, and local lists for Today, Reading, Library, Unread,
 Starred, and individual feeds. **Load older** extends lists through the archive.
-**Import OPML** and **Export OPML** use native file dialogs; importing keeps
-existing subscription settings. Nested OPML folders become readable folder
+**Import OPML** and **Export OPML** in Settings → Sources use native file dialogs;
+importing keeps existing subscription settings. Nested OPML folders become readable folder
 paths, exported as named groups. Each article list can search titles and cached
 text offline; `/` focuses search and `\` clears it. Every word matches a word
 beginning, within the current filter. The query and loaded results survive
 opening an article and returning. Highlights supports full note review, note
 editing, deliberate removal, and a complete Markdown export through a native
-save dialog. **Save article** in the window toolbar (Cmd+N) archives an article
+save dialog. **Save article** in the context bar or its app menu (Cmd+N) archives an article
 URL and its images without subscribing to the site. Saving preserves the current
 view and offers **Read article** or **View in Library** afterward. Existing
 articles retain their identity, archive, highlights and reading state. A failed
 capture keeps the URL available for retry; partial image caching is stated.
-**Add source** remains in Sources. Two-device self-sync is described in
+**Add source** is available in the sidebar, Settings → Sources and the app menu.
+Two-device self-sync is described in
 [`docs/SELF_SYNC_PLAN.md`](docs/SELF_SYNC_PLAN.md).
 
-**Appearance** offers four bundled reading fonts, text size, line width and
-spacing, plus Editorial/Dense article lists. Preferences are remembered on this
-installation and changing layout preserves the visible passage or row. Cmd+,
-opens Appearance. Cmd+K finds working commands, sources and articles in the local
+One context bar holds list or reader controls. **Aa** in the reader offers theme,
+four bundled reading fonts, text size, line width and spacing. **Settings** (Cmd+,)
+contains Reading, Sources, Devices and Keyboard sections, including Editorial/Dense
+article lists. Preferences are remembered on this installation and changing
+layout preserves the visible passage or row. Closing Settings resumes the same
+article or list. The context bar's app menu keeps commands reachable with the
+sidebar hidden. Cmd+K finds working commands, sources and articles in the local
 archive; `?` shows the effective shortcuts with native modal focus behavior.
-**Source activity**, available in Sources or through a failure's **Details**
-control, explains incomplete updates and retries individual sources without
-interrupting the reader. Cmd+R refreshes feeds and Cmd+Shift+R opens Source activity.
+**Settings → Sources** and **Source activity**, opened through a failure's **Details**
+control or the command palette, explain incomplete updates and retry individual
+sources without interrupting the reader. Cmd+R refreshes feeds and Cmd+Shift+R
+opens Source activity.
 
 The CLI can initialize a local data directory, print install info, run schema
 migrations, execute raw Cozo queries, subscribe to feeds, fetch RSS/Atom/JSON

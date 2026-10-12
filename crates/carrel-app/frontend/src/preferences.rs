@@ -7,6 +7,7 @@ use leptos::prelude::*;
 pub(crate) struct PreferencesController {
     pub(crate) current: RwSignal<ReadingPreferences>,
     pub(crate) appearance_open: RwSignal<bool>,
+    pub(crate) settings_open: RwSignal<bool>,
     #[cfg(target_arch = "wasm32")]
     anchor: StoredValue<Option<LayoutAnchor>, LocalStorage>,
 }
@@ -69,6 +70,7 @@ pub(crate) fn provide_preferences() {
     provide_context(PreferencesController {
         current: RwSignal::new(initial),
         appearance_open: RwSignal::new(false),
+        settings_open: RwSignal::new(false),
         #[cfg(target_arch = "wasm32")]
         anchor: StoredValue::new_local(None),
     });
@@ -88,12 +90,12 @@ fn font_value(font: ReadingFont) -> &'static str {
 }
 
 #[component]
-pub(crate) fn ReadingControls() -> impl IntoView {
+pub(crate) fn ReadingControls(#[prop(default = true)] density: bool) -> impl IntoView {
     let controller = use_preferences();
     let current = controller.current;
     view! {
         <fieldset class="reading-controls">
-            <legend>"Reading"</legend>
+            <legend>"Typography"</legend>
             <label for="reading-font">"Font"</label>
             <select id="reading-font" prop:value=move || font_value(current.get().font) on:change=move |event| {
                 let font = match event_target_value(&event).as_str() {
@@ -121,13 +123,13 @@ pub(crate) fn ReadingControls() -> impl IntoView {
             }/>
             <button type="button" class="preference-reset" on:click=move |_| controller.change(|p| *p = p.reset_reading())>"Reset reading"</button>
         </fieldset>
-        <fieldset class="density-controls">
+        <Show when=move || density><fieldset class="density-controls">
             <legend>"Article lists"</legend>
             <div class="density-options" role="group" aria-label="List density">
                 <button type="button" aria-pressed=move || (current.get().density == ListDensity::Editorial).to_string() on:click=move |_| controller.change(|p| p.density = ListDensity::Editorial)>"Editorial"</button>
                 <button type="button" aria-pressed=move || (current.get().density == ListDensity::Dense).to_string() on:click=move |_| controller.change(|p| p.density = ListDensity::Dense)>"Dense"</button>
             </div>
-        </fieldset>
+        </fieldset></Show>
     }
 }
 

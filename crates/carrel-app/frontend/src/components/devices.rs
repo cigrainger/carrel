@@ -3,11 +3,63 @@
 use leptos::prelude::*;
 use serde_json::json;
 
-use crate::{
-    api,
-    components::{Icon, IconName, Modal},
-    feeds,
-};
+use crate::{api, feeds};
+
+/// Installation status is observed even when its settings section is closed.
+#[derive(Clone, Copy)]
+pub(crate) struct DeviceStatus {
+    snapshot: RwSignal<api::SyncSnapshot>,
+    #[cfg(target_arch = "wasm32")]
+    feeds: feeds::FeedController,
+    #[cfg(target_arch = "wasm32")]
+    requests: StoredValue<crate::requests::Requests>,
+}
+
+impl DeviceStatus {
+    pub(crate) fn refresh(self) {
+        #[cfg(target_arch = "wasm32")]
+        {
+            let requests = self.requests.get_value();
+            let request = requests.begin();
+            let feeds = self.feeds;
+            leptos::task::spawn_local(async move {
+                if let Ok(current) = api::sync_status().await {
+                    if !requests.accepts(request) {
+                        return;
+                    }
+                    let changed = current.revision != self.snapshot.get_untracked().revision;
+                    self.snapshot.set(current.clone());
+                    if changed {
+                        feeds.sync_revision.set(current.revision);
+                        feeds::refresh_from_sync(feeds).await;
+                    }
+                }
+            });
+        }
+    }
+}
+
+pub(crate) fn provide_device_status() {
+    let status = DeviceStatus {
+        snapshot: RwSignal::new(api::SyncSnapshot::default()),
+        #[cfg(target_arch = "wasm32")]
+        feeds: feeds::use_feed_controller(),
+        #[cfg(target_arch = "wasm32")]
+        requests: StoredValue::new(crate::requests::Requests::default()),
+    };
+    provide_context(status);
+    #[cfg(target_arch = "wasm32")]
+    {
+        status.refresh();
+        let requests = status.requests.get_value();
+        on_cleanup(move || requests.invalidate());
+        if let Ok(interval) =
+            set_interval_with_handle(move || status.refresh(), std::time::Duration::from_secs(3))
+        {
+            on_cleanup(move || interval.clear());
+        }
+    }
+}
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum Mode {
@@ -19,10 +71,10 @@ enum Mode {
 }
 
 #[component]
-pub(crate) fn Devices() -> impl IntoView {
-    let open = RwSignal::new(false);
+pub(crate) fn DevicesPanel() -> impl IntoView {
     let mode = RwSignal::new(Mode::Overview);
-    let snapshot = RwSignal::new(api::SyncSnapshot::default());
+    let status = expect_context::<DeviceStatus>();
+    let snapshot = status.snapshot;
     let name = RwSignal::new(String::new());
     let passphrase = RwSignal::new(String::new());
     let confirm = RwSignal::new(String::new());
@@ -31,44 +83,33 @@ pub(crate) fn Devices() -> impl IntoView {
     let selected_device = RwSignal::new(String::new());
     let error = RwSignal::new(None::<String>);
     let feeds = feeds::use_feed_controller();
-    let seen_revision = RwSignal::new(0u64);
-
-    let poll = move || {
-        leptos::task::spawn_local(async move {
-            if let Ok(current) = api::sync_status().await {
-                if current.revision != seen_revision.get_untracked() {
-                    seen_revision.set(current.revision);
-                    feeds.sync_revision.set(current.revision);
-                    feeds::refresh_from_sync(feeds).await;
-                }
-                snapshot.set(current);
-            }
-        });
-    };
+    let requests = StoredValue::new(crate::requests::Requests::default());
+    let cleanup = requests.get_value();
+    on_cleanup(move || cleanup.invalidate());
+    status.refresh();
     #[cfg(target_arch = "wasm32")]
-    {
-        poll();
-        if let Ok(interval) = set_interval_with_handle(poll, std::time::Duration::from_secs(3)) {
-            on_cleanup(move || interval.clear());
-        }
-    }
-    let dismiss = move |()| {
-        open.set(false);
-        passphrase.set(String::new());
-        confirm.set(String::new());
-        invitation.set(String::new());
-        error.set(None);
+    on_cleanup(move || {
         leptos::task::spawn_local(async move {
             let _ = api::sync_action("cancel_sync_invitation", json!({})).await;
         });
-    };
+    });
     let submit = move |command: &'static str, args: serde_json::Value| {
         busy.set(true);
         error.set(None);
         passphrase.set(String::new());
         confirm.set(String::new());
+        let guard = requests.get_value();
+        let request = guard.begin();
         leptos::task::spawn_local(async move {
-            match api::sync_action(command, args).await {
+            let result = api::sync_action(command, args).await;
+            status.refresh();
+            if !guard.accepts(request) {
+                if command == "create_sync_invitation" && result.is_ok() {
+                    let _ = api::sync_action("cancel_sync_invitation", json!({})).await;
+                }
+                return;
+            }
+            match result {
                 Ok(text) => {
                     if let Some(text) = text {
                         invitation.set(text);
@@ -76,20 +117,17 @@ pub(crate) fn Devices() -> impl IntoView {
                         invitation.set(String::new());
                         mode.set(Mode::Overview);
                     }
-                    poll();
                     feeds::refresh_from_sync(feeds).await;
                 }
                 Err(problem) => error.set(Some(problem.message().into())),
             }
-            busy.set(false);
+            busy.try_set(false);
         });
     };
 
     view! {
-        <button class="devices-link" type="button" on:click=move |_| {mode.set(Mode::Overview); open.set(true); poll();}><Icon name=IconName::Devices/><span>"Devices"</span></button>
-        <Show when=move || open.get()>
-            <Modal label="Your desktops" class="feed-dialog devices-dialog" on_cancel=UnsyncCallback::new(dismiss)>
-                <div class="dialog-heading"><h2>"Your desktops"</h2><button type="button" aria-label="Close devices" on:click=move |_| dismiss(())>"Close"</button></div>
+        <section class="devices-panel">
+                <h3>"Your desktops"</h3>
                 <p>"Keep your reading library on your own desktops. Changes wait locally while a desktop is offline."</p>
                 {move || error.get().or_else(|| snapshot.get().error).map(|text| view! {<p class="feed-error" role="alert">{text}</p>})}
                 <Show when=move || mode.get() == Mode::Overview>
@@ -148,7 +186,7 @@ pub(crate) fn Devices() -> impl IntoView {
                             </label>
                         </Show>
                         <Show when=move || mode.get() == Mode::Invite && !invitation.get().is_empty()>
-                            <p>"Valid for five minutes and one desktop. Keep this window open while pairing."</p>
+                            <p>"Valid for five minutes and one desktop. Keep Settings open while pairing."</p>
                         </Show>
                         <div class="dialog-actions">
                             <button type="button" disabled=move || busy.get() on:click=move |_| { mode.set(Mode::Overview); invitation.set(String::new()); passphrase.set(String::new()); error.set(None); leptos::task::spawn_local(async move { let _ = api::sync_action("cancel_sync_invitation", json!({})).await; }); }>"Back"</button>
@@ -158,7 +196,6 @@ pub(crate) fn Devices() -> impl IntoView {
                         </div>
                     </form>
                 </Show>
-            </Modal>
-        </Show>
+        </section>
     }
 }

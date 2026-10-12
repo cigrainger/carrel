@@ -24,12 +24,17 @@ pub fn KeymapHelp() -> impl IntoView {
                             "Close"
                         </button>
                     </header>
-                    {move || {
-                        context.available_layers().into_iter().map(layer_view).collect_view()
-                    }}
+                    <KeyboardReference/>
                 </Modal>
         </Show>
     }
+}
+
+/// The effective bindings, shared by help and the Settings keyboard section.
+#[component]
+pub(crate) fn KeyboardReference() -> impl IntoView {
+    let context = use_keymap_context();
+    view! { {move || context.available_layers().into_iter().map(layer_view).collect_view()} }
 }
 
 fn layer_view(layer: Layer) -> impl IntoView {

@@ -42,6 +42,7 @@ pub(crate) struct SyncSnapshot {
     pub enabled: bool,
     pub active: bool,
     pub can_invite: bool,
+    #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
     pub revision: u64,
     pub error: Option<String>,
     pub devices: Vec<SyncDevice>,
@@ -65,6 +66,7 @@ pub(crate) async fn sync_status() -> Result<SyncSnapshot, ApiError> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+#[allow(dead_code)]
 pub(crate) async fn sync_status() -> Result<SyncSnapshot, ApiError> {
     Ok(SyncSnapshot::default())
 }

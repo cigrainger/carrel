@@ -131,16 +131,8 @@ pub fn GlobalKeymapActions() -> impl IntoView {
     });
     let preferences = crate::preferences::use_preferences();
     use_action_handler("open-settings", move || {
-        preferences.appearance_open.set(true);
-        #[cfg(target_arch = "wasm32")]
-        if let Some(document) = web_sys::window().and_then(|window| window.document()) {
-            use wasm_bindgen::JsCast;
-            if let Ok(Some(trigger)) = document.query_selector(".appearance-menu summary")
-                && let Ok(trigger) = trigger.dyn_into::<web_sys::HtmlElement>()
-            {
-                let _ = trigger.focus();
-            }
-        }
+        preferences.appearance_open.set(false);
+        preferences.settings_open.set(true);
     });
     let feeds = crate::feeds::use_feed_controller();
     use_action_handler("add-source", move || feeds.add_open.set(true));

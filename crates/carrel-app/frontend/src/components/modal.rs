@@ -14,38 +14,51 @@ pub(crate) fn Modal(
     #[cfg(target_arch = "wasm32")]
     {
         Effect::new(move |_| {
-            if let Some(dialog) = dialog.get() {
-                let _ = dialog.show_modal();
-            }
-        });
-        on_cleanup(move || {
-            if let Some(dialog) = dialog.try_get_untracked().flatten() {
+            let Some(dialog) = dialog.get() else {
+                return;
+            };
+            let _ = dialog.show_modal();
+            // Retain the element itself: its NodeRef may already be disposed
+            // when cleanup runs, but the native modal must leave the top layer.
+            let dialog = leptos::reactive::send_wrapper_ext::SendOption::new_local(Some(dialog));
+            on_cleanup(move || {
+                let Some(dialog) = dialog.take() else {
+                    return;
+                };
                 dialog.close();
-            }
-            // A successful retry can remove the warning control that opened
-            // this dialog. Keep keyboard access in the surviving reading view.
-            if let Some(document) = web_sys::window().and_then(|window| window.document())
-                && document
-                    .active_element()
-                    .is_none_or(|element| element.tag_name() == "BODY")
-            {
-                use wasm_bindgen::JsCast;
-                for selector in [
-                    ".is-selected .item-open",
-                    ".is-selected .highlight-open",
-                    ".reader-actions button",
-                    ".field-destinations a.is-active",
-                ] {
-                    if let Ok(Some(element)) = document.query_selector(selector)
-                        && let Ok(element) = element.dyn_into::<web_sys::HtmlElement>()
-                    {
-                        let options = web_sys::FocusOptions::new();
-                        options.set_prevent_scroll(true);
-                        let _ = element.focus_with_options(&options);
-                        break;
-                    }
-                }
-            }
+                // A retry or removal can dispose the initiating control. Resume
+                // a surviving parent dialog before returning to the reading view.
+                // Wait for the same update to remove that control from the DOM.
+                set_timeout(
+                    move || {
+                        if let Some(document) =
+                            web_sys::window().and_then(|window| window.document())
+                            && document
+                                .active_element()
+                                .is_none_or(|element| element.tag_name() == "BODY")
+                        {
+                            use wasm_bindgen::JsCast;
+                            for selector in [
+                                "dialog[open] button",
+                                ".is-selected .item-open",
+                                ".is-selected .highlight-open",
+                                ".reader-actions button",
+                                ".field-destinations a.is-active",
+                            ] {
+                                if let Ok(Some(element)) = document.query_selector(selector)
+                                    && let Ok(element) = element.dyn_into::<web_sys::HtmlElement>()
+                                {
+                                    let options = web_sys::FocusOptions::new();
+                                    options.set_prevent_scroll(true);
+                                    let _ = element.focus_with_options(&options);
+                                    break;
+                                }
+                            }
+                        }
+                    },
+                    std::time::Duration::ZERO,
+                );
+            });
         });
     }
     view! {

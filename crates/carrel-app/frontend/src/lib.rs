@@ -40,6 +40,8 @@ pub fn App() -> impl IntoView {
     navigation::provide_list_navigation_context();
     let reading_sidebar = navigation::use_reading_sidebar();
     feeds::provide_feed_controller();
+    components::devices::provide_device_status();
+    components::provide_context_bar();
     status::provide_status_controller();
     item_actions::provide_item_actions();
     annotation_actions::provide_annotation_actions();
@@ -53,6 +55,7 @@ pub fn App() -> impl IntoView {
                 <GlobalKeymapActions/>
                 <components::save_article::ArticleCapture/>
                 <components::FeedActivity/>
+                <components::settings::Settings/>
                 <div class="app-shell" class:reader-sidebar-open=move || reading_sidebar.0.get() data-theme=move || theme.current().get().as_str()>
                     <components::FieldNavigation/>
                     <Sidebar/>

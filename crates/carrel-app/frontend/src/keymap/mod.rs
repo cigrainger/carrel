@@ -6,6 +6,7 @@ mod event;
 mod help;
 mod palette;
 mod provider;
+pub(crate) use help::KeyboardReference;
 
 pub use provider::{
     GlobalKeymapActions, KeymapProvider, use_action_handler, use_keymap_layer, use_keymap_warnings,

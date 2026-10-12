@@ -116,7 +116,7 @@ ticket does not grant private access. This endpoint has no social protocols.
 The native pairing flow uses a separately bounded invitation protocol;
 receiving a certificate never chooses a local master identity.
 
-The Devices dialog explicitly creates or resumes a passphrase-protected master,
+Settings' Devices section explicitly creates or resumes a passphrase-protected master,
 or accepts a one-time copy/paste invitation. Invitations last five minutes and
 are cancelled when dismissed. Pairing endpoints are temporary and expose only
 the pairing ALPN. The recipient proves possession of its existing operational
@@ -393,12 +393,17 @@ is one session signal; toggling it changes the shell grid without replacing the
 article. A text-range or row anchor retains the visible passage through the
 resulting reflow. These are presentation caches; Cozo remains authoritative.
 
-Field's compact toolbar and left navigation sidebar remain mounted across list
+Field's context bar and left navigation sidebar remain mounted across list
 and article routes. The sidebar starts visible; one session signal controls
 visibility in both views without replacing the content. Its active destination
 follows the list that opened the reader, using constant-size labels. Sources
-scroll independently below the four destinations, with utility controls at the
-bottom. Below 720px the same sidebar overlays the left edge and closes when a
+scroll independently below the four destinations, with one Settings control at
+the bottom. Route-owned reader controls mount into the shared context bar and
+clean up with the route; article state remains in the reading view. Settings is
+a native webview dialog over the mounted reading/list view, with shared controls
+for reading preferences, subscriptions, devices and effective keyboard bindings.
+Device status observation belongs to app state and continues while Settings is
+closed. Below 720px the same sidebar overlays the left edge and closes when a
 destination or source is chosen.
 Calendar DTOs are derived from publication metadata, with explicitly labelled
 arrival dates for undated posts; the webview only renders and groups them.

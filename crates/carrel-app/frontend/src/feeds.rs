@@ -17,9 +17,11 @@ pub(crate) struct FeedController {
     error: RwSignal<Option<String>>,
     pub(crate) add_open: RwSignal<bool>,
     pub(crate) activity_open: RwSignal<bool>,
+    pub(crate) remove_target: RwSignal<Option<FeedSummary>>,
     pub(crate) manual_fetch_busy: RwSignal<bool>,
     pub(crate) file_busy: RwSignal<bool>,
     pub(crate) search_status: RwSignal<crate::api::SearchStatus>,
+    #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
     pub(crate) sync_revision: RwSignal<u64>,
     #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
     writes: StoredValue<crate::writes::PendingWrites>,
@@ -60,6 +62,7 @@ pub(crate) fn provide_feed_controller() -> FeedController {
         error: RwSignal::new(None),
         add_open: RwSignal::new(false),
         activity_open: RwSignal::new(false),
+        remove_target: RwSignal::new(None),
         manual_fetch_busy: RwSignal::new(false),
         file_busy: RwSignal::new(false),
         search_status: RwSignal::new(crate::api::SearchStatus::default()),

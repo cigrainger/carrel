@@ -6,9 +6,42 @@ use leptos::html;
 use leptos::prelude::*;
 use leptos_router::hooks::use_location;
 
-use crate::api::{self, FeedCandidate, FeedSummary};
+use crate::api::{self, FeedCandidate};
 use crate::components::{Icon, IconName, Modal};
 use crate::feeds::{self, use_feed_controller};
+
+#[derive(Clone, Copy)]
+pub(crate) struct ContextBarTarget(NodeRef<html::Div>);
+
+pub(crate) fn provide_context_bar() {
+    provide_context(ContextBarTarget(NodeRef::new()));
+}
+
+/// Controls retain route ownership while rendering into the shared window bar.
+#[component]
+pub(crate) fn ContextControls(children: ChildrenFn) -> impl IntoView {
+    #[cfg(target_arch = "wasm32")]
+    {
+        use leptos::portal::Portal;
+        use wasm_bindgen::JsCast;
+        let target = expect_context::<ContextBarTarget>().0;
+        let children = StoredValue::new(children);
+        view! {
+            <Show when=move || target.get().is_some()>
+                {move || {
+                    target.get().map(|element| {
+                        let children = children.get_value();
+                        let element: web_sys::Element = element.unchecked_into();
+                        view! { <Portal mount=element>{children()}</Portal> }
+                    })
+                }}
+            </Show>
+        }
+        .into_any()
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    children()
+}
 
 /// Compact window toolbar shared by lists and the reader.
 #[component]
@@ -18,11 +51,38 @@ pub(crate) fn FieldNavigation() -> impl IntoView {
     let fetch_busy = RwSignal::new(false);
     let capture = crate::components::save_article::use_capture_dialog();
     let save_button = NodeRef::<leptos::html::Button>::new();
+    let target = expect_context::<ContextBarTarget>().0;
+    let location = use_location();
+    let reading = Memo::new(move |_| location.pathname.get().starts_with("/item/"));
+    let title = Memo::new(move |_| {
+        let path = location.pathname.get();
+        match path.as_str() {
+            "/" | "/today" => "Today".into(),
+            "/reading" => "Reading".into(),
+            "/library" => "Library".into(),
+            "/unread" => "Library · Unread".into(),
+            "/starred" => "Library · Starred".into(),
+            "/highlights" => "Highlights".into(),
+            _ => controller.feeds().with(|feeds| {
+                feeds
+                    .iter()
+                    .find(|feed| feeds::feed_href(&feed.url) == path)
+                    .map(|feed| feed.display_name.clone())
+                    .unwrap_or_default()
+            }),
+        }
+    });
     view! {
         <header class="field-navigation" data-tauri-drag-region="deep">
-            <div class="field-brand"><span class="field-mark" aria-hidden="true"></span><span>"carrel"</span></div>
-            <div class="field-tools">
+            <div class="context-leading field-tools">
                 <button type="button" class:active=move || sources.0.get() aria-label="Show or hide sidebar" title="Show or hide sidebar (⌘B)" aria-controls="reading-sidebar" aria-expanded=move || sources.0.get().to_string() on:click=move |_| sources.toggle()>{move || view! { <Icon name=if sources.0.get() { IconName::SidebarClose } else { IconName::SidebarOpen }/> }}</button>
+            </div>
+            <div class="context-content">
+                <Show when=move || !reading.get()><span class="context-title">{move || title.get()}</span></Show>
+                <div class="context-controls" node_ref=target></div>
+            </div>
+            <div class="context-tools field-tools">
+                <Show when=move || !reading.get()>
                 <button type="button" aria-label="Refresh feeds" title="Refresh feeds (⌘R)" disabled=move || fetch_busy.get() || controller.manual_fetch_busy.get() || controller.status().get().is_fetching on:click=move |_| {
                     fetch_busy.set(true);
                     spawn_feed_task(async move {
@@ -31,8 +91,47 @@ pub(crate) fn FieldNavigation() -> impl IntoView {
                     });
                 }><Icon name=IconName::Refresh/></button>
                 <button node_ref=save_button type="button" aria-label="Save article" title="Save article (⌘N)" on:click=move |_| capture.open_from(save_button)><Icon name=IconName::Add/></button>
+                </Show>
+                <Show when=move || reading.get()><crate::components::AppearanceMenu/></Show>
+                <ContextMenu/>
             </div>
         </header>
+    }
+}
+
+#[component]
+fn ContextMenu() -> impl IntoView {
+    let menu = NodeRef::<html::Details>::new();
+    let trigger = NodeRef::<html::Summary>::new();
+    let open = RwSignal::new(false);
+    let preferences = crate::preferences::use_preferences();
+    let feeds = use_feed_controller();
+    let capture = crate::components::save_article::use_capture_dialog();
+    let close = UnsyncCallback::new(move |restore: bool| {
+        if let Some(menu) = menu.get_untracked() {
+            let _ = menu.remove_attribute("open");
+        }
+        open.set(false);
+        if restore && let Some(trigger) = trigger.get_untracked() {
+            let _ = trigger.focus();
+        }
+    });
+    view! {
+        <details class="context-menu" node_ref=menu on:toggle=move |_| open.set(menu.get_untracked().is_some_and(|menu| menu.has_attribute("open")))>
+            <summary node_ref=trigger aria-label="App commands" title="App commands" aria-expanded=move || open.get().to_string()><Icon name=IconName::More/></summary>
+            <Show when=move || open.get()><super::status_strip::PopoverDismissal name="app-menu" menu=menu on_close=close/></Show>
+            <div class="context-menu-panel">
+                <button type="button" on:click=move |_| { close.run(true); capture.0.set(true); }>"Save article"<kbd>"⌘N"</kbd></button>
+                <button type="button" on:click=move |_| { close.run(true); feeds.add_open.set(true); }>"Add source"<kbd>"⇧⌘N"</kbd></button>
+                <button type="button" disabled=move || feeds.manual_fetch_busy.get() || feeds.status().get().is_fetching on:click=move |_| {
+                    close.run(true); spawn_feed_task(async move { if let Err(message) = feeds::fetch_all(feeds).await { feeds.error().try_set(Some(message)); } });
+                }>"Refresh feeds"<kbd>"⌘R"</kbd></button>
+                <hr/>
+                <button type="button" on:click=move |_| { close.run(true); crate::keymap::open_palette(); }><span><Icon name=IconName::Search/>"Commands"</span><kbd>"⌘K"</kbd></button>
+                <button type="button" on:click=move |_| { close.run(true); crate::keymap::open_help(); }>"Keyboard reference"<kbd>"?"</kbd></button>
+                <button type="button" on:click=move |_| { close.run(true); preferences.settings_open.set(true); }>"Settings"<kbd>"⌘,"</kbd></button>
+            </div>
+        </details>
     }
 }
 
@@ -94,14 +193,14 @@ pub fn Sidebar() -> impl IntoView {
     let feeds = feed_controller.feeds();
     let controller_error = feed_controller.error();
     let add_open = feed_controller.add_open;
-    let remove_target = RwSignal::new(None::<FeedSummary>);
+    let remove_target = feed_controller.remove_target;
     let remove_busy = RwSignal::new(false);
-    let activity_button = NodeRef::<html::Button>::new();
-    let commands_button = NodeRef::<html::Button>::new();
-    let help_button = NodeRef::<html::Button>::new();
+    let settings_button = NodeRef::<html::Button>::new();
+    let preferences = crate::preferences::use_preferences();
 
     view! {
         <aside class="sidebar" id="reading-sidebar" aria-label="Navigation and sources">
+            <div class="field-brand"><span class="field-mark" aria-hidden="true"></span><span>"carrel"</span></div>
             <PrimaryNavigation/>
             <div class="sidebar-section">
                 <div class="sidebar-section-header">
@@ -155,20 +254,10 @@ pub fn Sidebar() -> impl IntoView {
                 </Show>
             </div>
             <div class="sidebar-utilities">
-                <button class="utility-action" node_ref=activity_button type="button" on:click=move |_| {
-                    if let Some(button) = activity_button.get_untracked() { let _ = button.focus(); }
-                    feed_controller.activity_open.set(true);
-                }><Icon name=IconName::Info/><span>"Source activity"</span></button>
-                <crate::components::devices::Devices/>
-                <SubscriptionFiles compact=true/>
-                <button class="utility-action" node_ref=commands_button type="button" title="Commands (⌘K)" on:click=move |_| {
-                    if let Some(button) = commands_button.get_untracked() { let _ = button.focus(); }
-                    crate::keymap::open_palette();
-                }><Icon name=IconName::Search/><span>"Commands"</span></button>
-                <button class="utility-action" node_ref=help_button type="button" title="Keyboard reference (?)" on:click=move |_| {
-                    if let Some(button) = help_button.get_untracked() { let _ = button.focus(); }
-                    crate::keymap::open_help();
-                }><Icon name=IconName::Keyboard/><span>"Keyboard reference"</span></button>
+                <button node_ref=settings_button type="button" title="Settings (⌘,)" on:click=move |_| {
+                    if let Some(button) = settings_button.get_untracked() { let _ = button.focus(); }
+                    preferences.settings_open.set(true);
+                }><Icon name=IconName::Settings/><span>"Settings"</span></button>
             </div>
         </aside>
             <Show when=move || add_open.get()>

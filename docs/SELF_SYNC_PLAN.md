@@ -196,13 +196,32 @@ flow are implemented and verified. Physical two-machine networking and a manual
 pass over the new Devices dialog remain useful release checks; the in-process
 and native backend tests do not claim to verify those environments.
 
-To try it, run `just dev` and open **Devices** in the sidebar. Choose **Set up
+To try it, run `just dev` and open **Settings → Devices**. Choose **Set up
 sync**, enter a desktop name and confirm a recovery passphrase. Then choose
 **Pair another desktop**, unlock the recovery key and copy the invitation.
-On the other installation, open **Devices → Use an invitation**, paste it and
-name that desktop. Keep the invitation window open until pairing finishes.
+On the other installation, open **Settings → Devices → Use an invitation**,
+paste it and name that desktop. Keep Settings open until pairing finishes.
 Ordinary reading and subsequent sync do not require the passphrase. The desktop
 holding the encrypted master can remove another desktop from this same dialog.
+
+## Reader refinement — 12 October 2026
+
+Lists and articles now share one 56px desktop context bar. Settings keeps the
+current view mounted and groups Reading, Sources, Devices and Keyboard; Aa
+offers quick theme and typography controls. Device observation continues while
+Settings is closed. Pairing drafts survive section changes and unused late
+invitations are cancelled after closure. Nested source dialogs restore focus
+inside Settings even when removal also disposes their initiating button.
+
+All 375 workspace tests and native lint pass. Final formatting, CSR lint and
+Trunk CSR builds pass. Temporary WebKit review of the actual WASM frontend with
+mocked native commands verifies reader callbacks, passage and loaded-page
+preservation, preference sharing, modal/palette draft guards, source actions,
+device observation and late-response cleanup. Light/Dark screenshots were
+reviewed at 860×560 with the sidebar shown and hidden, including Settings and Aa;
+all four themes passed desktop/tiny viewport round trips with a single desktop
+bar. This is browser evidence, not live native GUI or physical two-machine QA.
+Native window interaction and file-picker selection remain manual release checks.
 
 ## Decisions already made
 

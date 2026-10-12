@@ -68,11 +68,16 @@ introduce no unread counts or rankings.
 ### Layout and type
 
 The primary navigation and Sources share one left sidebar. Today, Reading,
-Library and Highlights sit above the source index; quieter utilities sit at the
-bottom. Destination labels use equal-size 16px system type, with a narrow accent
+Library and Highlights sit above the source index; Settings sits at the bottom.
+Destination labels use equal-size 16px system type, with a narrow accent
 rule and background for selection. Selection never changes font size or weight.
-A 56px forest window toolbar carries the Ribbon mark, sidebar toggle, refresh
-and Save article. Cmd+B toggles the same sidebar in lists and the reader.
+A single 56px forest context bar spans the window. Its leading sidebar toggle
+stays in place; the remaining controls follow the current task. Lists show the
+destination or source, refresh and Save article. The reader shows return,
+previous/next, read/star, item info and Open original in this same bar, with Aa
+for quick reading adjustments. App commands live in a quiet overflow menu.
+The Ribbon wordmark belongs at the top of the sidebar. Cmd+B toggles the same
+sidebar in lists and the reader.
 
 Lists occupy the available content width. A chronological gutter shows a prominent
 56px day at each new date and a quieter date on subsequent rows from that day.
@@ -80,7 +85,7 @@ The backend supplies calendar labels, explicitly distinguishing publication
 from saved dates when the publisher provides none. Article titles use a 29px
 grotesk; metadata precedes them, excerpts follow, and read/star icons sit at the
 right. Long titles wrap. Source Serif 4 remains the default reader face.
-Controls remain square. Appearance offers Editorial and Dense list density.
+Controls remain square. Reading settings offers Editorial and Dense list density.
 Dense keeps the same rows, dates, read/star controls and keyboard selection,
 with a smaller date gutter, 18px headings and no excerpt. Titles still wrap.
 Switching density preserves the visible row and selection rather than remounting
@@ -103,7 +108,8 @@ tokens: `--font-display`, `--text-list-title`, `--text-nav-label`,
 `--color-nav-bg`, `--color-nav-text`, and `--color-source-bg`.
 
 Navigation uses Lucide icons with labels and a left rule for the active
-destination. Sources, Devices, and OPML actions belong to the left sidebar.
+destination. Sources stay in the left sidebar; subscription management, Devices
+and OPML actions belong to Settings.
 Icons use the maintained `lucide-leptos` integration, with only the required
 categories enabled, 16–18px sizes and a 1.5px stroke. Icons inside named controls
 are decorative. Read, star and compact reader controls are icon-only native
@@ -120,7 +126,7 @@ The application mark uses three printed lines turning into a C, with a small
 coral cut at the end of the outer line. Forest and mint connect it to Field;
 the repeated curves draw on the striped poster references. Ribbon is the
 selected direction in `docs/prototypes/carrel-icon-directions.html`; Shelter
-and Counterform remain comparisons. A monochrome version appears in the header.
+and Counterform remain comparisons. A monochrome version appears in the sidebar.
 Its editable source is
 `crates/carrel-app/icons/app-icon.svg`; native PNG, ICNS and ICO assets are
 derived with `cargo tauri icon`. The app tile follows native rounded icon
@@ -140,7 +146,7 @@ We ship three serif options for body text and let the user pick one. The default
 
 The user picks one of these. We do not offer a free font picker; that's a rabbit hole, and the three choices already cover the distinct aesthetic preferences a serious reader is likely to have.
 
-Appearance exposes these four reading fonts together with text size (14–26px),
+Reading settings and Aa expose these four reading fonts with text size (14–26px),
 line width (52–82ch) and line spacing (1.45–1.85). Changes preview directly in the
 current article and retain the visible passage. Reset reading restores the
 default typography without changing theme or density. Preferences are local to
@@ -365,28 +371,33 @@ For night reading on OLED screens. Pure black saves power and reduces light blee
 
 ### Theme switching
 
-The current implementation stores the theme in webview local storage and applies `data-theme` to the application shell. The Appearance control in the status strip opens the theme choices. Moving preferences into `:self` Cozo state is future work. Theme switches are instant; only the colors change. Native window and dialog appearance follows the selected reading theme: Light and Sepia use light native controls, Dark and Black use dark controls. The native window backing color matches the navigation field so exposed window edges remain coherent.
+The current implementation stores the theme in webview local storage and applies
+`data-theme` to the document and application shell. Settings → Reading and the
+reader's Aa control share the theme choices. Moving preferences into `:self`
+Cozo state is future work. Theme switches are instant; only the colors change.
+Native window and dialog appearance follows the selected reading theme: Light
+and Sepia use light native controls, Dark and Black use dark controls. The native
+window backing color matches the navigation field so exposed window edges remain coherent.
 
-Appearance opens upward from a fixed status-strip control. Its upward chevron
-keeps the same position and direction in both states; a quiet background marks
-the open state. Theme choices use 30px system-font controls and identify the
-selected theme. Choosing a theme closes the panel and restores trigger focus.
-Escape closes it before any underlying reader action; clicking outside or
-tabbing away also dismisses it without taking focus from the next control.
-The same panel includes Reading and Article lists below Theme. Font and range
-changes stay open for direct comparison; selecting a theme closes the panel.
-Cmd+, opens Appearance and focuses its trigger. Theme and reading settings are
-independent. Layout changes retain a visible text character or article row at
-its viewport position, including delayed loading of a bundled font.
+Aa opens downward from the context bar into a bounded, scrollable popover. A
+quiet background marks the open state. Theme choices use 30px system-font
+controls and identify the selected theme. Theme, font and range changes leave
+the popover open for direct comparison. Escape closes it before any underlying
+reader action and restores trigger focus; clicking outside or tabbing away
+dismisses it without taking focus from the next control. Aa includes typography;
+list density belongs to Settings → Reading. Cmd+, closes Aa and opens Settings.
+Theme and reading settings are independent. Layout changes retain a visible text
+character or article row at its viewport position, including delayed loading of a bundled font.
 The bundled faces include real italic files for quoted and emphasized prose.
 
-We do not auto-switch based on system theme by default. Some users want their reading app to be different from their system. The user can opt in to system-following in settings.
+We do not auto-switch based on system theme. Some users want their reading app
+to be different from their system. System-following remains future work.
 
 ## Layout
 
 ### Application chrome
 
-The desktop layout has one compact toolbar, a left sidebar, main content area,
+The desktop layout has one compact context bar, a left sidebar, main content area,
 and status strip. The sidebar starts visible and retains the user's visibility
 choice across lists and articles. Sources scroll independently, keeping primary
 navigation and utility controls reachable with a large subscription collection.
@@ -394,18 +405,28 @@ Below the supported desktop minimum, the sidebar overlays the left edge rather
 than becoming a horizontal source strip; choosing a destination or source closes
 that narrow overlay.
 
-Source utilities share one quiet icon-and-label button style: 14px system type,
-30px minimum height, 8px icon gap, square corners and a transparent background.
-Hover and keyboard focus use the same treatments as the reader controls.
-Source activity, Devices, subscription files, Commands and Keyboard reference
-must not fall back to browser button chrome or different text scales.
-Import and Export share a compact row; their accessible labels and tooltips
-retain the OPML format name.
+The sidebar ends with one Settings control. Settings opens a dedicated dialog
+(Cmd+,), with Reading, Sources, Devices and Keyboard sections. Reading holds
+theme, typography and list density; Sources holds subscriptions, OPML and source
+recovery; Devices holds desktop pairing; Keyboard shows the effective keymap.
+Closing Settings returns to the same article or list, with its focus and visible
+passage retained. Sections have equal-size labels and preserve drafts while the
+dialog stays open. Closing it clears device passphrases and cancels an unused
+pairing invitation.
+
+Aa opens a small quick-reading popover in the context bar for theme and
+typography. It shares the same preferences and controls as Settings. The status
+strip contains operation messages and contextual recovery, with no preferences.
+Commands and Keyboard reference remain reachable through the context menu and
+their existing keyboard shortcuts. Aa and the app menu dismiss on Escape,
+outside pointer actions or focus moving outside, preserving the next control's
+focus. These controls share 14px system type,
+30–34px square hit areas, a quiet hover fill and a visible keyboard focus ring.
 
 On macOS, Field extends into the native titlebar. Native traffic lights and
 window decorations remain in place; the separate title text is hidden. The
-toolbar is 56px high in lists and the reader. Its brand reserves a 104px leading
-inset for the traffic lights. Blank header space can drag the window
+context bar is 56px high in lists and the reader. Its leading toggle reserves a
+104px inset for the traffic lights. Blank header space can drag the window
 and supports double-click zoom through Tauri. Navigation links and
 toolbar buttons remain ordinary clickable controls. The toolbar uses quiet
 borderless square buttons, with a hover or pressed fill. Chrome dims gently
@@ -415,24 +436,25 @@ grotesk and article prose retains the chosen reading face.
 
 ```
 ┌───────────────────────────────────────────────────┐
-│         carrel                         ◧  ↻  +   │
+│        ◧   current context / reader controls  ··· │
 ├───────────────────────────────────────────────────┤
-│ Today       │ date   source · length     actions │
+│ carrel      │ date   source · length     actions │
+│ Today       │                                    │
 │ Reading     │        article heading             │
 │ Library     │        excerpt                     │
 │ Highlights  │                                    │
 │ Sources     │                                    │
 │ …           │                                    │
-│ utilities   │                                    │
+│ Settings    │                                    │
 ├───────────────────────────────────────────────────┤
-│ status                                 Appearance │
+│ status / contextual recovery                      │
 └───────────────────────────────────────────────────┘
 ```
 
 The sidebar has four primary destinations: Today, Reading, Library, and
 Highlights. All, Unread, and Starred are filters inside Library, with their
 existing routes retained. Friends and Lists appear when their first useful flows
-work. Subscriptions and utilities live in Sources. There are no counts or
+work. Source settings holds subscription management. There are no counts or
 badges. Today means posts published in the past 24 hours, with first arrival as
 the fallback for undated posts. Its subtitle states the publication window
 explicitly. Older posts remain in Library and individual feed views.
@@ -501,7 +523,7 @@ The reading view is the application's most important screen and the one that sho
 
 The header is small and quiet: title, byline, source/length/date in muted secondary text. No related-articles strip, no engagement bar, no recommended-for-you. Just the article.
 
-The reader has a slim persistent action rail above the scrolling article area.
+The reader uses the window's single context bar above the scrolling article area.
 It exposes a named return destination, plain Previous/Next navigation,
 star/unstar, mark read/unread, open original, and item info. Source visibility
 is controlled from the window toolbar or Cmd+B. Previous
@@ -516,7 +538,7 @@ The item-info surface is user-initiated and appears in the article scroll area b
 The article ends with one ruled footer aligned to its reading measure: Open
 original on the left and Mark read & next on the right (Mark read & return for
 the final item). Both use the same 30px square, icon-and-label system-font
-controls as the reader rail, with a quiet hover background and a visible
+controls as the context bar, with a quiet hover background and a visible
 keyboard focus ring. There is no separate completion prompt or filled call to
 action. Scrolling to this footer does not mark the article read. Saved summaries
 retain their explicit cache notice above the body. Send-to-ereader waits until
@@ -659,13 +681,14 @@ The note is the primary content; the item is the supporting context. This is the
 
 ## Keyboard
 
-The sidebar's quiet **Devices** control opens desktop sync management. Local
-reading requires no setup. The initial dialog offers **Set up sync** and **Use
+**Settings → Devices** opens desktop sync management. Local
+reading requires no setup. The initial section offers **Set up sync** and **Use
 an invitation**, with a desktop name and either a confirmed recovery passphrase
 or pasted invitation. The desktop holding the encrypted master can create an
 invitation or remove another desktop after unlocking it. Invitation text stays
 selectable for ordinary copy/paste, expires after five minutes and is cancelled
-when the dialog closes. Pairing and network work may show a disabled action;
+when Settings closes. Section changes retain pairing drafts. Pairing and network
+work may show a disabled action;
 local reading mutations retain their immediate optimistic behavior.
 
 Incoming sync changes update lists, filters and annotations in place. An open
@@ -728,7 +751,7 @@ cmd-n         save an article URL
 cmd-shift-n   add a source
 cmd-r         refresh feeds
 cmd-shift-r   source activity and recovery
-cmd-,         appearance
+cmd-,         settings
 ```
 
 **Within reading view, additional:**
@@ -757,9 +780,9 @@ stack, respecting custom overrides and shadowing. Unimplemented actions remain
 known configuration names for compatibility but never consume keys or appear as
 available commands. Text inputs permit only explicitly allowed bindings; native
 dialog controls cannot dispatch reading actions behind them.
-Sources also offers named Commands and Keyboard reference controls, so neither
-surface depends on learning its shortcut first. Cmd+B toggles Sources from lists
-as well as the reader. Cached footnote/section jumps move keyboard focus to the
+The context bar's app menu also offers named Commands and Keyboard reference
+controls, so neither surface depends on learning its shortcut first. Cmd+B toggles
+the sidebar from lists as well as the reader. Cached footnote/section jumps move keyboard focus to the
 destination so subsequent Tab navigation continues there.
 
 ### Customization
@@ -817,6 +840,9 @@ Modal-like elements (the share dialog, the tag input) trap focus and restore it 
 Feed and note dialogs use the native modal dialog behavior: background content
 is inert, Escape cancels, and closing restores the initiating control. Feed
 titles update in place when fetching discovers the publisher's name.
+Nested source dialogs return focus to Settings. If removing a source also removes
+the initiating button, a surviving Settings control receives focus so Escape
+and keyboard navigation continue within the dialog.
 
 Screen-reader users can drive the entire app. Every interactive element has appropriate ARIA. We do not use `<div>` for buttons; we use `<button>`. We do not implement custom dropdowns where `<select>` works.
 
@@ -879,9 +905,9 @@ Its first fetch runs independently; a fetch failure does not undo or disguise a
 successful subscription. Removing a feed makes clear that saved items remain in
 Carrel; removal only stops future fetches.
 
-Subscription import and export use native file dialogs, reachable from the
-sidebar and the empty library. OPML import adds new subscriptions atomically
-and preserves existing settings when a URL appears again. Nested folders are
+Subscription import and export use native file dialogs, reachable from
+Settings → Sources and the empty Library. OPML import adds new subscriptions
+atomically and preserves existing settings when a URL appears again. Nested folders are
 retained as readable paths in the existing folder-label field and exported as
 named groups. Imported subscriptions become visible immediately; fetching runs
 separately. Export contains URLs, titles, and folders, with no personal reading
@@ -893,10 +919,12 @@ Async list/article/highlight results apply only to the request and item that
 started them. A failed optimistic action restores the affected state and reports
 the failure quietly, preserving the working list or article.
 
-Feed fetch progress and non-fatal errors surface in the status strip. The band
-exposes an explicit refresh icon; it never animates or prompts for attention.
-Source failures offer a quiet Details action opening Source activity, also
-available from Sources and the command palette. Each source has its last check,
+Feed fetch progress and non-fatal errors surface in the status strip. The context
+bar exposes refresh in lists and its app menu; it never animates or prompts for
+attention.
+Source failures offer a quiet Details action opening Source activity. The same
+recovery controls are in Settings → Sources, with Source activity also available
+through the command palette and Cmd+Shift+R. Each source has its last check,
 a plain explanation, deliberately opened technical details, and Refresh source
 or Retry source. Retrying leaves the current reader and list context intact.
 Problems remain until that source recovers or is removed; an unrelated fetch

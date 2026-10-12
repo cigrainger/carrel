@@ -3,7 +3,6 @@
 use carrel_core::keymap::{Action, Binding, Key, Layer, Sequence};
 use leptos::{html, prelude::*};
 
-use crate::components::{Icon, IconName};
 use crate::feeds::use_feed_controller;
 use crate::keymap::{use_action_handler, use_keymap_layer, use_keymap_warnings};
 use crate::status::use_status_controller;
@@ -12,34 +11,11 @@ use crate::theme::{Theme, use_theme_controller};
 /// Bottom status strip.
 #[component]
 pub fn StatusStrip() -> impl IntoView {
-    let theme = use_theme_controller();
     let keymap_warnings = use_keymap_warnings();
     let feed_status = use_feed_controller().status();
     let app_status = use_status_controller().message();
     let controller = use_feed_controller();
     let details_button = NodeRef::<html::Button>::new();
-    let menu = NodeRef::<html::Details>::new();
-    let trigger = NodeRef::<html::Summary>::new();
-    let expanded = crate::preferences::use_preferences().appearance_open;
-    Effect::new(move |_| {
-        let open = expanded.get();
-        if let Some(menu) = menu.get() {
-            if open {
-                let _ = menu.set_attribute("open", "");
-            } else {
-                let _ = menu.remove_attribute("open");
-            }
-        }
-    });
-    let close = UnsyncCallback::new(move |restore_focus: bool| {
-        if let Some(menu) = menu.get_untracked() {
-            let _ = menu.remove_attribute("open");
-        }
-        expanded.set(false);
-        if restore_focus && let Some(trigger) = trigger.get_untracked() {
-            let _ = trigger.focus();
-        }
-    });
 
     view! {
         <footer class="status-strip" aria-label="Status">
@@ -76,29 +52,47 @@ pub fn StatusStrip() -> impl IntoView {
                     controller.activity_open.set(true);
                 }>"Details"</button>
             </Show>
+
+        </footer>
+    }
+}
+
+/// Quick typography adjustments beside the page being read.
+#[component]
+pub(crate) fn AppearanceMenu() -> impl IntoView {
+    let menu = NodeRef::<html::Details>::new();
+    let trigger = NodeRef::<html::Summary>::new();
+    let expanded = crate::preferences::use_preferences().appearance_open;
+    Effect::new(move |_| {
+        let open = expanded.get();
+        if let Some(menu) = menu.get() {
+            if open {
+                let _ = menu.set_attribute("open", "");
+            } else {
+                let _ = menu.remove_attribute("open");
+            }
+        }
+    });
+    let close = UnsyncCallback::new(move |restore_focus: bool| {
+        if let Some(menu) = menu.get_untracked() {
+            let _ = menu.remove_attribute("open");
+        }
+        expanded.set(false);
+        if restore_focus && let Some(trigger) = trigger.get_untracked() {
+            let _ = trigger.focus();
+        }
+    });
+
+    on_cleanup(move || {
+        expanded.try_set(false);
+    });
+    view! {
             <details class="appearance-menu" node_ref=menu
                 on:toggle=move |_| {
                     expanded.set(menu.get_untracked().is_some_and(|menu| menu.has_attribute("open")));
                 }
-                on:focusout=move |event| {
-                    #[cfg(target_arch = "wasm32")]
-                    {
-                        use wasm_bindgen::JsCast;
-                        let next = event.related_target().and_then(|target| target.dyn_into::<web_sys::Node>().ok());
-                        // macOS WebKit can blur the summary without focusing a
-                        // clicked theme button. Only a known outside focus
-                        // target dismisses; pointer dismissal is handled below.
-                        if let Some(next) = next
-                            && !menu.get_untracked().is_some_and(|menu| menu.contains(Some(&next)))
-                        {
-                            close.run(false);
-                        }
-                    }
-                    #[cfg(not(target_arch = "wasm32"))]
-                    let _ = event;
-                }
             >
-            <summary node_ref=trigger aria-expanded=move || expanded.get().to_string() aria-controls="appearance-options"
+            <summary node_ref=trigger aria-label="Reading appearance" title="Reading appearance" aria-expanded=move || expanded.get().to_string() aria-controls="appearance-options"
                 on:click=move |event| {
                     // Register dismissal with the opening action, before the
                     // native details element's asynchronous toggle event.
@@ -111,55 +105,36 @@ pub fn StatusStrip() -> impl IntoView {
                     }
                 }
             >
-                <Icon name=IconName::Appearance/><span>"Appearance"</span>
+                <span class="appearance-letter" aria-hidden="true">"Aa"</span>
             </summary>
-            <Show when=move || expanded.get()><AppearanceDismissal menu=menu on_close=close/></Show>
-            <div id="appearance-options" class="appearance-panel">
-            <fieldset class="appearance-theme"><legend>"Theme"</legend>
-            <div class="theme-switcher" role="group" aria-label="Theme">
-                {Theme::ALL.into_iter().map(|option| {
-                    let current = theme.current();
-
-                    view! {
-                        <button
-                            type="button"
-                            aria-pressed=move || if current.get() == option { "true" } else { "false" }
-                            on:click=move |_| {
-                                theme.set(option);
-                                close.run(true);
-                            }
-                        >
-                            {option.label()}
-                        </button>
-                    }
-                }).collect_view()}
-            </div>
-            </fieldset>
-            <crate::preferences::ReadingControls/>
-            </div>
+            <Show when=move || expanded.get()><PopoverDismissal name="appearance" menu=menu on_close=close/></Show>
+            <Show when=move || expanded.get()><div id="appearance-options" class="appearance-panel">
+            <ThemeControls/>
+            <crate::preferences::ReadingControls density=false/>
+            </div></Show>
             </details>
-        </footer>
     }
 }
 
 #[component]
-fn AppearanceDismissal(
+pub(crate) fn PopoverDismissal(
+    name: &'static str,
     menu: NodeRef<html::Details>,
     on_close: UnsyncCallback<bool>,
 ) -> impl IntoView {
     use_keymap_layer(Layer::new(
-        "appearance",
-        "Appearance",
+        name,
+        name,
         vec![
             Binding::new(
                 Sequence::single(Key::escape()),
-                Action::named("close-appearance"),
-                "Close appearance",
+                Action::named(name),
+                "Close popover",
             )
             .allow_in_input(),
         ],
     ));
-    use_action_handler("close-appearance", move || on_close.run(true));
+    use_action_handler(name, move || on_close.run(true));
 
     #[cfg(target_arch = "wasm32")]
     if let Some(document) = web_sys::window().and_then(|window| window.document()) {
@@ -178,16 +153,71 @@ fn AppearanceDismissal(
         });
         let _ = document
             .add_event_listener_with_callback("pointerdown", listener.as_ref().unchecked_ref());
-        let listener = StoredValue::new_local((document, listener));
+        let focus_listener =
+            Closure::<dyn FnMut(web_sys::FocusEvent)>::new(move |event: web_sys::FocusEvent| {
+                let next = event
+                    .related_target()
+                    .and_then(|target| target.dyn_into::<web_sys::Node>().ok());
+                // macOS WebKit can blur a summary without focusing a clicked
+                // button. Only a known outside focus target dismisses the popover.
+                if let Some(next) = next
+                    && !menu
+                        .get_untracked()
+                        .is_some_and(|menu| menu.contains(Some(&next)))
+                {
+                    on_close.run(false);
+                }
+            });
+        let element = menu.get_untracked();
+        if let Some(element) = element.as_ref() {
+            let _ = element.add_event_listener_with_callback(
+                "focusout",
+                focus_listener.as_ref().unchecked_ref(),
+            );
+        }
+        let listener = StoredValue::new_local((document, listener, element, focus_listener));
         on_cleanup(move || {
-            listener.try_with_value(|(document, listener)| {
+            listener.try_with_value(|(document, listener, element, focus_listener)| {
                 let _ = document.remove_event_listener_with_callback(
                     "pointerdown",
                     listener.as_ref().unchecked_ref(),
                 );
+                if let Some(element) = element {
+                    let _ = element.remove_event_listener_with_callback(
+                        "focusout",
+                        focus_listener.as_ref().unchecked_ref(),
+                    );
+                }
             });
         });
     }
     #[cfg(not(target_arch = "wasm32"))]
     let _ = menu;
+}
+
+/// Theme choices shared by Settings and the reader popover.
+#[component]
+pub(crate) fn ThemeControls() -> impl IntoView {
+    let theme = use_theme_controller();
+    view! {
+            <fieldset class="appearance-theme"><legend>"Theme"</legend>
+            <div class="theme-switcher" role="group" aria-label="Theme">
+                {Theme::ALL.into_iter().map(|option| {
+                    let current = theme.current();
+
+                    view! {
+                        <button
+                            type="button"
+                            aria-pressed=move || if current.get() == option { "true" } else { "false" }
+                            on:click=move |_| {
+                                theme.set(option);
+                            }
+                        >
+                            {option.label()}
+                        </button>
+                    }
+                }).collect_view()}
+            </div>
+            </fieldset>
+    }
 }
