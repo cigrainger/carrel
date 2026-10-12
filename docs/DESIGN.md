@@ -425,8 +425,12 @@ focus. These controls share 14px system type,
 
 On macOS, Field extends into the native titlebar. Native traffic lights and
 window decorations remain in place; the separate title text is hidden. The
-context bar is 56px high in lists and the reader. Its leading toggle reserves a
-104px inset for the traffic lights. Blank header space can drag the window
+context bar is 56px high in lists and the reader. Its toggle sits at the trailing
+edge of the sidebar's column, with the same 16px inset as the sidebar controls.
+It stays at that position when the sidebar is hidden, keeping its relationship
+to the panel clear. The macOS traffic-light area remains reserved. Below 720px,
+the compact overlay layout keeps the toggle just after that reserve.
+Blank header space can drag the window
 and supports double-click zoom through Tauri. Navigation links and
 toolbar buttons remain ordinary clickable controls. The toolbar uses quiet
 borderless square buttons, with a hover or pressed fill. Chrome dims gently
