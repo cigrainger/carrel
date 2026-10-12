@@ -71,6 +71,7 @@ pub fn App() -> impl IntoView {
                             <Route path=path!("/highlights") view=routes::Highlights/>
                             <Route path=path!("/lists") view=routes::Lists/>
                             <Route path=path!("/feeds/:url") view=routes::FeedRoute/>
+                            <Route path=path!("/folders/:folder") view=routes::FolderRoute/>
                             <Route path=path!("/item/:id") view=routes::ReadingView/>
                         </Routes>
                     </main>

@@ -138,6 +138,31 @@ pub(crate) fn feed_href(url: &str) -> String {
     format!("/feeds/{}", percent_encode(url))
 }
 
+/// Route path for an exact source-folder label.
+pub(crate) fn folder_href(folder: &str) -> String {
+    format!("/folders/{}", percent_encode(folder))
+}
+
+/// Save a source folder and refresh both navigation and any active archive view.
+pub(crate) async fn set_folder(
+    controller: FeedController,
+    url: String,
+    folder: String,
+) -> Result<(), String> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let guard = controller.writes.get_value().begin();
+        let feed = api::set_feed_folder(url, Some(folder))
+            .await
+            .map_err(message)?;
+        publish_subscription(controller, feed);
+        drop(guard);
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    let _ = (controller, url, folder);
+    Ok(())
+}
+
 /// Decode a feed URL path segment.
 pub(crate) fn decode_feed_path(value: &str) -> Option<String> {
     percent_decode(value)

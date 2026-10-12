@@ -91,6 +91,9 @@ impl Store {
             ItemView::Feed { .. } => {
                 "*item_article{item_id: id, feed_url: $feed_url}, sort_at = to_int(discovered_at)"
             }
+            ItemView::Folder { .. } => {
+                "*item_article{item_id: id, feed_url}, *feed{url: feed_url, folder: $folder}, sort_at = to_int(discovered_at)"
+            }
         };
         let publication_rules = if filter.view == ItemView::Today {
             r#"
@@ -182,6 +185,13 @@ impl Store {
                     }),
                 ),
                 ("has_after".into(), DataValue::Bool(filter.after.is_some())),
+                (
+                    "folder".into(),
+                    DataValue::from(match &filter.view {
+                        ItemView::Folder { folder } => folder.as_str(),
+                        _ => "",
+                    }),
+                ),
                 (
                     "after_time".into(),
                     DataValue::from(

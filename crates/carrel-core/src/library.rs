@@ -70,6 +70,11 @@ pub enum ItemView {
         /// Canonical subscription URL.
         url: String,
     },
+    /// Saved articles from subscriptions currently assigned to this folder.
+    Folder {
+        /// Exact source-folder label, including imported paths.
+        folder: String,
+    },
 }
 
 /// Exclusive boundary in a list ordered by descending time and ascending ID.
@@ -149,6 +154,10 @@ impl ItemFilter {
     /// Archive from one feed.
     pub fn feed(url: String) -> Self {
         Self::new(ItemView::Feed { url })
+    }
+    /// Combined archive from subscriptions in one folder.
+    pub fn folder(folder: String) -> Self {
+        Self::new(ItemView::Folder { folder })
     }
     fn new(view: ItemView) -> Self {
         Self {

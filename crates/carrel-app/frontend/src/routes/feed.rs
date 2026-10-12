@@ -66,3 +66,27 @@ fn fallback_feed(url: String) -> Option<FeedSummary> {
         })
     }
 }
+
+/// Combined chronological archive for subscriptions in one folder.
+#[component]
+pub fn FolderRoute() -> impl IntoView {
+    let params = use_params_map();
+    let folder = Memo::new(move |_| {
+        params
+            .read()
+            .get("folder")
+            .and_then(|value| feeds::decode_feed_path(&value))
+            .unwrap_or_default()
+    });
+    list_route_view(move || {
+        let folder = folder.get();
+        ListSpec {
+            title: folder.clone(),
+            subtitle: None,
+            filter: ItemFilter::folder(folder.clone()),
+            return_path: feeds::folder_href(&folder),
+            empty_message: "No saved articles from sources in this folder.".into(),
+            fetch_url: None,
+        }
+    })
+}

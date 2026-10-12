@@ -63,6 +63,9 @@ pub(crate) fn FieldNavigation() -> impl IntoView {
             "/unread" => "Library · Unread".into(),
             "/starred" => "Library · Starred".into(),
             "/highlights" => "Highlights".into(),
+            _ if path.starts_with("/folders/") => {
+                feeds::decode_feed_path(path.trim_start_matches("/folders/")).unwrap_or_default()
+            }
             _ => controller.feeds().with(|feeds| {
                 feeds
                     .iter()
@@ -187,7 +190,6 @@ fn close_narrow_sidebar(_sidebar: crate::navigation::ReadingSidebar) {
 /// One navigation sidebar, with subscription dialogs outside its hidden surface.
 #[component]
 pub fn Sidebar() -> impl IntoView {
-    let sidebar = crate::navigation::use_reading_sidebar();
     let active_path = use_navigation_path();
     let feed_controller = use_feed_controller();
     let feeds = feed_controller.feeds();
@@ -225,32 +227,13 @@ pub fn Sidebar() -> impl IntoView {
                     when=move || !feeds.get().is_empty()
                     fallback=move || view! { <p>"No feeds yet"</p> }
                 >
-                    <ul class="feed-list">
-                        <For
-                            each={move || feeds.get().into_iter().map(|feed| feed.url).collect::<Vec<_>>()}
-                            key=|url| url.clone()
-                            let:url
-                        >
-                            {
-                                let href = feeds::feed_href(&url);
-                                let selected_href = href.clone();
-                                let current = Memo::new(move |_| feeds.with(|feeds| feeds.iter().find(|feed| feed.url == url).cloned()));
-                                view! {
-                                    <li class="feed-nav-row">
-                                        <a href=href aria-current=move || active_path.with(|path| (path == &selected_href).then_some("page")) title=move || current.with(|feed| feed.as_ref().map(|feed| feed.display_name.clone()).unwrap_or_default()) on:click=move |_| close_narrow_sidebar(sidebar)>{move || current.with(|feed| feed.as_ref().map(|feed| feed.display_name.clone()).unwrap_or_default())}</a>
-                                        <button
-                                            type="button"
-                                            aria-label=move || current.with(|feed| format!("Remove {}", feed.as_ref().map(|feed| feed.display_name.as_str()).unwrap_or_default()))
-                                            title="Remove feed"
-                                            on:click=move |_| remove_target.set(current.get_untracked())
-                                        >
-                                            <Icon name=IconName::Close/>
-                                        </button>
-                                    </li>
-                                }
-                            }
-                        </For>
-                    </ul>
+                    <div class="source-groups">
+                    <Show when=move || feeds.with(|feeds| feeds.iter().any(|feed| feed.folder.is_none()) && feeds.iter().any(|feed| feed.folder.is_some()))><p class="source-group-label">"Unfiled"</p></Show>
+                    <SourceRows folder=None active_path=active_path/>
+                    <For each=move || feeds.with(|feeds| feeds.iter().filter_map(|feed| feed.folder.clone()).collect::<std::collections::BTreeSet<_>>().into_iter().collect::<Vec<_>>()) key=|folder| folder.clone() let:folder>
+                        <SourceFolder folder=folder active_path=active_path/>
+                    </For>
+                    </div>
                 </Show>
             </div>
             <div class="sidebar-utilities">
@@ -300,6 +283,48 @@ pub fn Sidebar() -> impl IntoView {
                     }
                 })}
             </Show>
+    }
+}
+
+#[component]
+fn SourceFolder(folder: String, active_path: Memo<String>) -> impl IntoView {
+    let expanded = RwSignal::new(true);
+    let href = feeds::folder_href(&folder);
+    let selected_href = href.clone();
+    let label = folder.clone();
+    let sidebar = crate::navigation::use_reading_sidebar();
+    view! {
+        <div class="source-group">
+            <div class="source-group-heading">
+                <button type="button" aria-label=format!("Show or hide {folder} sources") aria-expanded=move || expanded.get().to_string() on:click=move |_| expanded.update(|open| *open = !*open)><span aria-hidden="true">{move || if expanded.get() { "▾" } else { "▸" }}</span></button>
+                <a href=href title=label aria-current=move || active_path.with(|path| (path == &selected_href).then_some("page")) on:click=move |_| close_narrow_sidebar(sidebar)>{folder.clone()}</a>
+            </div>
+            <div hidden=move || !expanded.get()><SourceRows folder=Some(folder) active_path=active_path/></div>
+        </div>
+    }
+}
+
+#[component]
+fn SourceRows(folder: Option<String>, active_path: Memo<String>) -> impl IntoView {
+    let controller = use_feed_controller();
+    let feeds = controller.feeds();
+    let sidebar = crate::navigation::use_reading_sidebar();
+    view! {
+        <ul class="feed-list">
+            <For each=move || feeds.with(|feeds| feeds.iter().filter(|feed| feed.folder == folder).map(|feed| feed.url.clone()).collect::<Vec<_>>()) key=|url| url.clone() let:url>
+                {
+                    let href = feeds::feed_href(&url);
+                    let selected_href = href.clone();
+                    let current = Memo::new(move |_| feeds.with(|feeds| feeds.iter().find(|feed| feed.url == url).cloned()));
+                    view! {
+                        <li class="feed-nav-row">
+                            <a href=href aria-current=move || active_path.with(|path| (path == &selected_href).then_some("page")) title=move || current.with(|feed| feed.as_ref().map(|feed| feed.display_name.clone()).unwrap_or_default()) on:click=move |_| close_narrow_sidebar(sidebar)>{move || current.with(|feed| feed.as_ref().map(|feed| feed.display_name.clone()).unwrap_or_default())}</a>
+                            <button type="button" aria-label=move || current.with(|feed| format!("Remove {}", feed.as_ref().map(|feed| feed.display_name.as_str()).unwrap_or_default())) title="Remove feed" on:click=move |_| controller.remove_target.set(current.get_untracked())><Icon name=IconName::Close/></button>
+                        </li>
+                    }
+                }
+            </For>
+        </ul>
     }
 }
 
@@ -410,9 +435,9 @@ pub(crate) fn SubscriptionFiles(
 }
 
 #[cfg(target_arch = "wasm32")]
-fn spawn_feed_task(task: impl Future<Output = ()> + 'static) {
+pub(crate) fn spawn_feed_task(task: impl Future<Output = ()> + 'static) {
     wasm_bindgen_futures::spawn_local(task);
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn spawn_feed_task(_task: impl Future<Output = ()> + 'static) {}
+pub(crate) fn spawn_feed_task(_task: impl Future<Output = ()> + 'static) {}

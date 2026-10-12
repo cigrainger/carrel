@@ -64,6 +64,7 @@ pub fn run() -> Result<()> {
             commands::links::open_external_url,
             commands::capture::save_article,
             commands::feeds::add_feed,
+            commands::feeds::set_feed_folder,
             commands::feeds::discover_feeds,
             commands::feeds::feed_status,
             commands::feeds::fetch_all_feeds,

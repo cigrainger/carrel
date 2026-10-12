@@ -871,6 +871,32 @@ pub async fn add_feed(_url: String) -> Result<FeedSummary, ApiError> {
     })
 }
 
+/// Save a source's optional folder.
+#[cfg(target_arch = "wasm32")]
+pub async fn set_feed_folder(url: String, folder: Option<String>) -> Result<FeedSummary, ApiError> {
+    #[derive(Serialize)]
+    struct Args {
+        url: String,
+        folder: Option<String>,
+    }
+    let args = serde_wasm_bindgen::to_value(&Args { url, folder })
+        .map_err(|error| ApiError::new(error.to_string()))?;
+    let feed = tauri_invoke("set_feed_folder", args)
+        .await
+        .map_err(api_error_from_js)?;
+    serde_wasm_bindgen::from_value(feed).map_err(|error| ApiError::new(error.to_string()))
+}
+
+/// Native frontend fallback.
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn set_feed_folder(url: String, folder: Option<String>) -> Result<FeedSummary, ApiError> {
+    Ok(FeedSummary {
+        url,
+        folder,
+        ..add_feed(String::new()).await?
+    })
+}
+
 /// Remove a feed subscription without deleting saved items.
 #[cfg(target_arch = "wasm32")]
 pub async fn remove_feed(url: String) -> Result<bool, ApiError> {

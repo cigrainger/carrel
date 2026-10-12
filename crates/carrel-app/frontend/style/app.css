@@ -183,6 +183,16 @@ a {
   line-height: 1.35;
 }
 
+.source-groups { min-height: 0; overflow: auto; }
+.source-groups .feed-list { overflow: visible; }
+.source-group { flex: 0 0 auto; }
+.source-group-label { margin: var(--space-2) var(--space-2) var(--space-1); color: var(--color-text-secondary); }
+.source-group-heading { display: grid; grid-template-columns: 28px minmax(0, 1fr); align-items: center; margin-top: var(--space-2); }
+.source-group-heading button { width: 28px; height: 32px; border: 0; border-radius: 0; background: transparent; color: var(--color-text-secondary); font: inherit; }
+.source-group-heading a { padding: var(--space-2) var(--space-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-sm); color: var(--color-text); }
+.source-group-heading button:hover, .source-group-heading a:hover, .source-group-heading a[aria-current="page"] { background: var(--color-selected); }
+.source-group .feed-list { padding-left: var(--space-2); }
+
 .main-content {
   grid-column: 1;
   grid-row: 2;
@@ -1578,8 +1588,15 @@ button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px soli
 .settings-content p { margin-bottom: var(--space-3); color: var(--color-text-secondary); }
 .settings-source-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-bottom: var(--space-4); }
 .settings-source-tools .subscription-files { margin: 0; gap: var(--space-2); }
-.settings-content .source-activity-heading a { margin-right: auto; }
+.settings-content .source-activity { width: 100%; }
+.settings-content .source-activity-heading { flex-wrap: wrap; }
+.settings-content .source-activity-heading a { min-width: 0; flex: 1 1 160px; margin-right: auto; }
 .settings-content .source-activity-heading button { flex: 0 0 auto; }
+.source-folder-editor { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-2); margin-block: var(--space-3); }
+.source-folder-editor label { display: grid; flex: 1 1 180px; gap: var(--space-1); color: var(--color-text-secondary); font-size: var(--text-sm); }
+.source-folder-editor input { width: 100%; min-width: 0; height: 32px; padding: var(--space-1) var(--space-2); border: 1px solid var(--color-rule); border-radius: 0; background: var(--color-bg); color: var(--color-text); font: inherit; }
+.source-folder-editor button { flex: 0 0 auto; border: 1px solid var(--color-rule); white-space: nowrap; }
+.source-folder-editor p { flex-basis: 100%; }
 
 @media (max-width: 720px) {
   .field-navigation { --context-leading: 128px; }

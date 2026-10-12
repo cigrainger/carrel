@@ -421,6 +421,50 @@ impl Store {
             .ok_or_else(|| invalid("subscription was removed concurrently"))
     }
 
+    /// Change a present subscription's folder through the signed private journal.
+    /// Removed subscriptions cannot be revived by a stale Settings form.
+    pub fn set_private_feed_folder(
+        &self,
+        url: &str,
+        folder: Option<&str>,
+        at_micros: i64,
+        signer: &Keypair,
+    ) -> Result<crate::feeds::FeedRecord> {
+        let url = crate::feeds::canonical_feed_url(url)?;
+        let folder = folder
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .map(str::to_owned);
+        let _guard = self
+            .private_state_lock
+            .lock()
+            .expect("private state write lock");
+        let _identity_guard = self.identity_lock.lock().expect("identity write lock");
+        self.require_state_signer(signer)?;
+        let existing = self
+            .get_feed(&url)?
+            .ok_or_else(|| invalid("source is no longer subscribed"))?;
+        let key = StateKey {
+            kind: StateKind::Subscription,
+            target: url.clone(),
+        };
+        let mut value = match self.private_state_value(&key)? {
+            Some(StateValue::Subscription(value)) => value,
+            _ => SubscriptionState {
+                subscribed: true,
+                title: existing.title.clone(),
+                folder: existing.folder.clone(),
+                auto_mark_read: existing.auto_mark_read,
+            },
+        };
+        if value.folder != folder {
+            value.folder = folder;
+            self.write_state_unlocked(key, StateValue::Subscription(value), at_micros, signer)?;
+        }
+        self.get_feed(&url)?
+            .ok_or_else(|| invalid("source is no longer subscribed"))
+    }
+
     /// Record an explicit removal without deleting any saved articles.
     pub fn remove_private_feed(&self, url: &str, at_micros: i64, signer: &Keypair) -> Result<bool> {
         let url = crate::feeds::canonical_feed_url(url)?;
@@ -712,7 +756,12 @@ impl Store {
             }
             StateValue::Subscription(value) => {
                 if value.subscribed {
-                    params.insert("title".into(), optional_string(value.title.as_deref()));
+                    // A missing chosen title leaves the publisher's local title
+                    // intact when portable settings (such as folder) change.
+                    let title = value.title.or(self
+                        .get_feed(&record.key.target)?
+                        .and_then(|feed| feed.title));
+                    params.insert("title".into(), optional_string(title.as_deref()));
                     params.insert("folder".into(), optional_string(value.folder.as_deref()));
                     params.insert("auto".into(), DataValue::Bool(value.auto_mark_read));
                     params.insert(

@@ -567,6 +567,7 @@ fn search_label(spec: &ListSpec) -> String {
         ItemView::Unread => "Search unread articles".into(),
         ItemView::Starred => "Search starred articles".into(),
         ItemView::Feed { .. } => "Search this feed".into(),
+        ItemView::Folder { .. } => "Search this folder".into(),
         _ => format!("Search {}", spec.title.to_lowercase()),
     }
 }

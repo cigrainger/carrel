@@ -84,6 +84,75 @@ fn projection(store: &Store) -> Vec<DataValue> {
 }
 
 #[test]
+fn folder_edits_are_causal_preserve_cache_and_cannot_restore_removed_sources() {
+    let p = pair();
+    let url = "https://example.com/feed";
+    p.a.add_private_feed(url, 1, &p.ka).unwrap();
+    p.a.query("?[url, title, description, last_fetched, last_modified_header, etag_header, fetch_interval_seconds, consecutive_failures, folder, auto_mark_read] <- [['https://example.com/feed', 'Publisher title', 'Cached description', validity(42), 'modified', 'etag', 9000, 3, null, false]] :put feed {url => title, description, last_fetched, last_modified_header, etag_header, fetch_interval_seconds, consecutive_failures, folder, auto_mark_read}").unwrap();
+    let before = p.a.get_feed(url).unwrap().unwrap();
+    let mut expected = before.clone();
+    expected.folder = Some("Research / 文".into());
+    assert_eq!(
+        p.a.set_private_feed_folder(url, Some("  Research / 文  "), 0, &p.ka)
+            .unwrap(),
+        expected
+    );
+    let heads =
+        p.a.private_state_heads(&key(StateKind::Subscription))
+            .unwrap();
+    assert_eq!(heads[0].parents.len(), 1);
+    let StateValue::Subscription(settings) = &heads[0].value else {
+        panic!("subscription")
+    };
+    assert_eq!(
+        settings.title, None,
+        "publisher title remains derived metadata"
+    );
+    for record in p.a.private_state_outbox(100).unwrap() {
+        p.b.accept_self_state_revision(&record, p.ka.public())
+            .unwrap();
+    }
+    p.b.promote_pending_state().unwrap();
+    assert_eq!(p.b.get_feed(url).unwrap().unwrap().folder, expected.folder);
+    p.a.set_private_feed_folder(url, Some("Research / 文"), 3, &p.ka)
+        .unwrap();
+    assert_eq!(
+        p.a.private_state_heads(&key(StateKind::Subscription))
+            .unwrap(),
+        heads,
+        "unchanged form creates no causal action"
+    );
+    assert!(
+        p.a.set_private_feed_folder(url, Some(&"x".repeat(4097)), 4, &p.ka)
+            .is_err()
+    );
+    assert_eq!(p.a.get_feed(url).unwrap().unwrap(), expected);
+    assert!(
+        p.a.set_private_feed_folder(url, Some("Other"), 4, &Keypair::from_seed(&[99; 32]))
+            .is_err()
+    );
+    assert_eq!(
+        p.a.set_private_feed_folder(url, Some("  "), 4, &p.ka)
+            .unwrap(),
+        before
+    );
+    p.a.remove_private_feed(url, 5, &p.ka).unwrap();
+    let heads =
+        p.a.private_state_heads(&key(StateKind::Subscription))
+            .unwrap();
+    assert!(
+        p.a.set_private_feed_folder(url, Some("Stale"), 6, &p.ka)
+            .is_err()
+    );
+    assert_eq!(
+        p.a.private_state_heads(&key(StateKind::Subscription))
+            .unwrap(),
+        heads
+    );
+    assert!(p.a.get_feed(url).unwrap().is_none());
+}
+
+#[test]
 fn concurrent_intents_use_selected_policies_and_later_actions_reverse_them() {
     let p = pair();
     for (base_value, av, bv, expected, later) in [

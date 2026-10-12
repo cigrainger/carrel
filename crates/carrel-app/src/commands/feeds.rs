@@ -78,6 +78,23 @@ pub fn remove_feed(state: State<'_, AppState>, url: String) -> Result<bool> {
     Ok(removed)
 }
 
+/// Assign an optional source folder without changing subscription or cache state.
+#[tauri::command]
+pub fn set_feed_folder(
+    state: State<'_, AppState>,
+    url: String,
+    folder: Option<String>,
+) -> Result<FeedSummary> {
+    let device = super::highlights::load_device_key(&state.paths)?;
+    let feed = state.store.set_private_feed_folder(
+        &url,
+        folder.as_deref(),
+        feed_runner::now_micros(),
+        &device,
+    )?;
+    Ok(FeedSummary::from_record(&feed, OffsetDateTime::now_utc()))
+}
+
 /// Fetch one subscribed feed now.
 #[tauri::command]
 pub async fn fetch_feed(

@@ -892,6 +892,16 @@ with a small explicit remove affordance. Selecting a feed opens a normal item
 list filtered to that feed. No unread counts, badges, or freshness counters
 appear beside feeds.
 
+Sources may have one optional folder, assigned in Settings → Sources. The folder
+field accepts a new name or an existing one; blank means unfiled. Saving is
+explicit and a failed save retains the draft. Folders appear alphabetically as
+collapsible sidebar groups, with unfiled sources always visible first. Disclosure
+and folder navigation are separate controls: selecting the name opens a combined
+chronological list, with search, Load older and the usual reader-return context.
+Folder membership is exact, including imported paths such as Research / Papers;
+there is no hierarchy editor. A refresh never moves a source within its group.
+Folders carry no counts and do not change saved articles or their reading state.
+
 Subscriptions use canonical URL order from their first appearance, matching the
 store's list order. Fetching a title or updating fetch status does not reorder
 the rows after the add dialog closes.

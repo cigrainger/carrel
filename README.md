@@ -50,10 +50,12 @@ debugging` or `cargo test --profile debugging`. Release builds are unaffected.
 The desktop app has a Field reading layout, bundled fonts, a collapsible
 navigation and source sidebar (Cmd+B), explicit reading completion, saved position restoration,
 highlights and notes, and local lists for Today, Reading, Library, Unread,
-Starred, and individual feeds. **Load older** extends lists through the archive.
+Starred, individual feeds and source folders. **Load older** extends lists through the archive.
 **Import OPML** and **Export OPML** in Settings → Sources use native file dialogs;
 importing keeps existing subscription settings. Nested OPML folders become readable folder
-paths, exported as named groups. Each article list can search titles and cached
+paths, exported as named groups. Assign an optional folder to each source in
+Settings → Sources; blank leaves it unfiled. Sidebar folder names open combined
+article lists, and their disclosure buttons collapse the source rows. Each article list can search titles and cached
 text offline; `/` focuses search and `\` clears it. Every word matches a word
 beginning, within the current filter. The query and loaded results survive
 opening an article and returning. Highlights supports full note review, note

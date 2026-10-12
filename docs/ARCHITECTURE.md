@@ -440,6 +440,14 @@ are fixed for subsequent pages. List snapshots also retain the continuation and
 whether the archive end was reached; refreshes query through that older
 boundary. Async generations guard the entire multi-page refresh.
 
+Folder views join article source URLs against current subscription folders
+before limiting. Exact folder labels scope cursors and reader-return snapshots;
+moving or removing a subscription changes membership without changing saved
+articles. Folder assignment is a typed signed subscription action, preserving
+other portable settings and device-local HTTP metadata. A stale edit to a
+removed subscription fails. Sidebar groups render this state; they do not own
+subscription writes or query articles themselves.
+
 Local search uses Cozo's existing full-text machinery. Pure, bounded literal
 query tokenization lives beside the list contracts in `carrel-core`; the store
 intersects indexed word prefixes with list membership before sorting and

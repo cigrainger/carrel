@@ -81,6 +81,68 @@ fn all_ids(store: &Store, mut filter: ItemFilter) -> Vec<String> {
     ids
 }
 
+#[test]
+fn folders_filter_before_pagination_and_follow_current_subscription_membership() {
+    use carrel_core::subscription::FeedSubscription;
+    let store = archive(230, true);
+    for (url, folder) in [
+        ("https://a.example/feed", Some("Research / 文")),
+        ("https://b.example/feed", Some("Research / 文")),
+        ("https://c.example/feed", Some("Research")),
+        ("https://d.example/feed", None),
+    ] {
+        store
+            .import_feed_subscriptions(&[FeedSubscription {
+                url: url.into(),
+                title: None,
+                folder: folder.map(str::to_owned),
+            }])
+            .unwrap();
+    }
+    for i in 0..230 {
+        article(
+            &store,
+            &format!("item-{i:04}"),
+            if i < 210 {
+                if i % 2 == 0 {
+                    "https://a.example/feed"
+                } else {
+                    "https://b.example/feed"
+                }
+            } else {
+                "https://c.example/feed"
+            },
+        );
+    }
+    let filter = ItemFilter::folder("Research / 文".into());
+    let ids = all_ids(&store, filter.clone());
+    assert_eq!(ids.len(), 210);
+    assert_eq!(ids.iter().collect::<BTreeSet<_>>().len(), 210);
+    assert_eq!(ids.first().unwrap(), "item-0000");
+    assert_eq!(ids.last().unwrap(), "item-0209");
+    assert_eq!(
+        all_ids(&store, ItemFilter::folder("Research".into())).len(),
+        20
+    );
+    assert!(all_ids(&store, ItemFilter::folder("missing".into())).is_empty());
+    let cursor = store
+        .list_item_page(&filter, 0)
+        .unwrap()
+        .next_cursor
+        .unwrap();
+    let mut wrong = ItemFilter::folder("Research".into());
+    wrong.after = Some(cursor);
+    assert!(store.list_item_page(&wrong, 0).is_err());
+    title(&store, "item-0200", "distinctive phrase");
+    assert_eq!(
+        all_ids(&store, search(filter.clone(), "distinctive")),
+        ["item-0200"]
+    );
+    store.remove_feed("https://a.example/feed").unwrap();
+    assert_eq!(all_ids(&store, filter).len(), 105);
+    assert_eq!(all_ids(&store, ItemFilter::library()).len(), 230);
+}
+
 fn search(mut filter: ItemFilter, query: &str) -> ItemFilter {
     filter.search = Some(query.into());
     filter
