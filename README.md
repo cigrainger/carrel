@@ -48,7 +48,10 @@ code, omit dependency debug symbols, and disable incremental caches to keep
 disk use manageable. For full debugger inspection, use `cargo build --profile
 debugging` or `cargo test --profile debugging`. Release builds are unaffected.
 
-The desktop app has a Field reading layout, bundled fonts, a collapsible
+The desktop app adopts the Reading Room revision of Field: neutral Paper and
+forest Dark surfaces, quieter date gutters, grotesk titles, serif excerpts and
+a reading column for Highlights. Sepia and Black remain available; existing
+Light preferences use Paper. It has bundled fonts, a collapsible
 navigation and source sidebar (Cmd+B), explicit reading completion, saved position restoration,
 highlights and notes, and local lists for Today, Reading, Library, Unread,
 Starred, individual feeds and source folders. **Load older** extends lists through the archive.
@@ -91,7 +94,7 @@ described in [`docs/PRIVATE_SHARING_PLAN.md`](docs/PRIVATE_SHARING_PLAN.md#first
 
 One context bar holds list or reader controls. **Aa** in the reader offers theme,
 four bundled reading fonts, text size, line width and spacing. **Settings** (Cmd+,)
-contains Reading, Sources, Devices and Keyboard sections, including Editorial/Dense
+contains Reading, Sources, People, Devices and Keyboard sections, including Editorial/Dense
 article lists. Preferences are remembered on this installation and changing
 layout preserves the visible passage or row. Closing Settings resumes the same
 article or list. The context bar's app menu keeps commands reachable with the

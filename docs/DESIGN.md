@@ -34,7 +34,25 @@ These commitments are non-negotiable for the v1 product. Subsequent sections ope
 
 ## Typography
 
-### Field direction
+### Reading Room revision of Field
+
+The adopted 12 October 2026 study is `carrel-site/dist/system.html` and
+`studio.html`, from the supplied Reading Room website/design output. Its
+`assets/tokens.css`, `tokens.json` and `app.css` define the visual vocabulary:
+neutral Paper, forest structure, moss secondary surfaces, restrained rules,
+grotesk finding/navigation typography and serif reading. The local study was
+inspected alongside its interactive Today, Reader and Highlights views.
+The website's poster scale informs hierarchy rather than becoming app chrome.
+
+Adoption translates those roles into the existing Leptos components. The
+production app retains its 216px sidebar, equal 16px system labels, 56px context
+bar, real native window-control reserve, Lucide actions, keymap stack and native
+dialogs. Stored Light preferences become the Paper appearance without changing
+their `light` value; Sepia and Black remain available. Existing font choices,
+preference bounds, body size/measure/leading, loaded pages and passage anchors
+remain the interaction contract. Demo content and temporary state are not used.
+The study's future sharing view defines no new feature scope; implemented
+People/sharing behavior continues under the same visual tokens.
 
 Field replaces the previous Editorial implementation following a design reset.
 The new references emphasize dramatic scale contrasts, asymmetrical grids,
@@ -80,32 +98,45 @@ The Ribbon wordmark belongs at the top of the sidebar. Cmd+B toggles the same
 sidebar in lists and the reader.
 
 Lists occupy the available content width. A chronological gutter shows a prominent
-56px day at each new date and a quieter date on subsequent rows from that day.
+37px day at each new date and a quieter date on subsequent rows from that day.
 The backend supplies calendar labels, explicitly distinguishing publication
-from saved dates when the publisher provides none. Article titles use a 29px
-grotesk; metadata precedes them, excerpts follow, and read/star icons sit at the
+from saved dates when the publisher provides none. Article titles use a 26px,
+500-weight grotesk; metadata precedes them, serif excerpts follow, and read/star icons sit at the
 right. Long titles wrap. Source Serif 4 remains the default reader face.
 Controls remain square. Reading settings offers Editorial and Dense list density.
 Dense keeps the same rows, dates, read/star controls and keyboard selection,
-with a smaller date gutter, 18px headings and no excerpt. Titles still wrap.
+with smaller dates, 18px headings and no excerpt. Titles still wrap.
 Switching density preserves the visible row and selection rather than remounting
 the list. It applies to article lists; annotations keep their reading measure.
 
-Section headings are 18px. The reader title is 2.25rem. The sidebar is 216px wide.
-When the content pane is 760px or narrower, Editorial rows use a 66px date
-gutter, 40px day and 22px title, with read/star controls stacked on the right.
+Section headings are 40px display type, with 36px at the minimum desktop pane.
+The reader title is 40px grotesk, with 1.06 leading and −0.04em tracking.
+Source, author, date and duration precede the title. A provided summary may
+form a serif deck, followed by a rule; cached-summary fallbacks are not repeated.
+The sidebar is 216px wide. Editorial rows use a 72px date gutter and stacked
+read/star controls. When the content pane is 760px or narrower, they use a 56px
+gutter, 32px day and 24px title.
 Dense retains 18px titles and its smaller dates. This responds to the available
 content width, so the open sidebar does not squeeze a large gutter and heading
 into the minimum desktop window.
-Default light surfaces are pale mint `#eaf0d8` and elevated mint `#f1f5e3`,
-with forest ink `#153c32`, secondary text `#466257`, rules `#b5c8a9` /
-`#8ba585`, and accent `#17694e`. The navigation field uses `#153c32` with
-`#eaf0d8` text; the sidebar uses `#d2dfbb`. Dark surfaces use `#1c211b`
-with pale text and a quieter `#132e24` navigation field. Sepia and black remain
+Paper uses `#f3f4ea` and elevated `#fafbf5`, with forest ink `#173d32`,
+secondary ink `#536359`, rules `#c5cdbb` / `#819180`, and forest accent.
+The navigation field uses `#173d32` with `#f3f4ea` text; the sidebar uses
+`#e3e7d6`. Dark uses `#18251f`, pale `#eff2e4` ink and a `#102c22` bar.
+Selection is a flat `#e1e8d4` / `#314a36` surface and 2px rule. Focus uses
+`#a23423` on Paper and `#e7ad83` on Dark. Signal `#da402c` is an identity
+graphic color, not application alert text. Sepia and black remain
 available, retaining readable navigation pairs. These additions are production
 tokens: `--font-display`, `--text-list-title`, `--text-nav-label`,
 `--text-calendar`, `--navigation-height`,
 `--color-nav-bg`, `--color-nav-text`, and `--color-source-bg`.
+
+Highlights use a ruled, 760px reading column: source context before a 24px
+serif quotation, a 16px serif note beside a structural rule, and persistent
+quiet actions. Selection remains visible and keyboard-accessible. Native
+dialogs use square borders and theme surfaces with a forest-tinted backdrop;
+decorative shadows are removed. Focus is a distinct 2px rule, including search
+inputs. Header controls retain a high-contrast paper outline on the forest bar.
 
 Navigation uses Lucide icons with labels and a left rule for the active
 destination. Sources stay in the left sidebar; subscription management, Devices
@@ -279,53 +310,61 @@ and borders so indentation follows the text direction.
 
 Color is functional, not decorative. The accent color appears sparingly and only where attention is genuinely warranted (a hover state, a small affordance). The base palette is restrained: text, two or three secondary text shades, background, elevated background, rule lines, and a single highlight color.
 
-### Default theme tokens (light)
+### Paper theme tokens (stored as light)
 
 ```css
 :root {
-  --color-text: #153c32;
-  --color-text-secondary: #466257;
-  --color-text-tertiary: #466257;
-  --color-bg: #eaf0d8;
-  --color-bg-elevated: #f1f5e3;
+  --color-text: #173d32;
+  --color-text-secondary: #536359;
+  --color-text-tertiary: #536359;
+  --color-bg: #f3f4ea;
+  --color-bg-elevated: #fafbf5;
   --color-media-bg: #faf8f3;    /* paper backing for source images in every theme */
-  --color-rule: #b5c8a9;
-  --color-rule-strong: #8ba585;
-  --color-accent: #17694e;
-  --color-nav-bg: #153c32;
-  --color-nav-text: #eaf0d8;
-  --color-source-bg: #d2dfbb;
-  --color-highlight: #fff3a8;    /* highlight yellow, low saturation */
-  --color-highlight-friend: #b8d4e8;  /* friend's highlights - distinguishable */
+  --color-rule: #c5cdbb;
+  --color-rule-strong: #819180;
+  --color-accent: #173d32;
+  --color-nav-bg: #173d32;
+  --color-nav-text: #f3f4ea;
+  --color-source-bg: #e3e7d6;
+  --color-highlight: #ece7ac;
+  --color-highlight-friend: #617e99;
+  --color-selected: #e1e8d4;
+  --color-focus: #a23423;
+  --color-moss: #d5dfb9;
+  --color-signal: #da402c;
+  --color-backdrop: #102c2260;
 }
 ```
 
-The mint field and forest toolbar establish Field's composition.
-Selection and action affordances use the green accent sparingly. Publisher
+The neutral paper field and forest toolbar establish the Reading Room composition.
+Selection and action affordances use forest ink sparingly. Moss and signal are
+identity graphic roles; signal is not alert text. Publisher
 images keep a neutral paper backing across themes.
 
 ### Dark theme
 
 ```css
 [data-theme="dark"] {
-  --color-text: #e8e6e0;
-  --color-text-secondary: #a8a6a0;
-  --color-text-tertiary: #929088;
-  --color-bg: #1c211b;
-  --color-bg-elevated: #242b22;
-  --color-rule: #384734;
-  --color-rule-strong: #52604b;
-  --color-accent: #b5d99b;
-  --color-nav-bg: #132e24;
-  --color-nav-text: #eaf0d8;
-  --color-source-bg: #263422;
-  --color-highlight: #5a4d1a;
-  --color-highlight-friend: #2d4659;
+  --color-text: #eff2e4;
+  --color-text-secondary: #b0bdab;
+  --color-text-tertiary: #b0bdab;
+  --color-bg: #18251f;
+  --color-bg-elevated: #203128;
+  --color-rule: #405344;
+  --color-rule-strong: #6d816c;
+  --color-accent: #d5dfb9;
+  --color-nav-bg: #102c22;
+  --color-nav-text: #f3f4ea;
+  --color-source-bg: #21362b;
+  --color-highlight: #555324;
+  --color-highlight-friend: #9cb6cd;
+  --color-selected: #314a36;
+  --color-focus: #e7ad83;
 }
 ```
 
 Dark mode retains a forest band and pale type; it does not invert the band into
-a light block. Text is `#e8e6e0` rather than pure white.
+a light block. Text is pale `#eff2e4`.
 
 ### Sepia theme
 
@@ -335,14 +374,17 @@ a light block. Text is `#e8e6e0` rather than pure white.
   --color-text-secondary: #6a5d4e;
   --color-text-tertiary: #685c4b;
   --color-bg: #f4ecd8;
-  --color-bg-elevated: #ede4cd;
+  --color-bg-elevated: #fbf4e5;
   --color-rule: #d8cdb3;
+  --color-rule-strong: #9b8b6a;
   --color-accent: #8a4a2a;
   --color-nav-bg: #463923;
   --color-nav-text: #f4ecd8;
   --color-source-bg: #e6dcc2;
   --color-highlight: #d8c878;
   --color-highlight-friend: #b8c8a8;
+  --color-selected: #e9dec5;
+  --color-focus: #8d3327;
 }
 ```
 
@@ -352,18 +394,21 @@ For users who like the e-reader feel.
 
 ```css
 [data-theme="black"] {
-  --color-text: #d4d2cc;
-  --color-text-secondary: #948e84;
-  --color-text-tertiary: #878278;
+  --color-text: #eff2e4;
+  --color-text-secondary: #b0bdab;
+  --color-text-tertiary: #b0bdab;
   --color-bg: #000000;            /* true black for OLED */
   --color-bg-elevated: #0e0e0c;
-  --color-rule: #1a1a18;
-  --color-accent: #b5d99b;
-  --color-nav-bg: #0e1911;
-  --color-nav-text: #d4d2cc;
-  --color-source-bg: #111a10;
+  --color-rule: #293a2e;
+  --color-rule-strong: #536951;
+  --color-accent: #d5dfb9;
+  --color-nav-bg: #0b1e17;
+  --color-nav-text: #f3f4ea;
+  --color-source-bg: #101c15;
   --color-highlight: #4a3d10;
   --color-highlight-friend: #1d2e3d;
+  --color-selected: #1d3023;
+  --color-focus: #e7ad83;
 }
 ```
 
@@ -375,7 +420,7 @@ The current implementation stores the theme in webview local storage and applies
 `data-theme` to the document and application shell. Settings → Reading and the
 reader's Aa control share the theme choices. Moving preferences into `:self`
 Cozo state is future work. Theme switches are instant; only the colors change.
-Native window and dialog appearance follows the selected reading theme: Light
+Native window and dialog appearance follows the selected reading theme: Paper
 and Sepia use light native controls, Dark and Black use dark controls. The native
 window backing color matches the navigation field so exposed window edges remain coherent.
 
@@ -838,7 +883,10 @@ Reduced-motion preference: if the user has `prefers-reduced-motion: reduce` set,
 
 ### Focus management
 
-Tab order follows visual order. Focus rings are visible but restrained — a 2px outline in the accent color, on focusable elements only when focus arrives via keyboard. (We use `:focus-visible`, not `:focus`, so mouse clicks don't show focus rings.)
+Tab order follows visual order. Keyboard focus uses a distinct 2px focus outline;
+controls on the forest bar use the high-contrast navigation text color. Search
+uses the same outline around its control group. Other controls use `:focus-visible`
+so mouse clicks do not show focus rings.
 
 Modal-like elements (the share dialog, the tag input) trap focus and restore it on close. Esc closes them. Enter confirms them.
 

@@ -762,6 +762,10 @@ pub fn ArticleContent(
     let has_original = item.primary_url.is_some();
     let content_html = item.content_html.clone();
     let has_cache = item.readable_blob_id.is_some();
+    let deck = item
+        .summary
+        .clone()
+        .filter(|summary| has_cache && !summary.trim().is_empty());
     let has_text = !content_html.trim().is_empty();
     let link_original = StoredValue::new(item.primary_url.clone());
 
@@ -796,15 +800,16 @@ pub fn ArticleContent(
     view! {
         <article class="reader-article" lang=item.language.clone().unwrap_or_else(|| "en".to_string())>
             <header class="reader-header">
-                <p class="reader-source">{item.source_name.clone()}</p>
-                <h1>{item.title.clone()}</h1>
                 <div class="reader-meta">
+                    <span class="reader-source">{item.source_name.clone()}</span>
                     <Show when=move || has_byline>
                         <span>{byline_label.clone()}</span>
                     </Show>
-                    <span>{item.length_label.clone()}</span>
                     <span>{date}</span>
+                    <span>{item.length_label.clone()}</span>
                 </div>
+                <h1>{item.title.clone()}</h1>
+                {deck.map(|summary| view! { <p class="reader-deck" dir="auto">{summary}</p> })}
             </header>
             <Show when=move || !has_cache>
                 <aside class="reader-cache-notice" role="note">

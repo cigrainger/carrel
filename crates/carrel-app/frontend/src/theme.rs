@@ -29,10 +29,10 @@ impl Theme {
         }
     }
 
-    /// Short label for the status-strip control.
+    /// User-facing label in Settings and the reader appearance popover.
     pub const fn label(self) -> &'static str {
         match self {
-            Theme::Light => "Light",
+            Theme::Light => "Paper",
             Theme::Sepia => "Sepia",
             Theme::Dark => "Dark",
             Theme::Black => "Black",

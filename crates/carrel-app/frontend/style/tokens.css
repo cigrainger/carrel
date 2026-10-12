@@ -54,31 +54,35 @@
   --text-2xl: 1.5rem;
   --text-3xl: 1.875rem;
   --text-display: 3rem;
-  --text-reader-title: 2.25rem;
-  --text-list-title: 1.8125rem;
+  --text-reader-title: 2.5rem;
+  --text-list-title: 1.625rem;
   --text-nav-label: 1rem;
-  --text-calendar: 3.5rem;
+  --text-calendar: 2.3125rem;
 
   --reading-size: 1.125rem;
   --reading-line-height: 1.65;
   --reading-measure: 68ch;
   --reading-paragraph-indent: 1.5em;
 
-  --color-text: #153c32;
-  --color-text-secondary: #466257;
-  --color-text-tertiary: #466257;
-  --color-bg: #eaf0d8;
-  --color-bg-elevated: #f1f5e3;
+  --color-text: #173d32;
+  --color-text-secondary: #536359;
+  --color-text-tertiary: #536359;
+  --color-bg: #f3f4ea;
+  --color-bg-elevated: #fafbf5;
   --color-media-bg: #faf8f3;
-  --color-rule: #b5c8a9;
-  --color-rule-strong: #8ba585;
-  --color-accent: #17694e;
-  --color-nav-bg: #153c32;
-  --color-nav-text: #eaf0d8;
-  --color-source-bg: #d2dfbb;
-  --color-highlight: #fff3a8;
-  --color-highlight-friend: #b8d4e8;
-  --color-selected: color-mix(in srgb, var(--color-accent) 8%, transparent);
+  --color-rule: #c5cdbb;
+  --color-rule-strong: #819180;
+  --color-accent: #173d32;
+  --color-nav-bg: #173d32;
+  --color-nav-text: #f3f4ea;
+  --color-source-bg: #e3e7d6;
+  --color-highlight: #ece7ac;
+  --color-highlight-friend: #617e99;
+  --color-selected: #e1e8d4;
+  --color-focus: #a23423;
+  --color-moss: #d5dfb9;
+  --color-signal: #da402c;
+  --color-backdrop: #102c2260;
 
   --space-1: 0.25rem;
   --space-2: 0.5rem;
@@ -86,13 +90,17 @@
   --space-4: 1rem;
   --space-5: 1.25rem;
   --space-6: 1.5rem;
+  --space-7: 1.75rem;
   --space-8: 2rem;
   --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
 
   --radius-sm: 0;
   --sidebar-width: 216px;
   --status-strip-height: 28px;
   --navigation-height: 56px;
+  --motion-fast: 150ms;
 }
 
 @font-face {
@@ -126,19 +134,21 @@
 
 [data-theme="dark"] {
   color-scheme: dark;
-  --color-text: #e8e6e0;
-  --color-text-secondary: #a8a6a0;
-  --color-text-tertiary: #929088;
-  --color-bg: #1c211b;
-  --color-bg-elevated: #242b22;
-  --color-rule: #384734;
-  --color-rule-strong: #52604b;
-  --color-accent: #b5d99b;
-  --color-nav-bg: #132e24;
-  --color-nav-text: #eaf0d8;
-  --color-source-bg: #263422;
-  --color-highlight: #5a4d1a;
-  --color-highlight-friend: #2d4659;
+  --color-text: #eff2e4;
+  --color-text-secondary: #b0bdab;
+  --color-text-tertiary: #b0bdab;
+  --color-bg: #18251f;
+  --color-bg-elevated: #203128;
+  --color-rule: #405344;
+  --color-rule-strong: #6d816c;
+  --color-accent: #d5dfb9;
+  --color-nav-bg: #102c22;
+  --color-nav-text: #f3f4ea;
+  --color-source-bg: #21362b;
+  --color-highlight: #555324;
+  --color-highlight-friend: #9cb6cd;
+  --color-selected: #314a36;
+  --color-focus: #e7ad83;
 }
 
 [data-theme="sepia"] {
@@ -147,30 +157,34 @@
   --color-text-secondary: #6a5d4e;
   --color-text-tertiary: #685c4b;
   --color-bg: #f4ecd8;
-  --color-bg-elevated: #ede4cd;
+  --color-bg-elevated: #fbf4e5;
   --color-rule: #d8cdb3;
-  --color-rule-strong: #c9b990;
+  --color-rule-strong: #9b8b6a;
   --color-accent: #8a4a2a;
   --color-nav-bg: #463923;
   --color-nav-text: #f4ecd8;
   --color-source-bg: #e6dcc2;
   --color-highlight: #d8c878;
   --color-highlight-friend: #b8c8a8;
+  --color-selected: #e9dec5;
+  --color-focus: #8d3327;
 }
 
 [data-theme="black"] {
   color-scheme: dark;
-  --color-text: #d4d2cc;
-  --color-text-secondary: #948e84;
-  --color-text-tertiary: #878278;
+  --color-text: #eff2e4;
+  --color-text-secondary: #b0bdab;
+  --color-text-tertiary: #b0bdab;
   --color-bg: #000000;
   --color-bg-elevated: #0e0e0c;
-  --color-rule: #1a1a18;
-  --color-rule-strong: #2a2a28;
-  --color-accent: #b5d99b;
-  --color-nav-bg: #0e1911;
-  --color-nav-text: #d4d2cc;
-  --color-source-bg: #111a10;
+  --color-rule: #293a2e;
+  --color-rule-strong: #536951;
+  --color-accent: #d5dfb9;
+  --color-nav-bg: #0b1e17;
+  --color-nav-text: #f3f4ea;
+  --color-source-bg: #101c15;
   --color-highlight: #4a3d10;
   --color-highlight-friend: #1d2e3d;
+  --color-selected: #1d3023;
+  --color-focus: #e7ad83;
 }

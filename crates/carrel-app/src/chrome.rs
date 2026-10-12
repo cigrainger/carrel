@@ -23,10 +23,10 @@ impl Appearance {
 
     fn backing_color(self) -> Color {
         match self {
-            Self::Light => Color(0x15, 0x3c, 0x32, 255),
+            Self::Light => Color(0x17, 0x3d, 0x32, 255),
             Self::Sepia => Color(0x46, 0x39, 0x23, 255),
-            Self::Dark => Color(0x13, 0x2e, 0x24, 255),
-            Self::Black => Color(0x0e, 0x19, 0x11, 255),
+            Self::Dark => Color(0x10, 0x2c, 0x22, 255),
+            Self::Black => Color(0x0b, 0x1e, 0x17, 255),
         }
     }
 }

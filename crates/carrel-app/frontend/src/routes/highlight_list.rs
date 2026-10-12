@@ -591,8 +591,11 @@ fn HighlightRow(
     view! {
         <li class="highlight-row" class:is-selected=move || selected.get() on:focusin=move |_| on_select.run(index.get_untracked())
             on:click=move |_| { if should_open_from_row_click() { on_open.run(index.get_untracked()); } }>
-            <span class="highlight-row-mark" aria-hidden="true"></span>
             <div class="highlight-row-body">
+                <p class="highlight-source">
+                    <span>{move || row.get().item_title}</span><span>{move || row.get().item_source_name}</span>
+                    <span>{move || created_date_label(&row.get().highlight.created_at)}</span>
+                </p>
                 <blockquote>{move || row.get().highlight.quoted_text}</blockquote>
                 <Show when=move || !expanded.get()>{move || row.get().note_excerpt.map(|note| view! { <p class="highlight-note">{note}</p> })}</Show>
                 <Show when=move || expanded.get()>
@@ -609,10 +612,6 @@ fn HighlightRow(
                     </div>
                 </Show>
                 <div class="highlight-row-footer">
-                    <p class="highlight-source">
-                        <span>{move || row.get().item_title}</span><span>{move || row.get().item_source_name}</span>
-                        <span>{move || created_date_label(&row.get().highlight.created_at)}</span>
-                    </p>
                     <div class="highlight-row-actions">
                     <Show when=move || !expanded.get() && row.get().notes.iter().any(|note| !note.conflicts.is_empty())>
                         <button type="button" on:click=move |event: ev::MouseEvent| {
