@@ -119,14 +119,6 @@ defines the reading interface. [AGENTS.md](AGENTS.md) records project practice f
 human and AI contributors. The [engineering review](docs/ENGINEERING_REVIEW.md)
 records the publication audit and its limits.
 
-## A note on AI
-
-Yes, it’s vibed. Yes, I know how to build software without LLMs.
-
-Carrel is built with substantial LLM assistance. I set the product direction,
-make the engineering trade-offs and take responsibility for what ships. The
-[engineering review](docs/ENGINEERING_REVIEW.md) records the checks and their limits.
-
 ## License
 
 Carrel is free software under **AGPL-3.0-or-later**. Distributed derivatives stay
