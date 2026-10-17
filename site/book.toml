@@ -1,6 +1,6 @@
 [book]
 title = "Carrel"
-description = "A reading life of your own. Carrel is a desktop reader for the open web: read, keep passages, and share with people you trust."
+description = "A reading life of your own. A desktop reader and peer-to-peer reading circle for the open web: read, keep passages, and share with people you trust."
 authors = ["Carrel contributors"]
 language = "en"
 src = "src"

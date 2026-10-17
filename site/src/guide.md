@@ -14,7 +14,7 @@ looks further ahead.
 <div class="guide-contents">
 <a href="getting-started.html"><span><strong>Getting started</strong><span>Install Carrel, add a source, save an article or bring your subscriptions.</span></span><span aria-hidden="true">→</span></a>
 <a href="reading.html"><span><strong>Reading &amp; keeping passages</strong><span>Find your way around, make reading comfortable, highlight and take notes.</span></span><span aria-hidden="true">→</span></a>
-<a href="sharing.html"><span><strong>Sharing with a friend</strong><span>Exchange keys, send an article with a note and understand what stays private.</span></span><span aria-hidden="true">→</span></a>
+<a href="sharing.html"><span><strong>Sharing with a friend</strong><span>Connect peer to peer, exchange keys and understand what travels and what stays private.</span></span><span aria-hidden="true">→</span></a>
 </div>
 
 ## Keep within reach
@@ -28,4 +28,4 @@ looks further ahead.
 
 Use the search control above (or press `/`) to search this guide. The contents
 control shows or hides the chapter list. Each page can be printed with the print
-control; the appearance control at the top switches between Paper and Dark.
+control; the appearance control at the top switches between Light and Dark.
