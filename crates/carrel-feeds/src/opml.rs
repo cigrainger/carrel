@@ -125,10 +125,10 @@ pub fn parse_opml(bytes: &[u8]) -> Result<Vec<FeedSubscription>, OpmlError> {
                 }
             }
             Event::End(element) => {
-                if stack
-                    .pop()
-                    .is_none_or(|parent| parent.name != element.name().as_ref())
-                {
+                let Some(parent) = stack.pop() else {
+                    return fail("unbalanced elements");
+                };
+                if parent.name != element.name().as_ref() {
                     return fail("unbalanced elements");
                 }
             }

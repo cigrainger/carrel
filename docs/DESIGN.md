@@ -882,7 +882,11 @@ Spinners are acceptable only for genuinely network-bound operations (initial syn
 
 Errors live in the status strip, not in modals. A failed feed fetch, a broken sync session, a missing blob — these get logged and surfaced for users who want to look. The reading flow is not interrupted.
 
-The exception: errors that *prevent* the user's just-attempted action (a permission failure, a malformed input) get a small toast near the action point, dismissable by clicking or pressing any key.
+Errors that prevent the user's just-attempted action (a permission failure or
+malformed input) appear inline with that action. Keep the form's draft and make
+retry possible; an unrelated key must not dismiss an error or lose entered text.
+An unknown route shows quiet explanatory text and an Open Library link, keeping
+the current application shell available for recovery.
 
 ### Motion
 

@@ -2,7 +2,10 @@
 
 9 October 2026 · Initial assessment and proposals; accepted decisions are recorded in `DESIGN.md`.
 
-The first implementation now follows Editorial, with dense mode deferred. Primary
+This is a historical assessment. Current visual and interaction decisions are in
+[DESIGN](DESIGN.md); the [code map](CODE_MAP.md) describes the implemented engine.
+Editorial was superseded by Field and the Reading Room study. The early
+implementation followed Editorial, with dense mode deferred. Primary
 navigation is Today, Reading, Library, and Highlights; Unread and Starred are
 Library filters. The reader is one layout with a collapsible navigation sidebar,
 controlled by Cmd+B or a visible button. The reading loop includes explicit
@@ -46,7 +49,7 @@ These are candidate layout decisions. Acceptance should be followed by an update
 | Finding | Evidence | Proposed change |
 | --- | --- | --- |
 | Navigation gives eight destinations similar weight, although several are filters over the same library. | [Sidebar](../crates/carrel-app/frontend/src/components/sidebar.rs) exposes Today, Unread, Reading, Starred, Friends, Library, Highlights, and Lists in one group. | Keep Today, Reading, Library, and Highlights as the initial primary destinations. Put All, Unread, and Starred filters inside Library. Keep existing route URLs and bindings where useful. |
-| Friends and Lists lead to title-only screens. | [Placeholders](../crates/carrel-app/frontend/src/routes/placeholders.rs); the exported Library route is implemented separately. | Introduce these destinations when their first useful flow works. Private sharing remains a central product commitment. |
+| Friends and Lists lead to title-only screens. | The original [placeholders](https://github.com/cigrainger/carrel/blob/8a71dd7/crates/carrel-app/frontend/src/routes/placeholders.rs); the exported Library route was implemented separately. | Introduce these destinations when their first useful flow works. Private sharing is now implemented; the unused Lists route has been removed. |
 | Returning from an article loses list selection. | [List route](../crates/carrel-app/frontend/src/routes/today.rs) initializes its cursor to zero; [navigation context](../crates/carrel-app/frontend/src/navigation.rs) stores item IDs and a return path but no list scroll position. | Restore selection by stable item ID, list scroll position, and active filter. If the item leaves the filter, select the nearest remaining neighbor. |
 | Previous and Next have a hidden read-state side effect. | [Reader navigation](../crates/carrel-app/frontend/src/routes/reading.rs) uses `navigate_adjacent`, which calls `mark_current_read`, for both buttons. | Previous/Next only navigate. Offer an explicitly labeled “Mark read & next” action that preserves the existing `n` completion gesture. Keep opening, scrolling, and returning independent of completion. |
 | Article rows truncate titles and provide no normal focusable open control. | [Item row](../crates/carrel-app/frontend/src/components/item_row.rs) attaches a click handler to a list item; [styles](../crates/carrel-app/frontend/style/app.css) make titles single-line. | Use semantic links or buttons for article opening; make read state and star actions discoverable with mouse, Tab, and the existing keymap. Preserve full titles. |

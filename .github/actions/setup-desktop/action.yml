@@ -22,3 +22,4 @@ runs:
     - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       with:
         save-if: ${{ github.event_name != 'pull_request' }}
+        cache-on-failure: true
