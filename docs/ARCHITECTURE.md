@@ -14,6 +14,13 @@ conversations exist. Public syndication, OPDS, mobile and identity-recovery UI a
 designs. They are marked below; a design sketch does not establish an implemented
 API. [CODE_MAP.md](CODE_MAP.md) locates source and tests.
 
+The next priorities are recipient consent and leaving mutual-friend conversations,
+and encrypted backup/restore. Their planned contracts are in
+[CONVERSATION_PLAN.md](CONVERSATION_PLAN.md#next-priority-introductions-with-a-choice)
+and [BACKUP_RESTORE_PLAN.md](BACKUP_RESTORE_PLAN.md). Neither is implemented by the
+alpha.3 release; recovery/rebinding and any new signed consent facts require schema
+decisions before code changes.
+
 ## The shape of the system
 
 Carrel is a desktop application that runs on the user's own computer, holds all of the user's reading data locally, and synchronizes a subset of that data peer-to-peer with people the user has chosen to follow. There is no server we run, no centralized service, no account system. The user's identity is a cryptographic keypair held on their own machine.

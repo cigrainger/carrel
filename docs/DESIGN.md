@@ -1184,6 +1184,21 @@ and explicitly follow. Both people choose independently. A mismatched code canno
 change the card's selected identity. Joining a thread never follows someone or
 distributes their connection address. Closing restores the thread and its draft.
 
+The next conversation pass prioritizes mutual-friend introductions and recipient
+choice. **Planned, not implemented in alpha.3:** Settings → People will offer
+**Allow group conversations with people I haven't followed**, enabled by default.
+Disabling it declines new conversations with an unfollowed participant while
+retaining direct shares and access to the shared article. Existing threads have
+a separate **Leave conversation** action, preserving their saved article and
+accepted history. Introductions name the mutual sharer and show the fixed audience;
+they never infer a follow or disclose a contact code. The receiving engine owns
+consent, including restart and sync behavior; see
+[the introduction plan](CONVERSATION_PLAN.md#next-priority-introductions-with-a-choice).
+
+Backup and restore is the other immediate priority. Its proposed native-file,
+passphrase and preview flow is recorded in [BACKUP_RESTORE_PLAN.md](BACKUP_RESTORE_PLAN.md).
+It remains planned; current Settings and Getting started do not offer it.
+
 A native dialog has an explicit audience chooser and a brief optional note.
 Recipients start unselected; the dialog focuses the first choice. Submit
 through the ordinary form or Cmd+Enter; Escape cancels. Settings, palette and

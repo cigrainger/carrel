@@ -6,6 +6,61 @@ groups select people for a share; each sent share fixes its own audience. This
 is discussion around something a person chose to share, without a public stream,
 notifications, reply counts or popularity signals.
 
+## Next priority: introductions with a choice
+
+**Planned; not in alpha.3.** Prioritize the experience of a mutual friend bringing
+people together around an article they thought each person would appreciate.
+Backup and restore is the other immediate priority; see
+[BACKUP_RESTORE_PLAN.md](BACKUP_RESTORE_PLAN.md).
+
+The opening should make the human context clear: who brought the conversation
+together, their opening note, and exactly who can read and reply. Participant
+cards retain the introduction context and explicit connection flow. Taking part
+never follows another participant or gives them a contact code. Names and pictures
+must respect their signed recipient scope; a warmer presentation cannot justify
+forwarding somebody else's private profile or the sharer's local contact aliases.
+
+Settings → People will offer **Allow group conversations with people I haven't
+followed**, on by default. “Known” means a current explicit follow on this reader's
+desktop, not an inferred social connection. Turning it off declines new group
+conversations containing an unfollowed participant, including groups sent by a
+followed friend. Direct shares remain available. The sender receives no list of
+the recipient's follows and cannot override this choice through a signed audience.
+The receiving engine must enforce the decision, including delayed delivery,
+replays and own-device synchronization; hiding a composer is insufficient.
+
+The shared article and the friend's opening note should remain useful even when
+the recipient declines the group discussion. Declining must not publish a reply,
+profile, contact code or acknowledgement of participation. A sender can still
+address a signed record to a public key while its owner is offline; inclusion in
+that record must not be presented as accepted participation.
+
+An individual conversation will also offer **Leave conversation**. It stops new
+discussion on that thread, preserves the saved article and accepted history, and
+keeps an unsent reply available for copying. Leaving grants no new access and
+cannot erase copies already received. The original signed audience remains an
+immutable historical fact. The general setting affects new conversations;
+existing conversations have their own explicit leave action.
+
+Before implementation, document the signed private consent/leave records and
+their concurrency rules in SCHEMA. These decisions must follow the reader across
+their own desktops, survive restart, and stay out of the social contact graph.
+Admission must serialize with preference changes and sending a reply. A delayed
+root, reply or private replay cannot silently rejoin a declined or left thread.
+The UI must distinguish the root's fixed audience from current participation.
+
+Extend the three-reader trial to cover:
+
+- A brings B and C together; B and C can converse without following each other.
+- B disables introductions before receipt; the article remains available but B
+  does not participate in its unfamiliar group. A direct share still works.
+- A group containing only people B follows remains available with the setting off.
+- A followed friend's group includes an unfamiliar reader; the rule still applies.
+- B leaves, restarts, receives delayed records and uses another own desktop;
+  none of those actions resumes participation or loses the article/private notes.
+- A group edit, withdrawal, contact removal, failed save or stale dialog cannot
+  widen an audience, leak a contact code or discard a reply draft.
+
 ## Recognizable people
 
 Settings → People offers an optional display name and local PNG/JPEG import.
