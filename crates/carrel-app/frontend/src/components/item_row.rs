@@ -13,6 +13,7 @@ pub fn ItemList(
     on_read: UnsyncCallback<usize>,
     on_star: UnsyncCallback<usize>,
     on_select: UnsyncCallback<usize>,
+    on_conversation: UnsyncCallback<String>,
 ) -> impl IntoView {
     view! {
         <ul class="item-list" aria-label=aria_label>
@@ -31,7 +32,7 @@ pub fn ItemList(
                         current > 0 && items.get(current).and_then(|item| item.date.as_ref()).zip(items.get(current - 1).and_then(|item| item.date.as_ref())).is_some_and(|(date, previous)| date.iso == previous.iso)
                     }));
                     let item = row_data(items, item);
-                    view! { <ItemRow index=index item=item selected=selected repeated=repeated on_open=on_open on_read=on_read on_star=on_star on_select=on_select/> }
+                    view! { <ItemRow index=index item=item selected=selected repeated=repeated on_open=on_open on_read=on_read on_star=on_star on_select=on_select on_conversation=on_conversation/> }
                 }
             </For>
         </ul>
@@ -60,6 +61,7 @@ pub fn ItemRow(
     on_read: UnsyncCallback<usize>,
     on_star: UnsyncCallback<usize>,
     on_select: UnsyncCallback<usize>,
+    on_conversation: UnsyncCallback<String>,
 ) -> impl IntoView {
     view! {
         <li class="item-row" class:is-selected=move || selected.get() data-item-id=move || item.get().id on:focusin=move |_| on_select.run(index.get_untracked())>
@@ -75,7 +77,7 @@ pub fn ItemRow(
                 </p>
                 <h2><button class="item-open" type="button" on:click=move |_| on_open.run(index.get_untracked())>{move || item.get().title}</button></h2>
                 <p class="item-excerpt">{move || item.get().summary.unwrap_or_default()}</p>
-                {move || item.get().shared.map(|share| view! { <div class="received-vouch"><p>{format!("From {}", share.from)}</p>{share.note.map(|note| view! { <blockquote>{note}</blockquote> })}</div> })}
+                {move || item.get().shared.map(|share| view! { <div class="received-vouch"><p>{format!("From {}", share.from)}</p>{share.note.map(|note| view! { <blockquote>{note}</blockquote> })}<button type="button" on:click=move |event|{super::focus_dialog_trigger(&event);on_conversation.run(share.id.clone());}>"Conversation"</button></div> })}
             </div>
                 <div class="item-row-actions">
                     <button class="item-state-action" type="button"
@@ -157,6 +159,7 @@ mod tests {
                 on_read=UnsyncCallback::new(|_: usize| {})
                 on_star=UnsyncCallback::new(|_: usize| {})
                 on_select=UnsyncCallback::new(|_: usize| {})
+                on_conversation=UnsyncCallback::new(|_:String|{})
             />
         }.to_html());
         assert!(html.contains("The shape of a small reader</button>"));

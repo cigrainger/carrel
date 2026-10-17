@@ -114,8 +114,8 @@ pub fn item_action_layer() -> Layer {
             bind("H", "highlight-with-note", "Highlight and add note"),
             bind("e", "send-to-default-ereader", "Send to default ereader"),
             bind("E", "send-to-ereader-picker", "Send to ereader"),
-            bind("c", "share-last-audience", "Share with a person"),
-            bind("C", "share-audience-picker", "Share with a person"),
+            bind("c", "share-last-audience", "Share with people"),
+            bind("C", "share-audience-picker", "Share with people"),
             bind("a", "archive-item", "Archive"),
         ],
     )

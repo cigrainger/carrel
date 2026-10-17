@@ -15,7 +15,7 @@ pub(crate) use feed_activity::FeedActivity;
 pub(crate) use feed_activity::SourceActivityContent;
 pub(crate) use icon::{Icon, IconName};
 pub use item_row::ItemList;
-pub(crate) use modal::Modal;
+pub(crate) use modal::{Modal, focus_dialog_trigger};
 pub use sidebar::Sidebar;
 pub(crate) use sidebar::{ContextControls, provide_context_bar};
 pub(crate) use sidebar::{FieldNavigation, SubscriptionFiles};

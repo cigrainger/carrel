@@ -1,3 +1,42 @@
+.person-avatar { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 36px; height: 36px; overflow: hidden; background: var(--color-selected); color: var(--color-text); font: 500 13px var(--font-chrome); vertical-align: middle; margin-inline-end: 8px; }
+.person-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.profile-editor, .groups-panel { border-block-end: 1px solid var(--color-rule); padding-block-end: 24px; margin-block-end: 24px; }
+.profile-editor button, .group-list button { margin: 8px 8px 0 0; }
+.people-panel .groups-panel fieldset { border: 1px solid var(--color-rule); margin-block: 12px; padding: 12px; }
+.people-panel .groups-panel legend { float: none; width: auto; margin: 0; padding-inline: 4px; }
+.people-panel .group-member { display: flex; align-items: center; gap: 8px; margin: 0; padding-block: 6px; }
+.people-panel .group-member input { flex: none; width: 16px; height: 16px; padding: 0; margin: 0; accent-color: var(--color-accent); }
+.group-list { list-style: none; padding: 0; }
+.group-list li { border-block-start: 1px solid var(--color-rule); padding-block: 16px; }
+.share-audience { white-space: normal; overflow-wrap: anywhere; }
+dialog.conversation-dialog { margin: auto; width: min(720px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 24px; overflow: auto; }
+.conversation-dialog button { min-height: 30px; padding: 4px 10px; border: 1px solid var(--color-rule); border-radius: 0; background: transparent; color: var(--color-text); font: 14px/1.4 var(--font-chrome); }
+.conversation-dialog button:hover { background: var(--color-selected); }
+.conversation-dialog button:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+.conversation-dialog button:disabled { opacity: .55; }
+.conversation-context code { display: block; overflow-wrap: anywhere; font-size: 12px; }
+.conversation-dialog > header { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+.conversation-dialog h3 { margin: 0 0 24px; }
+.conversation-dialog h4 { font: 500 24px/1.15 var(--font-display); letter-spacing: -.025em; margin: 0 0 16px; }
+.conversation-context { border-block-end: 1px solid var(--color-rule); padding-block-end: 16px; }
+.conversation-dialog blockquote, .reply-body { white-space: pre-wrap; overflow-wrap: anywhere; }
+.conversation-dialog blockquote { margin: 16px 0; padding-inline-start: 16px; border-inline-start: 2px solid var(--color-rule-strong); }
+.conversation-replies { list-style: none; padding: 0; margin: 0; }
+.conversation-replies > li { padding-block: 24px; border-block-end: 1px solid var(--color-rule); }
+.conversation-author { display: flex; align-items: center; gap: 8px; }
+.conversation-author time { margin-inline-start: auto; color: var(--color-text-secondary); font-size: 13px; }
+.conversation-replies button { margin: 0 12px 8px 0; }
+.conversation-dialog form { margin-block-start: 24px; }
+.conversation-dialog label { display: block; margin-block-end: 8px; }
+.conversation-dialog textarea { width: 100%; resize: vertical; min-height: 100px; margin-block-end: 12px; padding: 8px; border: 1px solid var(--color-rule); border-radius: 0; background: var(--color-bg); color: var(--color-text); font: inherit; }
+.reply-context { padding: 12px; border: 1px solid var(--color-rule); margin-block-end: 16px; }
+.reply-context blockquote { max-height: 120px; overflow: auto; }
+.conversation-dialog .reply-body, .conversation-dialog blockquote { font: 16px/1.55 var(--font-body); }
+.reply-parent-context { max-height: 120px; overflow: auto; }
+.reply-provenance { margin-block-start: 8px; color: var(--color-text-secondary); font: 13px/1.5 var(--font-chrome); }
+.reply-provenance code { overflow-wrap: anywhere; white-space: normal; }
+.reply-provenance dd { margin: 0 0 8px; }
+
 body {
   min-width: 320px;
   height: 100vh;

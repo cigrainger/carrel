@@ -162,6 +162,25 @@ impl Store {
             .collect()
     }
 
+    /// Recursively trace all living heads through signed parents only.
+    /// Legacy migration links are excluded because their signatures did not cover them.
+    pub fn note_ancestry(&self, id: &str) -> Result<Vec<NoteRecord>> {
+        let query = format!(
+            r#"
+            {NOTE_ALIVE_RULES}
+            ancestor[rev] := note_head[$id,rev], live_note[$id]
+            ancestor[parent] := ancestor[rev], *note{{id:$id,revision_id:rev,signature_version:3,parents}}, parent in parents
+            ?[{NOTE_COLUMNS}] := ancestor[revision_id], *note{{{NOTE_COLUMNS}}}, id=$id
+            :sort revision_id
+        "#
+        );
+        self.query_with_params(&query, BTreeMap::from([("id".into(), DataValue::from(id))]))?
+            .rows
+            .iter()
+            .map(|row| decode_note_row(row, 0).map(NoteRecord::into_portable))
+            .collect()
+    }
+
     /// Read immutable history, including ancestors hidden by later heads/removal.
     pub fn note_revisions(&self, id: &str) -> Result<Vec<NoteRecord>> {
         let rows = self.query_with_params(

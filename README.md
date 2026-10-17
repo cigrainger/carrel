@@ -24,8 +24,10 @@ and from the habit of keeping a commonplace book. Reading comes first.
 - **Keep what you notice.** Durable highlights and notes, full annotation review,
   deliberate conflict resolution, Markdown export, and stable Carrel links back
   to articles and passages.
-- **Share by choice.** Follow a person by public key and share one archived
-  article with an optional note. Personal notes, highlights and reading state
+- **Share by choice.** Follow people by public key, choose a person or group,
+  and share an archived article with a note. Private conversations keep each
+  share's fixed audience. Optional names and pictures help recognize people;
+  local contact aliases remain yours. Personal notes, highlights and reading state
   stay private. Your own devices can synchronize through a separate pairing flow.
 
 Completion is explicit. Opening an article, scrolling to the end or going to the
@@ -43,6 +45,9 @@ CSR/WASM checks.
 
 Current source also includes sidebar folder creation and drag/drop, a skippable
 welcome sheet, and private `carrel://` links. These are not in alpha.2 packages.
+It also includes private profiles, group sharing and conversations, with recursive
+reply ancestry and note revision provenance. Both readers need a current build
+for these additions; they are not in alpha.2 packages.
 
 Physical two-computer sharing, live native file-picker selection and broader
 platform usability remain manual release checks. This is an early tool for

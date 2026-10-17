@@ -140,7 +140,7 @@ impl Store {
         let shared_context = if filter.view == ItemView::Shared {
             r#"
             chosen[id, min(key)] := page[_, at, id], *social_receipt{share_id, item_id: id}, *social_record{key, share_id, author, recipient, kind: 'share', created_at: at}, not retracted[share_id, author, recipient]
-            share_context[id, encoded, name] := chosen[id, key], *social_record{key, encoded, author}, *social_contact{master: author, name}
+            share_context[id, encoded, name] := chosen[id, key], *social_record{key, encoded}, name=''
             "#
         } else {
             "share_context[id, encoded, name] := page[_, _, id], encoded = null, name = null"
@@ -271,7 +271,7 @@ impl Store {
                                 carrel_core::sharing::ShareFact::Share(share) => {
                                     Some(LibraryShare {
                                         id: share.id,
-                                        from: string(&row[13])?,
+                                        from: self.social_name(&share.certificate.master_pubkey)?,
                                         note: share.note,
                                         created_at_micros: share.created_at_micros,
                                     })

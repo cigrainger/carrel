@@ -31,7 +31,9 @@ Paths below are relative to `crates/`. Integration tests live in each crate's
 | Note branches / explicit intent | Core `annotation/note.rs`, `private_state.rs`; store `notes.rs`, `private_state.rs` | Property tests, store notes/state tests |
 | Identity / key files | Core `identity/`; store `keystore.rs`, `identity.rs` | Keystore/identity tests and fixed compatibility fixture |
 | Private device authorization | Sync `authorization.rs`, `transport.rs`, `pairing.rs` | Real-peer transport/pairing, revocation and restart tests |
-| Friend audience isolation | Core / store / sync `sharing.rs` | Adversarial/property tests, receipts and three-peer exchange |
+| Friend / group audience isolation | Core `sharing.rs`, `conversation.rs`; store `sharing/`; sync `sharing.rs` | Adversarial/property tests, receipts and four-peer reply relay |
+| Conversation / revision ancestry | Store `sharing/conversation.rs`, `notes.rs`; app `commands/conversations.rs` | Out-of-order/cycle/removal, branch provenance and self-bridge tests |
+| Private profiles / pictures | Core `conversation.rs`; app `commands/conversations.rs`; frontend `conversations.rs` | Recipient scope, alias precedence and bounded raster normalization |
 | Close / pending writes | App `close.rs`; frontend `progress.rs`, `writes.rs`, `requests.rs` | Unit tests and bounded native/browser review |
 | Keyboard / modal focus | Core `keymap/`; frontend `keymap/`, `components/modal.rs` | Keymap unit tests and actual webview review |
 

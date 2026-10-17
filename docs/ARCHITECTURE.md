@@ -9,8 +9,8 @@ It is *not* the place for the data model itself (see `SCHEMA.md`), the visual an
 This is also a living document. When an architectural decision changes, this document changes — ideally in the same change as the code. If you find drift between this document and the code, treat it as a bug and fix the document.
 
 The current implementation is pre-alpha. The local reader, archive/search,
-annotations, private self-sync and one-person sharing flow exist. Public
-syndication, group audiences, OPDS, mobile and identity-recovery UI are future
+annotations, private self-sync, private profiles and fixed-audience group
+conversations exist. Public syndication, OPDS, mobile and identity-recovery UI are future
 designs. They are marked below; a design sketch does not establish an implemented
 API. [CODE_MAP.md](CODE_MAP.md) locates source and tests.
 
@@ -144,8 +144,16 @@ It repairs publication, receives pages and rotates failed cache transfers, with
 two bounded peer exchanges at a time. Store revision changes refresh the existing
 list/reader observer, including partial cache progress. Recovery is quiet and
 person-specific in Settings. The first flow pins one desktop per person; contacts
-and outgoing social history are local to that desktop. Automatic friend-device
-rotation, group/public audiences and social graph self-sync remain future scope.
+and connection hints remain local to that desktop. Automatic friend-device
+rotation and public audiences remain future scope. Signed profile and conversation
+records use the same bounded social transport. A group share fixes a signed
+recipient set; verified member replies may be relayed only inside that set.
+Cozo retains dependency staging and recursive ancestry/provenance projections.
+Accepted social history also enters the authorized private journal, preserving
+original signatures on the user's other desktops. Local contact/group setup
+does not replicate or grant a friend private document access. Avatars are small
+normalized raster payloads inside recipient-scoped signed profiles, never URLs
+or generic blob grants. See SCHEMA's version 11 contract.
 
 Settings' Devices section explicitly creates or resumes a passphrase-protected master,
 or accepts a one-time copy/paste invitation. Invitations last five minutes and
@@ -358,7 +366,8 @@ contact card, exchanged as copy/paste text. The card binds a certified device
 and connection information to that master key. Each reader pins the other;
 the typed sharing protocol checks the contact certificate and recipient before
 selecting facts. Friends receive no private document capability. Directory/QR
-discovery, public docs and group audience grants are future scope.
+discovery and public docs are future scope. Named groups select a fixed recipient
+set for each share; they issue no namespace capability or mutable group grant.
 
 Trust is never inferred. There is no "friend of friend," no automatic trust propagation, no global graph. If user A wants to follow user C because B follows C, A must explicitly do so.
 

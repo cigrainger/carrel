@@ -67,7 +67,7 @@ pub(crate) fn ShareMenu(
                         close.run(true);
                         if can_share.get_untracked() { on_share.run(()); }
                         else if let Some(preferences) = preferences { preferences.open_settings(crate::preferences::SettingsSection::People); }
-                    }>{move || if can_share.get() { "Share with a person…" } else { "Add a person…" }}</button>
+                    }>{move || if can_share.get() { "Share with people…" } else { "Add a person…" }}</button>
                     <Show when=move || sharing.is_some_and(|sharing| sharing.loading.get())><p role="status">"Checking people…"</p></Show>
                     <Show when=move || sharing.is_some_and(|sharing| sharing.error.get().is_some())>
                         <p>"Could not check your people."</p><button type="button" on:click=move |_| { if let Some(sharing) = sharing { sharing.refresh(); } }>"Retry people"</button>

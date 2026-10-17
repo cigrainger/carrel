@@ -741,7 +741,7 @@ Connections power some of the most interesting queries: "show me the network 2 h
 ### Implemented private-sharing boundary (versions 9–10)
 
 The first private-sharing flow uses one explicit recipient per share. The
-general audiences, discussion and public-syndication relations below remain
+general public-syndication relations below remain
 future scope. Version 9 adds the following bounded typed records without
 rewriting existing archives, self identities or private journals:
 
@@ -905,6 +905,77 @@ Replies enable discussion on shares. We model them explicitly rather than as not
 Threading via `parent_reply_id`. A reply at the top level has `parent_reply_id: null`.
 
 **Trust:** all share-related relations are signed. Shares flow to followers via `doc:public` (or audience docs); replies go to the participant set of the share's audiences.
+
+### Private profiles, groups and conversations (version 11)
+
+This milestone brings discussion into the first friend trial. The generic
+audience/reply sketches above are not the wire protocol. The bounded protocol
+extends `ShareFact` with profiles, replies and reply removals. Version 1 shares
+keep their exact signed bytes. Version 2 signs an ordered unique recipient set
+(at most 16 people) and the existing public article subset. Group names and local
+contact aliases remain local; the wire carries only the chosen recipient keys.
+The sharer is also a participant. Changing a named group affects future shares
+only. There are no implicit joins, group capabilities or public conversations.
+
+```
+:create social_pending { key: String => encoded: Bytes }
+:create social_reply { id: String => key: String, share_id: String, parent: String? }
+:create social_group { id: String => name: String, members: [Bytes] }
+```
+
+The reply relation is an index of verified canonical records; recipient filtering
+uses the original signed scope rather than an unsigned access list. Replies bind
+a root share's canonical signed digest, its sharer and complete immutable recipient
+set, a stable retry token, optional parent, body and signing certificate. Missing
+roots/parents wait in bounded durable staging (512 records, 32 MiB); they are
+neither visible nor served. Promotion requires an exact root scope and a parent
+in that thread. Ancestors must already be accepted, so cycles cannot enter the
+visible graph. Recursive Cozo queries supply ancestry and signed provenance;
+chronological display uses a deterministic ID tie break. Removed parents retain
+their position and ancestry but render as removed, without their body.
+
+Only a reply's author can remove it. Removal permanently dominates delivery,
+including removal-before-reply, replay and clock rollback. Withdrawal by the
+root sharer closes the entire conversation: retain accepted replies/history,
+hide it from active vouches, and reject new local replies. Offline replies may
+arrive after withdrawal and remain in history, but cannot reopen the thread.
+Withdrawal does not promise deletion of received copies. Replies are immutable;
+editing is deferred rather than silently replacing another device's draft.
+
+Profiles sign a recipient, monotonically increasing generation, optional name
+and normalized avatar. Concurrent equal generations use a digest of the signed
+master/generation/name/avatar presentation as a deterministic tie break; it excludes
+recipient, device and display time so making a delivery copy cannot change the
+selected presentation. A later explicit save observes all known generations.
+Each active desktop idempotently prepares copies of the current presentation for
+its own followed contacts, including after a profile arrives through self-sync.
+Local contact aliases always win, including labels that resemble key prefixes.
+New contacts with no chosen alias store an empty name and use the verified
+profile name or key fallback; existing labels are never guessed or rewritten.
+Avatars are bounded
+256px PNGs, stripped and re-encoded locally; their digest and bytes travel inside
+the signed bounded profile, so there is no avatar URL or arbitrary blob request.
+Profiles travel only to explicitly followed people, never via group forwarding.
+
+The authenticated friend may relay already verified group replies to other
+members of that same root; root signature and exact audience are still checked.
+A forwarded root must be authored by an explicitly followed person. Forwarding
+does not follow anyone, disclose contact cards, or admit private facts. Every
+cache request remains scoped to an unretracted root and approved image grant.
+
+Accepted social records are also wrapped in the self-channel `PrivateFact::Social`
+allow-list and journaled atomically. An active certified self-device may forward
+original signed records only when its bound master is a participant. Contacts,
+named groups and connection hints remain local configuration: another desktop
+can read its conversation history and queue replies through own-device sync.
+Direct friend exchange there requires explicit contact setup. The current profile
+is reconstructed from signed history.
+No social peer can submit the wrapper or change self authorization.
+
+Migration 11 adds indexes and pending/group relations resumably, backfills only
+verified legacy records, and journals their original bytes without signing or
+rewriting them. It never follows a person or enables networking. Version is
+recorded last.
 
 ## Feeds
 

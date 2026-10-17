@@ -109,6 +109,269 @@ fn article(
         .unwrap()
 }
 
+async fn exchange(from: &Person, to: &Person) {
+    let mut cursor = None;
+    loop {
+        cursor = from.service.publish(cursor).await.unwrap();
+        if cursor.is_none() {
+            break;
+        }
+    }
+    let mut cursor = None;
+    loop {
+        let (next, _) = to
+            .service
+            .receive(&from.service.contact_card().unwrap(), cursor)
+            .await
+            .unwrap();
+        cursor = next;
+        if cursor.is_none() {
+            break;
+        }
+    }
+}
+
+#[tokio::test]
+async fn group_replies_relay_through_the_sharer_without_expanding_any_audience() {
+    use carrel_core::conversation::ConversationContent;
+    let dir = tempfile::tempdir().unwrap();
+    let a = person(&dir.path().join("a"), 61).await;
+    let b = person(&dir.path().join("b"), 63).await;
+    let c = person(&dir.path().join("c"), 65).await;
+    let d = person(&dir.path().join("d"), 67).await;
+    for friend in [&b, &c, &d] {
+        follow(&a, friend);
+        follow(friend, &a);
+    }
+    let private = a
+        .cache
+        .put_blocking(b"Private note and unshared archive")
+        .unwrap();
+    let direct = article(
+        &a,
+        "https://example.org/shared-twice",
+        "<p>A deliberately shared article.</p>",
+        vec![],
+        "just-d",
+        *d.master.public(),
+    );
+    let mut members = vec![*b.master.public(), *c.master.public()];
+    members.sort();
+    let group = a
+        .store
+        .create_social_share_for(
+            ShareDraft {
+                request_id: "book-club".into(),
+                recipient: members[0],
+                article: direct.article.clone(),
+                note: Some("What did you make of this argument?".into()),
+            },
+            members,
+            101,
+            &a.device,
+        )
+        .unwrap();
+    a.store
+        .save_social_profile("Alice", None, 102, &a.device)
+        .unwrap();
+    exchange(&a, &b).await;
+    exchange(&a, &c).await;
+    exchange(&a, &d).await;
+    // A profile edited on an own desktop has no local contact configuration
+    // there. A prepares only missing recipient copies after private delivery.
+    let other_device = Keypair::from_seed(&[69; 32]);
+    let other_certificate = DeviceCert::new_at_micros(&a.master, other_device.public(), 1, None);
+    a.store
+        .accept_self_device_certificate(&other_certificate)
+        .unwrap();
+    for (name, certificate, device) in [
+        ("Another desktop", other_certificate, &other_device),
+        (
+            "Concurrent name",
+            a.store.social_local_certificate(a.device.public()).unwrap(),
+            &a.device,
+        ),
+    ] {
+        let profile = carrel_core::conversation::ConversationRecord::sign(
+            ConversationContent::Profile {
+                recipient: *a.master.public(),
+                generation: 2,
+                name: name.into(),
+                avatar: None,
+            },
+            102,
+            certificate,
+            device,
+        )
+        .unwrap();
+        a.store
+            .accept_self_private_fact(
+                &carrel_core::private_library::PrivateFact::Social(Box::new(
+                    ShareFact::Conversation(Box::new(profile)),
+                )),
+                a.device.public(),
+            )
+            .unwrap();
+    }
+    let presentation = a
+        .store
+        .social_profile(a.master.public())
+        .unwrap()
+        .unwrap()
+        .profile_revision_id()
+        .unwrap();
+    exchange(&a, &b).await;
+    exchange(&a, &c).await;
+    assert_eq!(
+        a.store
+            .social_profile(a.master.public())
+            .unwrap()
+            .unwrap()
+            .profile_revision_id()
+            .unwrap(),
+        presentation,
+        "delivery copies cannot change a concurrent profile winner"
+    );
+    assert_eq!(
+        b.store
+            .social_profile(a.master.public())
+            .unwrap()
+            .unwrap()
+            .profile_revision_id()
+            .unwrap(),
+        presentation
+    );
+    let records = a.store.social_history(None, 100).unwrap().len();
+    exchange(&a, &b).await;
+    assert_eq!(
+        a.store.social_history(None, 100).unwrap().len(),
+        records,
+        "profile publication is idempotent"
+    );
+    assert!(d.store.social_conversation(&group.id).is_err());
+    assert!(b.store.social_conversation(&direct.id).is_err());
+    assert!(c.store.social_conversation(&direct.id).is_err());
+    let transfer = c
+        .service
+        .transfer_cache(&a.service.contact_card().unwrap())
+        .await
+        .unwrap();
+    assert!(transfer.changed);
+    assert!(transfer.errors.is_empty());
+    let reply = b
+        .store
+        .reply_to_social_share(
+            &group.id,
+            "offline-b",
+            None,
+            "An offline thought — 文",
+            103,
+            &b.device,
+        )
+        .unwrap();
+    b.store
+        .save_social_profile("Bob's private contact profile", None, 103, &b.device)
+        .unwrap();
+    let ConversationContent::Reply { id: reply_id, .. } = &reply.content else {
+        panic!()
+    };
+    assert!(
+        a.store
+            .social_conversation(&group.id)
+            .unwrap()
+            .replies
+            .is_empty()
+    );
+    exchange(&b, &a).await;
+    exchange(&a, &c).await;
+    exchange(&a, &d).await;
+    assert!(
+        c.store.social_profile(b.master.public()).unwrap().is_none(),
+        "a group relay cannot forward a profile addressed only to the sharer"
+    );
+    assert_eq!(
+        c.store.social_conversation(&group.id).unwrap().replies[0].record,
+        reply
+    );
+    assert!(
+        c.store.social_contact(b.master.public()).unwrap().is_none(),
+        "relay never follows another participant"
+    );
+    assert!(
+        d.store
+            .social_record(&format!("reply/{reply_id}"))
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        c.service
+            .request(
+                a.host.address(),
+                Operation::Blob {
+                    share_id: group.id.clone(),
+                    blob_id: private.to_string()
+                },
+                64
+            )
+            .await
+            .is_err()
+    );
+    let answer = c
+        .store
+        .reply_to_social_share(
+            &group.id,
+            "c-answer",
+            Some(reply_id.clone()),
+            "That middle section changed my mind",
+            104,
+            &c.device,
+        )
+        .unwrap();
+    exchange(&c, &a).await;
+    exchange(&a, &b).await;
+    let ConversationContent::Reply { id: answer_id, .. } = &answer.content else {
+        panic!()
+    };
+    assert_eq!(
+        b.store.social_reply_ancestry(&group.id, answer_id).unwrap(),
+        vec![answer.clone(), reply.clone()]
+    );
+    b.store
+        .remove_social_reply(&group.id, reply_id, -1, &b.device)
+        .unwrap();
+    exchange(&b, &a).await;
+    exchange(&a, &c).await;
+    assert!(c.store.social_conversation(&group.id).unwrap().replies[0].removed);
+    a.store
+        .retract_social_share(&group.id, -2, &a.device)
+        .unwrap();
+    exchange(&a, &c).await;
+    assert!(c.store.social_conversation(&group.id).unwrap().closed);
+    assert!(
+        c.store
+            .reply_to_social_share(
+                &group.id,
+                "late-local",
+                None,
+                "Must remain a draft",
+                105,
+                &c.device
+            )
+            .is_err()
+    );
+    assert!(
+        c.store
+            .query("?[id] := *read_state{item_id:id}")
+            .unwrap()
+            .rows
+            .is_empty()
+    );
+    a.host.stop().await.unwrap();
+    b.host.stop().await.unwrap();
+    c.host.stop().await.unwrap();
+    d.host.stop().await.unwrap();
+}
+
 #[tokio::test]
 async fn background_exchange_pins_a_bare_key_and_repairs_its_mirror_after_restart() {
     let dir = tempfile::tempdir().unwrap();

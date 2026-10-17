@@ -12,6 +12,8 @@ use tauri::State;
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct PeopleSnapshot {
+    profile: Option<super::conversations::ProfileSummary>,
+    groups: Vec<super::conversations::GroupSummary>,
     key: Option<String>,
     contact_code: Option<String>,
     ready: bool,
@@ -20,6 +22,7 @@ pub(crate) struct PeopleSnapshot {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct PersonSummary {
+    image: Option<String>,
     key: String,
     name: String,
     connected: bool,
@@ -43,6 +46,10 @@ pub(crate) struct ShareRequest {
     request_id: String,
     item_id: String,
     recipient: String,
+    #[serde(default)]
+    group: Option<String>,
+    #[serde(default)]
+    audience: Vec<String>,
     note: String,
 }
 #[derive(Serialize)]
@@ -54,30 +61,52 @@ pub(crate) struct ContactPreview {
 
 #[tauri::command]
 pub(crate) async fn list_people(state: State<'_, AppState>) -> Result<PeopleSnapshot> {
-    let binding = state.store.self_identity()?;
+    let contacts = state.store.social_contacts()?;
     let sync = state.sync.lock().await;
     let service = sync.social.as_ref();
-    let people = state
-        .store
-        .social_contacts()?
-        .into_iter()
-        .map(|contact| PersonSummary {
-            key: contact.master.to_hex(),
-            name: contact.name,
-            connected: contact.card.is_some(),
-            followed: contact.followed,
-            error: service.and_then(|worker| worker.error(&contact.master)),
+    let errors = contacts
+        .iter()
+        .map(|contact| {
+            (
+                contact.master,
+                service.and_then(|worker| worker.error(&contact.master)),
+            )
         })
-        .collect();
+        .collect::<std::collections::BTreeMap<_, _>>();
     let contact_code = service
         .and_then(|worker| worker.bridge.contact_card().ok())
         .and_then(|card| card.to_text().ok());
-    Ok(PeopleSnapshot {
-        key: binding.map(|binding| binding.master_pubkey.to_hex()),
-        ready: contact_code.is_some(),
-        contact_code,
-        people,
+    drop(sync);
+    let store = state.store.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let binding = store.self_identity()?;
+        let people = contacts
+            .into_iter()
+            .map(|contact| {
+                Ok(PersonSummary {
+                    image: super::conversations::profile(&store, &contact.master)?.image,
+                    key: contact.master.to_hex(),
+                    name: store.social_name(&contact.master)?,
+                    connected: contact.card.is_some(),
+                    followed: contact.followed,
+                    error: errors.get(&contact.master).cloned().flatten(),
+                })
+            })
+            .collect::<Result<_>>()?;
+        Ok(PeopleSnapshot {
+            profile: binding
+                .as_ref()
+                .map(|binding| super::conversations::profile(&store, &binding.master_pubkey))
+                .transpose()?,
+            groups: super::conversations::groups(&store)?,
+            key: binding.map(|binding| binding.master_pubkey.to_hex()),
+            ready: contact_code.is_some(),
+            contact_code,
+            people,
+        })
     })
+    .await
+    .map_err(|_| AppError::Config("Could not read your people. Try again.".into()))?
 }
 
 #[derive(Serialize)]
@@ -135,6 +164,10 @@ pub(crate) async fn follow_person(
     state
         .store
         .follow_social_contact(key, &name, card.as_ref())?;
+    let device = super::highlights::load_device_key(&state.paths)?;
+    state
+        .store
+        .publish_social_profile_to(key, crate::feed_runner::now_micros(), &device)?;
     wake(&state).await;
     Ok(())
 }
@@ -166,11 +199,7 @@ pub(crate) async fn share_article(
         .map_err(|_| {
             AppError::Config("Could not prepare this share. Your note is still available.".into())
         })??;
-    let to = state
-        .store
-        .social_contact(&share.recipient)?
-        .map(|person| person.name)
-        .unwrap_or_else(|| share.recipient.to_hex()[..12].into());
+    let to = state.store.social_audience_name(&share)?;
     let summary = SentShareSummary {
         id: share.id,
         item_id: share.article.id,
@@ -193,6 +222,54 @@ fn prepare_share_from_parts(
     device: &carrel_core::identity::Keypair,
     request: ShareRequest,
 ) -> Result<carrel_core::sharing::Share> {
+    let note = (!request.note.trim().is_empty()).then(|| request.note.trim().to_owned());
+    let certificate = store.social_local_certificate(device.public())?;
+    let id = carrel_core::sharing::Share::draft_id(&certificate, &request.request_id)
+        .map_err(|_| AppError::Config("This share draft is invalid.".into()))?;
+    let mut expected = request
+        .audience
+        .iter()
+        .map(|key| parse_key(key))
+        .collect::<Result<Vec<_>>>()?;
+    expected.sort();
+    if let Some(carrel_core::sharing::ShareFact::Share(existing)) =
+        store.social_record(&format!("share/{id}"))?
+    {
+        let same_recipient = if request.group.is_some() {
+            existing.version == 2 && existing.recipients() == expected
+        } else {
+            existing.version == 1 && existing.recipient == parse_key(&request.recipient)?
+        };
+        if same_recipient && existing.article.id == request.item_id && existing.note == note {
+            return Ok(*existing);
+        }
+        return Err(AppError::Config("This draft was already saved with different recipients or text. Your current draft is still here.".into()));
+    }
+    let group = request
+        .group
+        .as_ref()
+        .map(|id| {
+            store
+                .social_groups()?
+                .into_iter()
+                .find(|group| group.id == *id)
+                .ok_or_else(|| {
+                    AppError::Config(
+                        "This group is no longer available. Choose recipients again.".into(),
+                    )
+                })
+        })
+        .transpose()?;
+    if let Some(group) = &group
+        && group.members != expected
+    {
+        return Err(AppError::Config("This group changed after you selected it. Choose it again to review the recipients; your note is still here.".into()));
+    }
+    if group.is_none() && !expected.is_empty() {
+        return Err(AppError::Config(
+            "Choose a person or group again before sharing.".into(),
+        ));
+    }
     let snapshot = store
         .saved_article_snapshot(&request.item_id)?
         .ok_or_else(|| AppError::Config("This article is no longer available.".into()))?;
@@ -231,14 +308,24 @@ fn prepare_share_from_parts(
     }
     let article = public_article_snapshot(snapshot, images)
         .map_err(|_| AppError::Config("This article cannot be prepared for sharing.".into()))?;
-    let note = (!request.note.trim().is_empty()).then(|| request.note.trim().to_owned());
-    Ok(store.create_social_share(
+    Ok(store.create_social_share_for(
         ShareDraft {
             request_id: request.request_id,
-            recipient: parse_key(&request.recipient)?,
+            recipient: if let Some(group) = &group {
+                *group
+                    .members
+                    .first()
+                    .ok_or_else(|| AppError::Config("Choose people for this group first.".into()))?
+            } else {
+                parse_key(&request.recipient)?
+            },
             article,
             note,
         },
+        group
+            .as_ref()
+            .map(|group| group.members.clone())
+            .unwrap_or_default(),
         crate::feed_runner::now_micros(),
         device,
     )?)
@@ -308,6 +395,8 @@ mod tests {
                 request_id: "native-share".into(),
                 item_id: id.clone(),
                 recipient: friend.public().to_hex(),
+                group: None,
+                audience: Vec::new(),
                 note: "Vouch only".into(),
             },
         )
@@ -338,6 +427,51 @@ mod tests {
         );
         assert_eq!(detail.read_state, "unread");
         assert!(!detail.starred);
+        let another = Keypair::from_seed(&[64; 32]);
+        store
+            .follow_social_contact(*another.public(), "Another friend", None)
+            .unwrap();
+        let mut members = vec![*friend.public(), *another.public()];
+        members.sort();
+        store
+            .save_social_group("essays", "Essays", members.clone())
+            .unwrap();
+        let request = || ShareRequest {
+            request_id: "group-retry".into(),
+            item_id: id.clone(),
+            recipient: String::new(),
+            group: Some("essays".into()),
+            audience: members.iter().map(|key| key.to_hex()).collect(),
+            note: "A deliberately reviewed audience".into(),
+        };
+        store
+            .save_social_group("essays", "Essays", vec![*friend.public()])
+            .unwrap();
+        assert!(
+            prepare_share_from_parts(&store, &blobs, &device, request()).is_err(),
+            "a stale selection cannot silently change recipients"
+        );
+        store
+            .save_social_group("essays", "Essays", members.clone())
+            .unwrap();
+        let group_share = prepare_share_from_parts(&store, &blobs, &device, request()).unwrap();
+        let wire = carrel_core::sharing::ShareFact::Share(Box::new(group_share.clone()))
+            .to_bytes()
+            .unwrap();
+        assert!(
+            !wire
+                .windows(b"Essays".len())
+                .any(|bytes| bytes == b"Essays"),
+            "local group names never enter the signed wire record"
+        );
+        store
+            .save_social_group("essays", "Renamed", vec![*friend.public()])
+            .unwrap();
+        assert_eq!(
+            prepare_share_from_parts(&store, &blobs, &device, request()).unwrap(),
+            group_share,
+            "acknowledgement retry preserves the original proof after a group edit"
+        );
     }
 }
 
@@ -350,7 +484,7 @@ pub(crate) async fn retract_share(state: State<'_, AppState>, id: String) -> Res
     wake(&state).await;
     Ok(())
 }
-async fn wake(state: &AppState) {
+pub(super) async fn wake(state: &AppState) {
     let sync = state.sync.lock().await;
     if let Some(worker) = &sync.social {
         worker.wake();
@@ -359,7 +493,7 @@ async fn wake(state: &AppState) {
 async fn refresh_authorization(state: &AppState) -> Result<()> {
     crate::sync::refresh_sharing_authorization(state).await
 }
-fn parse_key(key: &str) -> Result<PublicKey> {
+pub(super) fn parse_key(key: &str) -> Result<PublicKey> {
     let key = PublicKey::from_hex(key.trim())
         .map_err(|_| AppError::Config("Enter a valid public key or Carrel contact code.".into()))?;
     key.validate()
@@ -376,7 +510,7 @@ fn parse_contact(text: &str) -> Result<(PublicKey, Option<ContactCard>)> {
         Ok((parse_key(text)?, None))
     }
 }
-fn date(at: i64) -> String {
+pub(super) fn date(at: i64) -> String {
     time::OffsetDateTime::from_unix_timestamp_nanos(i128::from(at) * 1000)
         .map(|at| at.date().to_string())
         .unwrap_or_else(|_| "unknown date".into())

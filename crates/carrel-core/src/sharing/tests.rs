@@ -58,6 +58,97 @@ fn share(note: Option<String>) -> Share {
 }
 
 #[test]
+fn conversation_records_bind_the_fixed_audience_author_parent_and_body() {
+    use crate::conversation::{ConversationContent as Content, ConversationRecord, ThreadScope};
+    let (cert, device, recipient) = credentials();
+    let other = *Keypair::from_seed(&[14; 32]).public();
+    let root = Share::sign_for(
+        "group".into(),
+        vec![other, recipient],
+        article(),
+        Some("An opener".into()),
+        10,
+        cert.clone(),
+        &device,
+    )
+    .unwrap();
+    let scope = ThreadScope::from_share(&root).unwrap();
+    assert_eq!(scope.participants().len(), 3);
+    let reply = ConversationRecord::sign(
+        Content::Reply {
+            scope: scope.clone(),
+            id: Share::draft_id(&cert, "reply").unwrap(),
+            request_id: "reply".into(),
+            parent: None,
+            body: "A reply — 文".into(),
+        },
+        11,
+        cert.clone(),
+        &device,
+    )
+    .unwrap();
+    for content in [
+        Content::Profile {
+            recipient,
+            generation: 1,
+            name: "Alice".into(),
+            avatar: None,
+        },
+        reply.content.clone(),
+        Content::Remove {
+            scope: scope.clone(),
+            reply_id: "c".repeat(64),
+        },
+        Content::Withdraw {
+            scope: scope.clone(),
+        },
+    ] {
+        let record = ConversationRecord::sign(content, 12, cert.clone(), &device).unwrap();
+        let fact = ShareFact::Conversation(Box::new(record.clone()));
+        let bytes = fact.to_bytes().unwrap();
+        assert_eq!(ShareFact::from_bytes(&bytes).unwrap(), fact);
+        let mut forged = record;
+        forged.created_at_micros += 1;
+        assert!(forged.verify().is_err());
+        let mut trailing = bytes;
+        trailing.push(0);
+        assert!(ShareFact::from_bytes(&trailing).is_err());
+    }
+    let mut changed = root;
+    changed.audience.retain(|key| *key != other);
+    assert!(changed.verify().is_err());
+    let outsider = Keypair::from_seed(&[15; 32]);
+    let outsider_master = Keypair::from_seed(&[16; 32]);
+    let outsider_cert = DeviceCert::new_at_micros(&outsider_master, outsider.public(), 1, None);
+    assert!(
+        ConversationRecord::sign(
+            Content::Reply {
+                scope,
+                id: Share::draft_id(&outsider_cert, "intruder").unwrap(),
+                request_id: "intruder".into(),
+                parent: None,
+                body: "Outside the audience".into()
+            },
+            13,
+            outsider_cert,
+            &outsider
+        )
+        .is_err()
+    );
+}
+
+proptest! {
+    #[test]
+    fn group_scope_is_independent_of_selection_order_and_rejects_duplicate_members(reverse in any::<bool>(), duplicate in any::<bool>()) {
+        let (cert,device,recipient)=credentials();let other=*Keypair::from_seed(&[14;32]).public();let mut members=vec![recipient,other];
+        if reverse{members.reverse();}
+        if duplicate{members.push(recipient);}
+        let root=Share::sign_for("group".into(),members,article(),None,1,cert.clone(),&device);
+        if duplicate{prop_assert!(root.is_err());}else{let root=root.unwrap();prop_assert!(root.verify().is_ok());let mut expected=vec![recipient,other];expected.sort();prop_assert_eq!(root.recipients(),expected);}
+    }
+}
+
+#[test]
 fn contact_code_binds_certificate_and_connection_information() {
     let (cert, device, _) = credentials();
     let card = ContactCard::sign(cert.clone(), "endpoint-information".into(), &device).unwrap();

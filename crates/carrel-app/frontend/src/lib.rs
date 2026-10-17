@@ -8,6 +8,7 @@ pub mod api;
 mod app_links;
 mod clipboard;
 mod components;
+mod conversations;
 mod desktop;
 mod feeds;
 mod highlights;

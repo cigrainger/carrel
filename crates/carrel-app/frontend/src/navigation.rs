@@ -4,6 +4,35 @@ use crate::api::{AnnotationCursor, HighlightListRow, ItemCursor, ItemSummary};
 use leptos::prelude::*;
 use std::collections::{BTreeMap, BTreeSet};
 
+/// Open a saved article from a dialog without losing the list behind it.
+pub(crate) fn use_article_opener() -> UnsyncCallback<String> {
+    use leptos_router::{
+        NavigateOptions,
+        hooks::{use_location, use_navigate},
+    };
+    let location = use_location();
+    let navigate = use_navigate();
+    let navigation = use_list_navigation_context();
+    let (_, remember) = crate::keymap::action("remember-list-context");
+    UnsyncCallback::new(move |id: String| {
+        remember.run(());
+        let mut origin = location.pathname.get_untracked();
+        let query = location.search.get_untracked();
+        if !query.is_empty() {
+            origin.push('?');
+            origin.push_str(&query);
+        }
+        navigation.enter_link(&id, &origin);
+        navigate(
+            &format!("/item/{id}"),
+            NavigateOptions {
+                scroll: false,
+                ..Default::default()
+            },
+        );
+    })
+}
+
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ListSnapshot {
     pub(crate) items: Vec<ItemSummary>,
@@ -82,7 +111,6 @@ pub struct ListNavigationContext {
 
 impl ListNavigationContext {
     /// Keep a useful return destination without inventing a stale next/previous queue.
-    #[cfg(any(test, target_arch = "wasm32"))]
     pub(crate) fn enter_link(&self, id: &str, origin: &str) {
         let preserve = self.selection_before_link.get_untracked() || !origin.starts_with("/item/");
         self.set(navigation_for_link(self.get(), id, origin));
@@ -114,7 +142,6 @@ impl ListNavigationContext {
     }
 }
 
-#[cfg(any(test, target_arch = "wasm32"))]
 fn navigation_for_link(previous: Option<ListNavigation>, id: &str, origin: &str) -> ListNavigation {
     if let Some(mut previous) = previous
         && (origin.starts_with("/item/") || previous.return_path == origin)

@@ -94,6 +94,8 @@ Concretely:
 - Self-sync between two of your own devices
 - Following another user by public key, receiving their shares with notes
 - Sharing with audience scoping (some friends, not all)
+- Optional private names and avatars, and conversations on deliberate shares.
+  Named groups choose recipients; each sent share fixes its own participant set.
 - Send-to-ereader for Kindle (email) and any device that speaks OPDS
 - All of the above without notifications, counts, recommendations, or engagement loops
 
@@ -104,7 +106,6 @@ If we have those things, working well, used daily by ten people we know, we have
 We are deliberately not roadmapping past v1 in detail. The shape of phase 2 will be obvious from what's missing in phase 1 use. Likely directions, in rough order of plausibility:
 
 - A mobile companion (read-only or light-write, syncing through a desktop peer)
-- Threaded discussion on shares (not comments-on-everything, only on things deliberately opened for discussion)
 - Better PDF reading and annotation
 - Hypothesis interop for web annotations
 - Import from Zotero, Kindle highlights, Apple Books, KOReader

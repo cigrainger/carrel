@@ -1,84 +1,140 @@
-# Identity and conversation around a share
+# Private identities and conversations
 
-Proposed next social milestone. Discussion is not implemented: the general
-`reply` relation in SCHEMA is a design placeholder, not a working signed
-transport, query API or UI. The current protocol sends a share to one recipient.
-That first conversation would therefore be between the sharer and that person;
-group conversations require an explicit group-audience design.
+Names, optional pictures and private conversations build on Carrel's existing
+master identities, certified desktops and deliberate article vouches. Named
+groups select people for a share; each sent share fixes its own audience. This
+is discussion around something a person chose to share, without a public stream,
+notifications, reply counts or popularity signals.
 
-The vouch is the opening message: “this is worth your time, and here is why.”
-Replies should continue that exchange, preserving the deliberate audience and
-the article's context. This should move ahead of adding more content formats if
-conversation is what makes Carrel useful to its first readers.
+## Recognizable people
 
-## Identity people can recognize
+Settings → People offers an optional display name and local PNG/JPEG import.
+Pictures are decoded with allocation/dimension limits, cropped to a small square,
+and encoded as fresh PNG pixels without source metadata. A signed profile binds
+the picture's digest and bounded bytes to its author and one recipient. No avatar
+URL, remote service or generic blob request is introduced. Initials are the
+fallback. The verified public key remains the trust anchor; a reader's local
+contact alias takes precedence over the proposed name.
 
-Cryptographic identities, certified desktop keys and local contact names already
-exist. Add an optional name and avatar attached to that existing identity.
-Names and pictures describe a person; the verified public key remains the trust
-anchor. A locally chosen contact name takes precedence over a proposed name.
-Desktop names stay separate from personal display names.
+Profiles use logical generations, with a digest of their signed presentation
+breaking equal-generation ties. Recipient/device/time fields do not change that
+digest, so forwarding cannot change the selected name/picture. A later explicit
+save observes the greatest known generation.
+Current follows receive recipient-scoped copies, including after adding a new
+contact. Group forwarding cannot forward a profile addressed to someone else.
+An own-device profile change is copied idempotently for the contacts configured
+on each active desktop, without copying the local contact configuration itself.
+Desktop names remain separate from personal presentation.
 
-Use initials when no picture is chosen. An avatar should be a small imported
-raster image, decoded and normalized locally, with bounded bytes and dimensions
-and stripped metadata. Transfer its verified blob only through an authorized
-contact relationship; never fetch avatar URLs or use a remote avatar service.
-Profiles need signed, versioned records and explicit incoming allow-list rules.
-They do not create a public profile or activity stream.
+## A fixed audience for each vouch
 
-## A conversation has a specific audience
+People includes a name and member checklist for each local group. The share
+composer offers a person or group and spells out the recipients before Send.
+It retains the selected membership while background contacts/groups refresh.
+If the group changes before the first save, the user reviews it again without
+losing the note. Retrying a completed save returns its original proof even if
+the group has since changed.
 
-Attach the thread to an immutable share ID, not merely an article URL. Separate
-shares of the same article remain separate conversations. State the participants
-beside the composer; replying never expands that set. A new audience requires a
-new deliberate share. Group threads must not be synthesized by joining separate
-one-person shares.
+Version 1 one-person vouches retain their original canonical bytes and signatures.
+Version 2 signs a sorted, unique recipient set. Group names and contact aliases
+stay local; only participant keys and deliberately shared content travel. Up to
+16 recipients plus the sharer can participate. A thread belongs to that immutable
+share ID, never merely an article URL or mutable group. Changing/removing the
+group affects future selections only. Two shares of the same article remain
+separate conversations, even when their audiences overlap.
+Replies also bind the root's exact signed digest, so an equivocating sharer cannot
+relay replies between different article/note proofs under the same draft ID.
 
-Open a conversation from a received vouch or sent-share history. Keep the original
-vouch, article access and chronological replies together. A reply can quote the
-message it answers; indentation should stay shallow and readable. Sending is
-explicit, works offline, and retains failed drafts. Reading stays available
-behind the conversation. There are no reply counts, badges, notification pings,
-typing indicators or popularity ordering.
+Members can exchange verified replies through the sharer. Direct exchange is
+also possible between mutually followed members. Everyone need not connect to
+everyone first, but relaying waits while the necessary desktop is offline.
+Forwarding never follows someone, discloses their contact card, grants a private
+archive capability or widens the root's audience. Removing a contact stops this
+desktop's direct exchange; it cannot change another participant's retained copy
+or an earlier group's fixed audience.
 
-Start with signed immutable replies and deliberate author removal. Editing can
-follow the existing causal note-revision pattern if it earns its place; it must
-retain concurrent drafts. A withdrawn share closes future participation locally
-without promising to erase copies already received. Concurrent offline replies
-and withdrawal need an explicit convergence rule before implementation.
+## Reading and replying
 
-## Engine and trust boundaries
+Conversation opens from a received vouch, article Info or People → Sent articles.
+Article Info retains received conversation links after withdrawal. The native
+dialog keeps the article/list mounted behind it and restores initiating focus.
+The original vouch opens the conversation, followed by chronological replies,
+shallow parent context and a composer naming the participants.
 
-Update VISION's milestone placement and SCHEMA's signed-record contract before
-implementing the feature. A reply must bind its root share, author, parent and
-body. The store owns queries and writes; `carrel-sync` owns verification,
-audience checks and mirror translation. A database relation alone does not
-authorize a message.
+Send is explicit, including Cmd+Enter. It commits locally without waiting for
+delivery. Failures retain the text, parent and retry identity. Unsent replies
+survive closing/reopening the conversation during the current app session;
+only Send makes a durable queued message. Late saves acknowledge exactly their
+submitted draft and preserve newer composition. Palette and native-dialog guards
+leave drafts intact. Background refresh does not replace the composer.
 
-Reject forged authors, non-participants, cross-thread parents and cycles. Handle
-out-of-order parents in a bounded pending state; never render a speculative
-conversation or fetch arbitrary private blobs. Define withdrawal/removal and
-self-device replication semantics alongside the protocol. Profile images must
-not become a way to request unrelated private content.
+Replies are immutable. Their author can deliberately remove a message; its
+placeholder and ancestry remain, while its body is omitted from presentation.
+Removal wins over delayed delivery and replay regardless of clocks. Editing is
+deferred rather than silently replacing a concurrent draft.
 
-Test the complete loop with real in-process peers: sender, recipient, another
-authorized self-device and an unrelated friend. Include two conversations about
-the same article, offline replies, restart/replay, parent arrival order,
-withdrawal, removal and revoked devices. Audience separation and retention of
-private notes/read state are acceptance criteria, not later hardening.
+The original sharer can withdraw the vouch, closing the conversation. Accepted
+history remains readable. Offline replies may arrive later and remain in that
+history, but cannot reopen it. New local replies are refused, and an unfinished
+draft stays available for copying. Withdrawal cannot erase copies already received.
 
-## Where Cozo helps
+## Cozo and signed provenance
 
-Carrel already uses native full-text indexes and temporal facts. Recursive
-Datalog can assemble reply ancestry and revision provenance; joins can return
-the article, original vouch, authors and permitted replies in one typed store
-read. Authorization still comes from verified facts and explicit policy.
+Core conversation types define bounded certified records; ShareFact is the
+social wire allow-list. Cozo stores the original canonical signed bytes.
+Its reply index supports recursive ancestry from a selected message through its
+parents. Provenance shows the original master, signing desktop and record identity.
 
-Later, reader-chosen cross-cutting views could combine sources, highlights,
-notes and shares. MinHash-LSH is also worth a bounded experiment for identifying
-syndicated near-duplicates. Any grouping should preserve item identities and
-annotations and ask before merging. These are product proposals, not enabled
-features or evidence that we need a database redesign.
+The private note editor also offers Revision provenance. A recursive Cozo query
+starts from every current head and follows signed causal parents, retaining both
+branches after conflict resolution. Unsigned legacy migration links are excluded.
+These are working typed store reads, not speculative graph or ranking features.
+Reader-chosen cross-cutting views and near-duplicate article grouping remain
+separate possible work.
 
-References: [Cozo's relational and recursive model](https://github.com/cozodb/cozo),
-[FTS and near-duplicate indexes](https://docs.cozodb.org/en/latest/releases/v0.7.html).
+Missing roots/parents wait durably in a bounded dependency queue and are neither
+rendered nor served. Promotion checks the original scope, parent thread and
+author-removal permission. Pending cycles and cross-thread parents are rejected.
+No speculative conversation or arbitrary private blob is fetched.
+
+Accepted social history also enters PrivateFact::Social in the private journal,
+atomically with its social projection. Only an authorized self-device may forward
+it, and the bound master must be a participant. Original external signatures are
+preserved. Contacts, named groups and connection hints remain local configuration;
+reading a conversation on another own desktop does not silently follow anyone.
+Friend connections still pin one certified desktop and require explicit contact
+code replacement for another; automatic friend-device rotation is future work.
+
+Schema migration 11 adds projections/staging and journals original legacy sharing
+bytes without re-signing, rewriting archives or following people. Both readers
+need this source version for profiles, group vouches and conversations. These
+features are newer than the published alpha.2 packages.
+
+## Verification and first trial
+
+Core, store and real in-process peer checks cover fixed audiences, signatures,
+out-of-order delivery, cycles, cross-thread parents, removal, withdrawal, replay,
+private cache exclusion, own-device forwarding, revocation and interrupted migration.
+Native checks cover bounded picture normalization and stale group selections.
+Temporary WebKit review exercises the actual CSR build with mocked native commands;
+it does not establish live Tauri file-picker or physical network behavior.
+
+For a first trial, use the same current build on each desktop and complete the
+[friend checklist](PRIVATE_SHARING_PLAN.md#first-friend-trial), then:
+
+1. Set distinct names/pictures. Check that a local alias still wins and that a
+   newly followed person receives the current profile.
+2. Create a group with another reader. Review its recipients in the composer,
+   share an article with a vouch and open the conversation at each end.
+3. Reply offline, reconnect and restart. Check parent context, author removal,
+   history and the deliberate Send behavior. Keep private article notes separate.
+4. With three readers, relay a reply through the sharer. Share the same article
+   to a different audience and confirm that neither conversation leaks across.
+5. Edit the group. Confirm that the earlier conversation keeps its participants.
+   Withdraw it, then check retained article Info/history and the disabled composer.
+6. Pair another own desktop. Check conversation history without an automatic
+   contact follow, and queue a reply through own-device sync. Import connection
+   information explicitly to exchange directly with friends from that desktop.
+
+Physical desktops, native file selection and manual release packaging remain
+separate checks. This feature does not publish a new release or alter alpha.2.

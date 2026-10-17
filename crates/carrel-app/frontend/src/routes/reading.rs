@@ -687,6 +687,7 @@ pub fn ItemInfo(item: ItemDetail, on_close: UnsyncCallback<()>) -> impl IntoView
                     </div>
                 </Show>
             </dl>
+            <crate::conversations::ArticleConversations item_id=item.id.clone()/>
             {item.shared_notes.into_iter().map(|share| view! { <section class="received-vouch"><h3>{format!("Shared by {}",share.from)}</h3><p>{share.date}</p>{share.note.map(|note| view! { <blockquote>{note}</blockquote> })}</section> }).collect_view()}
         </aside>
     }

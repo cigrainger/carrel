@@ -1,10 +1,12 @@
 # Private sharing with one trusted friend
 
-This is the next authorized milestone after source folders and the bounded
+This records the original one-friend milestone after source folders and the bounded
 reader review. It implements deliberate article sharing, not a general social
 network. Four primary destinations remain. Library gains Shared with you;
 Settings gains People. Article tags, group editors, public syndication,
 discussion, reactions and shared lists remain outside this pass.
+Profiles, named groups and private conversations were subsequently added; their
+current contract and trial extensions are in [CONVERSATION_PLAN.md](CONVERSATION_PLAN.md).
 
 ## Reading flow
 
@@ -79,8 +81,10 @@ headless WebKit and in-process peers do not establish those results.
 
 The first flow connects one certified desktop per followed person. Another device
 or changed connection address can be imported explicitly; automatic friend-device
-rotation and self-sync of contacts/outgoing vouches remain future scope. Received
-article archives, image scope and personal reading facts use ordinary self-sync.
+rotation and self-sync of contacts/named groups remain future scope. Signed
+conversation, vouch and profile history now uses the private journal, preserving
+original signatures on own devices. Received article archives, image scope and
+personal reading facts use ordinary self-sync.
 
 ## First friend trial
 
@@ -113,6 +117,7 @@ in Devices connects your own installations; People connects distinct readers.
    vouch should disappear from Shared with you and reader Info after exchange;
    the archived article and B's personal notes should remain in Library. Load
    older sent articles reaches earlier vouches for the same deliberate review.
+   Article Info now retains a separate received-conversation link after withdrawal.
 7. Remove the person in People. Further exchange should stop, with earlier
    archives retained. Closing Settings must resume the original reader/list and
    keyboard focus. If clipboard access was unavailable, complete-text selection

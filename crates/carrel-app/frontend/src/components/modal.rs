@@ -3,6 +3,23 @@
 use leptos::html;
 use leptos::prelude::*;
 
+/// Give native dialogs a precise return target on platforms where pointer
+/// activation does not focus buttons (including macOS WebKit).
+pub(crate) fn focus_dialog_trigger(_event: &leptos::ev::MouseEvent) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        use wasm_bindgen::JsCast;
+        if let Some(element) = _event
+            .current_target()
+            .and_then(|target| target.dyn_into::<web_sys::HtmlElement>().ok())
+        {
+            let options = web_sys::FocusOptions::new();
+            options.set_prevent_scroll(true);
+            let _ = element.focus_with_options(&options);
+        }
+    }
+}
+
 #[component]
 pub(crate) fn Modal(
     label: &'static str,

@@ -85,6 +85,10 @@ impl Store {
             .map(|row| row.certificate.device_pubkey)
             .collect();
         Ok(match fact {
+            PrivateFact::Social(record) => {
+                record.author() == binding.master_pubkey
+                    || record.recipients().contains(&binding.master_pubkey)
+            }
             PrivateFact::Item(record) => {
                 known.contains(&record.author) && record.item.kind == "article"
             }
@@ -234,6 +238,7 @@ impl Store {
         fact.verify()?;
         // Each handler orders authorization against its write transaction.
         match fact {
+            PrivateFact::Social(record) => self.accept_self_social_record(record, sender),
             PrivateFact::Item(record) => {
                 Ok(match self.accept_self_item_revision(record, sender)? {
                     ItemReceive::Applied => PrivateReceive::Applied,

@@ -115,6 +115,7 @@ pub fn Starred() -> impl IntoView {
 pub(crate) fn list_route_view(
     spec_builder: impl Fn() -> ListSpec + Send + Sync + 'static,
 ) -> impl IntoView {
+    let sharing = crate::sharing::use_sharing();
     let base_spec = Memo::new(move |_| spec_builder());
     let query_map = use_query_map();
     let query = Memo::new(move |_| {
@@ -579,7 +580,7 @@ pub(crate) fn list_route_view(
                         <p>"No articles match in this view."</p><button type="button" on:click=move |_| clear_search.run(())>"Clear search"</button>
                     </Show>
                 </div></Show> }>
-                    <ItemList items=visible selected_index=cursor aria_label=spec.get_untracked().title on_open=open on_read=read on_star=star on_select=UnsyncCallback::new(move |index| cursor.set(index))/>
+                    <ItemList items=visible selected_index=cursor aria_label=spec.get_untracked().title on_open=open on_read=read on_star=star on_select=UnsyncCallback::new(move |index| cursor.set(index)) on_conversation=UnsyncCallback::new(move |id|sharing.conversation.set(Some(id)))/>
                 </Show>
                 <Show when=move || next_cursor.get().is_some()>
                     <div class="archive-footer"><button type="button" disabled=move || paging.get() on:click=move |_| older.update(|token| *token += 1)>"Load older"</button></div>

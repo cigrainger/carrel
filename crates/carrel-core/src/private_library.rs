@@ -546,6 +546,8 @@ impl PrivateRemoval {
 // another box for every saved-item fact when its optional image scope grows.
 #[allow(clippy::large_enum_variant)]
 pub enum PrivateFact {
+    /// Original verified social history for a participant's own desktops only.
+    Social(Box<crate::sharing::ShareFact>),
     /// Saved metadata and signed cache references.
     Item(ItemRevision),
     /// Explicit reading, star, position, or subscription action.
@@ -563,9 +565,10 @@ pub enum PrivateFact {
 }
 
 impl PrivateFact {
-    /// Stable allow-list name; no social fact type has an incoming variant.
+    /// Explicit wire kind; social history still requires the participant-only self wrapper.
     pub fn kind(&self) -> &'static str {
         match self {
+            Self::Social(_) => "social",
             Self::Item(_) => "item",
             Self::State(_) => "state",
             Self::Note(_) => "note",
@@ -579,6 +582,7 @@ impl PrivateFact {
     /// Verify the original signature and each fact's bounded content.
     pub fn verify(&self) -> Result<(), LibraryFactError> {
         match self {
+            Self::Social(fact) => fact.verify().map_err(signing),
             Self::Item(fact) => fact.verify_signature(),
             Self::Highlight(fact) => fact.verify_signature(),
             Self::Removal(fact) => fact.verify_signature(),

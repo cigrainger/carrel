@@ -711,6 +711,7 @@ fn EditNoteOverlay(
                 if event.key() == "Enter" && (event.meta_key() || event.ctrl_key()) {event.prevent_default(); event.stop_propagation(); submit();}
             }>
                 <h2>{label}</h2><blockquote>{draft.quote}</blockquote>
+                <crate::conversations::NoteProvenance note_id=draft.note.id.clone()/>
                 {resolution.then(|| view! {<p>{if can_edit {"These versions were edited independently. Keep one or combine them below."} else {"You can review these versions here. This device cannot change the note."}}</p>})}
                 <div class="note-conflict-versions">
                     {versions.into_iter().map(|version| {

@@ -351,10 +351,14 @@ fn handle_keydown(context: KeymapContext, event: web_sys::KeyboardEvent) {
             && binding.sequence.keys().first() == Some(&key)
     });
     if modal_open && !palette_binding {
-        if layers
-            .iter()
-            .flat_map(Layer::bindings)
-            .any(|binding| binding.sequence.keys().first() == Some(&key))
+        // A disabled/removed control can leave focus on BODY. Let the native
+        // top-layer dialog receive Escape's default cancel even in that case;
+        // returning here still prevents the underlying route's Back action.
+        if !key.is_escape()
+            && layers
+                .iter()
+                .flat_map(Layer::bindings)
+                .any(|binding| binding.sequence.keys().first() == Some(&key))
         {
             event.prevent_default();
         }

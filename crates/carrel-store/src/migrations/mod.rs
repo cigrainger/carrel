@@ -14,9 +14,10 @@ mod v007_portable_legacy_notes;
 mod v008_private_library;
 mod v009_private_sharing;
 mod v010_current_image_scope;
+mod v011_conversations;
 
 /// The latest schema version known to this crate.
-pub const CURRENT_SCHEMA_VERSION: u32 = 10;
+pub const CURRENT_SCHEMA_VERSION: u32 = 11;
 
 /// Apply all migrations newer than `current_version`.
 pub fn migrate(db: &DbInstance, current_version: u32) -> Result<()> {
@@ -49,6 +50,9 @@ pub fn migrate(db: &DbInstance, current_version: u32) -> Result<()> {
     }
     if current_version < 10 {
         v010_current_image_scope::up(db)?;
+    }
+    if current_version < 11 {
+        v011_conversations::up(db)?;
     }
 
     Ok(())

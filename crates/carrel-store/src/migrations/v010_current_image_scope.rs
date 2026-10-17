@@ -80,11 +80,15 @@ mod tests {
     use crate::Store;
     fn version_nine() -> Store {
         let store = Store::open_in_memory().unwrap();
-        store.migrate().unwrap();
-        store
-            .query("?[version] <- [[10]] :rm schema_version {version}")
-            .unwrap();
-        store.query("::remove item_current_image_scope").unwrap();
+        super::super::v001_initial::up(&store.db).unwrap();
+        super::super::v002_search::up(&store.db).unwrap();
+        super::super::v003_annotations::up(&store.db).unwrap();
+        super::super::v004_identity::up(&store.db).unwrap();
+        super::super::v005_causal_notes::up(&store.db).unwrap();
+        super::super::v006_private_state::up(&store.db).unwrap();
+        super::super::v007_portable_legacy_notes::up(&store.db).unwrap();
+        super::super::v008_private_library::up(&store.db).unwrap();
+        super::super::v009_private_sharing::up(&store.db).unwrap();
         store
     }
     #[test]
@@ -97,7 +101,10 @@ mod tests {
         store.query(schema::CURRENT_IMAGE_SCOPE).unwrap();
         store.migrate().unwrap();
         store.migrate().unwrap();
-        assert_eq!(store.current_schema_version().unwrap(), 10);
+        assert_eq!(
+            store.current_schema_version().unwrap(),
+            crate::CURRENT_SCHEMA_VERSION
+        );
         assert_eq!(
             store.current_image_scope("item", "body").unwrap(),
             Some(vec![])
@@ -133,6 +140,9 @@ mod tests {
             store.current_image_scope("item", "body").unwrap(),
             Some(vec![image])
         );
-        assert_eq!(store.current_schema_version().unwrap(), 10);
+        assert_eq!(
+            store.current_schema_version().unwrap(),
+            crate::CURRENT_SCHEMA_VERSION
+        );
     }
 }

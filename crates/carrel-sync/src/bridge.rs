@@ -523,6 +523,7 @@ impl SelfBridge {
     pub async fn promote_dependencies(&self) -> Result<bool> {
         self.store_call(|store| {
             let mut changed = false;
+            changed |= store.promote_pending_social()?;
             loop {
                 let applied = store.promote_pending_items()?;
                 if applied.is_empty() {
@@ -585,7 +586,14 @@ fn validate_fact_key(key: &str) -> Result<()> {
     };
     if !matches!(
         kind,
-        "item" | "state" | "note" | "highlight" | "removal" | "certificate" | "revocation"
+        "item"
+            | "state"
+            | "note"
+            | "highlight"
+            | "removal"
+            | "certificate"
+            | "revocation"
+            | "social"
     ) || digest.len() != 64
         || !digest
             .bytes()

@@ -21,6 +21,8 @@ carrel-feeds = { workspace = true }
 carrel-store = { workspace = true }
 carrel-sync = { workspace = true }
 html-escape = { workspace = true }
+image = { version = "0.25.9", default-features = false, features = ["png", "jpeg"] }
+base64 = "0.22.1"
 kuchiki = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

@@ -86,6 +86,111 @@ async fn pair() -> Pair {
     }
 }
 
+#[tokio::test]
+async fn original_social_history_and_profiles_reach_another_certified_own_desktop() {
+    use carrel_core::{
+        conversation::{ConversationContent, ConversationRecord, ThreadScope},
+        sharing::{Share, ShareFact, public_article_snapshot},
+    };
+    let p = pair().await;
+    let (body, image) = article(&p.a, "Private library item", b"<p>My private archive.</p>");
+    adopt(&p.a, &p.ka, image);
+    let friend_master = Keypair::from_seed(&[171; 32]);
+    let friend = Keypair::from_seed(&[172; 32]);
+    let certificate = DeviceCert::new_at_micros(&friend_master, friend.public(), 1, None);
+    p.a.store
+        .follow_social_contact(*friend_master.public(), "Friend", None)
+        .unwrap();
+    let public = public_article_snapshot(
+        p.a.store
+            .saved_article_snapshot("article")
+            .unwrap()
+            .unwrap(),
+        vec![],
+    )
+    .unwrap();
+    let root = Share::sign(
+        "external-vouch".into(),
+        *p.root.public(),
+        public,
+        Some("A conversation opener".into()),
+        10,
+        certificate.clone(),
+        &friend,
+    )
+    .unwrap();
+    p.a.store
+        .accept_social_record(
+            &ShareFact::Share(Box::new(root.clone())),
+            friend_master.public(),
+            11,
+        )
+        .unwrap();
+    let reply = ConversationRecord::sign(
+        ConversationContent::Reply {
+            scope: ThreadScope::from_share(&root).unwrap(),
+            id: Share::draft_id(&certificate, "reply").unwrap(),
+            request_id: "reply".into(),
+            parent: None,
+            body: "Original external signature".into(),
+        },
+        12,
+        certificate,
+        &friend,
+    )
+    .unwrap();
+    p.a.store
+        .accept_social_record(
+            &ShareFact::Conversation(Box::new(reply.clone())),
+            friend_master.public(),
+            13,
+        )
+        .unwrap();
+    p.a.store
+        .save_social_profile("My private name", None, 14, &p.ka)
+        .unwrap();
+    synchronize(&p.a, &p.b, || {
+        p.b.store
+            .social_conversation(&root.id)
+            .is_ok_and(|c| c.replies.len() == 1)
+            && p.b.store.social_profile(p.root.public()).unwrap().is_some()
+    })
+    .await;
+    assert_eq!(
+        p.b.store.social_conversation(&root.id).unwrap().replies[0].record,
+        reply
+    );
+    assert!(
+        p.b.store.social_contacts().unwrap().is_empty(),
+        "contacts are never silently followed"
+    );
+    p.b.store
+        .save_social_profile("Edited on my other desktop", None, 15, &p.kb)
+        .unwrap();
+    synchronize(&p.b,&p.a,||p.a.store.social_profile(p.root.public()).unwrap().is_some_and(|record|matches!(record.content,ConversationContent::Profile{name,..} if name=="Edited on my other desktop"))).await;
+    p.a.store.publish_current_social_profiles(&p.ka).unwrap();
+    assert!(p.a.store.social_history(None,100).unwrap().iter().any(|fact|matches!(fact,ShareFact::Conversation(record) if matches!(&record.content,ConversationContent::Profile{recipient,name,..} if *recipient==*friend_master.public() &&name=="Edited on my other desktop"))),"the desktop with the followed contact prepares the updated private profile");
+    assert_eq!(
+        p.b.store
+            .social_reply_ancestry(
+                &root.id,
+                &Share::draft_id(&reply.certificate, "reply").unwrap()
+            )
+            .unwrap(),
+        vec![reply]
+    );
+    assert!(
+        p.b.store
+            .social_history(None, 100)
+            .unwrap()
+            .iter()
+            .all(|fact| fact.author() == *p.root.public())
+    );
+    assert!(p.a.cache.get_blocking(&body).is_ok());
+    stop(p.a).await;
+    stop(p.b).await;
+}
+
 async fn stop(bridge: SelfBridge) {
     let SelfBridge { doc, host, .. } = bridge;
     doc.close().await.unwrap();

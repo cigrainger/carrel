@@ -7,6 +7,8 @@ use carrel_core::sharing::{
 };
 use cozo::{DataValue, JsonData, Validity};
 use std::collections::BTreeMap;
+mod conversation;
+pub use conversation::{Conversation, ConversationReply, ReceivedConversation, SocialGroup};
 
 /// A manually pinned person, with optional signed connection information.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -40,6 +42,8 @@ pub enum SocialReceive {
     Existing,
     /// A retraction dominates this creation.
     Retracted,
+    /// Verified bytes await their original root or parent.
+    Pending,
 }
 /// A bounded cache download that must be authorized against its original share.
 #[derive(Clone, Debug)]
@@ -100,7 +104,10 @@ pub struct SentSharePage {
 const PUT_RECORD: &str = r#"{
     ?[key, encoded, author, recipient, share_id, kind, created_at] <- [[$key,$encoded,$author,$recipient,$share_id,$kind,$created]]
     :put social_record {key => encoded, author, recipient, share_id, kind, created_at}
-}"#;
+}
+{ ?[key,encoded] <- [[$pf_key,$pf_encoded]] :put self_fact_history {key=>encoded} }
+{ ?[key,encoded] <- [[$pf_key,$pf_encoded]] :put self_fact_outbox {key=>encoded} }
+"#;
 
 impl Store {
     /// A quiet UI invalidation generation, with no facts or user-visible counts.
@@ -175,7 +182,7 @@ impl Store {
             existing
                 .as_ref()
                 .map(|contact| contact.name.clone())
-                .unwrap_or_else(|| master.to_hex()[..12].to_owned())
+                .unwrap_or_default()
         } else {
             name.into()
         };
@@ -244,16 +251,36 @@ impl Store {
         at_micros: i64,
         device: &Keypair,
     ) -> Result<Share> {
+        self.create_social_share_for(draft, Vec::new(), at_micros, device)
+    }
+    /// Save one immutable group vouch. All chosen recipients must be followed.
+    pub fn create_social_share_for(
+        &self,
+        draft: ShareDraft,
+        mut audience: Vec<PublicKey>,
+        at_micros: i64,
+        device: &Keypair,
+    ) -> Result<Share> {
         let _private = self.private_state_lock.lock().expect("share archive lock");
         let _identity = self.identity_lock.lock().expect("share identity lock");
         let _social = self.social_lock.lock().expect("share write lock");
         let certificate = self.social_local_certificate(device.public())?;
+        audience.sort();
+        if !audience.is_empty() && audience.first() != Some(&draft.recipient) {
+            return Err(invalid(
+                "primary recipient differs from the chosen audience",
+            ));
+        }
         self.require_social_contact(&draft.recipient)?;
+        for recipient in &audience {
+            self.require_social_contact(recipient)?;
+        }
         let id = Share::draft_id(&certificate, &draft.request_id)?;
         if let Some(ShareFact::Share(existing)) = self.social_record(&format!("share/{id}"))? {
             if existing.recipient != draft.recipient
                 || existing.article.id != draft.article.id
                 || existing.note != draft.note
+                || existing.audience != audience
             {
                 return Err(invalid(
                     "this share draft was already saved with different content",
@@ -281,15 +308,27 @@ impl Store {
                 "article changed while preparing the share; try again",
             ));
         }
-        let share = Share::sign(
-            draft.request_id,
-            draft.recipient,
-            draft.article,
-            draft.note,
-            at_micros,
-            certificate,
-            device,
-        )?;
+        let share = if audience.is_empty() {
+            Share::sign(
+                draft.request_id,
+                draft.recipient,
+                draft.article,
+                draft.note,
+                at_micros,
+                certificate,
+                device,
+            )?
+        } else {
+            Share::sign_for(
+                draft.request_id,
+                audience,
+                draft.article,
+                draft.note,
+                at_micros,
+                certificate,
+                device,
+            )?
+        };
         self.query_with_params(
             PUT_RECORD,
             record_params(&ShareFact::Share(Box::new(share.clone())))?,
@@ -307,13 +346,26 @@ impl Store {
         if share.certificate.master_pubkey != certificate.master_pubkey {
             return Err(invalid("only the author can retract a share"));
         }
-        let record = ShareFact::Retraction(Box::new(ShareRetraction::sign(
-            id.into(),
-            share.recipient,
-            at_micros,
-            certificate,
-            device,
-        )?));
+        let record = if share.version == 2 {
+            ShareFact::Conversation(Box::new(
+                carrel_core::conversation::ConversationRecord::sign(
+                    carrel_core::conversation::ConversationContent::Withdraw {
+                        scope: carrel_core::conversation::ThreadScope::from_share(&share)?,
+                    },
+                    at_micros,
+                    certificate,
+                    device,
+                )?,
+            ))
+        } else {
+            ShareFact::Retraction(Box::new(ShareRetraction::sign(
+                id.into(),
+                share.recipient,
+                at_micros,
+                certificate,
+                device,
+            )?))
+        };
         self.query_with_params(PUT_RECORD, record_params(&record)?)?;
         Ok(())
     }
@@ -354,12 +406,29 @@ impl Store {
     }
     /// Own signed history for the separate mirror, with an exclusive bounded key.
     pub fn social_history(&self, after: Option<&str>, limit: usize) -> Result<Vec<ShareFact>> {
+        self.social_history_page(after, limit, true)
+    }
+    /// Recipient-filtered publication can relay verified group messages, never private facts.
+    pub fn social_publication_history(
+        &self,
+        after: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<ShareFact>> {
+        self.social_history_page(after, limit, false)
+    }
+    fn social_history_page(
+        &self,
+        after: Option<&str>,
+        limit: usize,
+        own: bool,
+    ) -> Result<Vec<ShareFact>> {
         let binding = self.self_identity()?.ok_or(StoreError::IdentityUnbound)?;
         self.social_local_certificate(&binding.device_pubkey)?;
         let rows = self.query_with_params(
-            "?[key] := *social_record{key,author:$author}, key>$after :sort key :limit $limit",
+            "?[key] := *social_record{key,author}, (!$own || author==$author), key>$after :sort key :limit $limit",
             BTreeMap::from([
                 ("author".into(), key_value(binding.master_pubkey)),
+                ("own".into(),DataValue::Bool(own)),
                 ("after".into(), DataValue::from(after.unwrap_or(""))),
                 ("limit".into(), DataValue::from(limit.clamp(1, 100) as i64)),
             ]),
@@ -392,7 +461,7 @@ impl Store {
             return Err(invalid("shared content is unavailable"));
         };
         let binding = self.self_identity()?.ok_or(StoreError::IdentityUnbound)?;
-        if share.recipient != *recipient
+        if !share.recipients().contains(recipient)
             || share.certificate.master_pubkey != binding.master_pubkey
             || self.social_share_retracted(
                 &share.id,
@@ -422,13 +491,23 @@ impl Store {
         }
         Ok(false)
     }
-    /// Accept only a manually followed author and the local master as recipient.
+    /// Accept a followed transport peer's record within its signed audience.
+    /// Roots require a followed author; fixed group participants may relay replies.
     /// Article metadata, receipt and pending content commit in one transaction.
     pub fn accept_social_record(
         &self,
         fact: &ShareFact,
         expected_author: &PublicKey,
         at_micros: i64,
+    ) -> Result<SocialReceive> {
+        self.accept_social_record_from(fact, expected_author, at_micros, None)
+    }
+    fn accept_social_record_from(
+        &self,
+        fact: &ShareFact,
+        expected_author: &PublicKey,
+        at_micros: i64,
+        self_sender: Option<&PublicKey>,
     ) -> Result<SocialReceive> {
         fact.verify()?;
         let _private = self.private_state_lock.lock().expect("shared article lock");
@@ -439,11 +518,30 @@ impl Store {
         let _social = self.social_lock.lock().expect("share receipt lock");
         let binding = self.self_identity()?.ok_or(StoreError::IdentityUnbound)?;
         self.social_local_certificate(&binding.device_pubkey)?;
-        self.require_social_contact(expected_author)?;
-        if fact.author() != *expected_author || fact.recipient() != binding.master_pubkey {
+        if let Some(sender) = self_sender {
+            self.require_private_sender(sender, None)?;
+        } else {
+            self.require_social_contact(expected_author)?;
+        }
+        if fact.author() != binding.master_pubkey
+            && !fact.recipients().contains(&binding.master_pubkey)
+        {
             return Err(invalid(
                 "share does not belong to this author and recipient",
             ));
+        }
+        if let ShareFact::Conversation(record) = fact {
+            return self.accept_conversation_unlocked(
+                record,
+                expected_author,
+                self_sender.is_some(),
+            );
+        }
+        if self_sender.is_none() {
+            self.require_social_contact(&fact.author())?;
+            if fact.author() != *expected_author && matches!(fact, ShareFact::Retraction(_)) {
+                return Err(invalid("withdrawal must arrive from its author"));
+            }
         }
         if let Some(existing) = self.social_record(&fact.key()?)? {
             if existing != *fact {
@@ -454,10 +552,12 @@ impl Store {
         let mut params = record_params(fact)?;
         let mut script = PUT_RECORD.to_owned();
         let result = match fact {
+            ShareFact::Conversation(_) => unreachable!("handled above"),
             ShareFact::Retraction(retraction) => {
                 if let Some(ShareFact::Share(existing)) =
                     self.social_record(&format!("share/{}", retraction.share_id))?
                     && (existing.recipient != retraction.recipient
+                        || existing.version != 1
                         || existing.certificate.master_pubkey
                             != retraction.certificate.master_pubkey)
                 {
@@ -467,6 +567,20 @@ impl Store {
                 SocialReceive::Applied
             }
             ShareFact::Share(share) => {
+                if share.version == 2 {
+                    let legacy = self.query_with_params(
+                        "?[key] := *social_record{share_id:$id,kind:'retraction',key}",
+                        BTreeMap::from([("id".into(), DataValue::from(share.id.as_str()))]),
+                    )?;
+                    for row in legacy.rows {
+                        if matches!(
+                            self.social_record(&string(&row[0])?)?,
+                            Some(ShareFact::Retraction(_))
+                        ) {
+                            return Err(invalid("group root conflicts with a legacy withdrawal"));
+                        }
+                    }
+                }
                 if self.social_share_retracted(
                     &share.id,
                     &share.certificate.master_pubkey,
@@ -692,7 +806,7 @@ impl Store {
             return Err(invalid("missing shared content proof"));
         };
         let binding = self.self_identity()?.ok_or(StoreError::IdentityUnbound)?;
-        if share.recipient != binding.master_pubkey {
+        if !share.recipients().contains(&binding.master_pubkey) {
             return Err(invalid("shared content belongs to another recipient"));
         }
         let item_id = self
@@ -793,17 +907,18 @@ impl Store {
     }
     /// Original active received vouches for an article, newest first.
     pub fn received_item_shares(&self, item_id: &str, limit: usize) -> Result<Vec<ReceivedShare>> {
-        let rows=self.query_with_params("retracted[id,author,recipient] := *social_record{share_id:id,author,recipient,kind:'retraction'} ?[key,name,created_at] := *social_receipt{share_id,item_id:$id}, *social_record{key,share_id,kind:'share',author,recipient,created_at}, not retracted[share_id,author,recipient], *social_contact{master:author,name} :sort -created_at, key :limit $limit",BTreeMap::from([("id".into(),DataValue::from(item_id)),("limit".into(),DataValue::from(limit.clamp(1,100) as i64))]))?;
+        let rows=self.query_with_params("retracted[id,author,recipient] := *social_record{share_id:id,author,recipient,kind:'retraction'} ?[key,created_at] := *social_receipt{share_id,item_id:$id}, *social_record{key,share_id,kind:'share',author,recipient,created_at}, not retracted[share_id,author,recipient] :sort -created_at, key :limit $limit",BTreeMap::from([("id".into(),DataValue::from(item_id)),("limit".into(),DataValue::from(limit.clamp(1,100) as i64))]))?;
         rows.rows
             .iter()
             .map(|row| {
                 let Some(ShareFact::Share(share)) = self.social_record(&string(&row[0])?)? else {
                     return Err(invalid("invalid received share"));
                 };
+                let name = self.social_name(&share.certificate.master_pubkey)?;
                 Ok(ReceivedShare {
                     share: *share,
                     item_id: item_id.into(),
-                    name: string(&row[1])?,
+                    name,
                 })
             })
             .collect()
@@ -873,10 +988,7 @@ impl Store {
                 let Some(ShareFact::Share(share)) = self.social_record(&string(&row[0])?)? else {
                     return Err(invalid("missing sent share"));
                 };
-                let name = self
-                    .social_contact(&share.recipient)?
-                    .map(|contact| contact.name)
-                    .unwrap_or_else(|| share.recipient.to_hex()[..12].into());
+                let name = self.social_audience_name(&share)?;
                 let retracted = self.social_share_retracted(
                     &share.id,
                     &share.certificate.master_pubkey,
@@ -904,8 +1016,8 @@ impl Store {
     }
 }
 
-fn record_params(fact: &ShareFact) -> Result<BTreeMap<String, DataValue>> {
-    Ok(BTreeMap::from([
+pub(crate) fn record_params(fact: &ShareFact) -> Result<BTreeMap<String, DataValue>> {
+    let mut params = BTreeMap::from([
         ("key".into(), DataValue::from(fact.key()?)),
         ("encoded".into(), DataValue::Bytes(fact.to_bytes()?)),
         ("author".into(), key_value(fact.author())),
@@ -913,7 +1025,11 @@ fn record_params(fact: &ShareFact) -> Result<BTreeMap<String, DataValue>> {
         ("share_id".into(), DataValue::from(fact.share_id())),
         ("kind".into(), DataValue::from(fact.kind())),
         ("created".into(), DataValue::from(fact.created_at_micros())),
-    ]))
+    ]);
+    params.extend(crate::private_library::private_fact_params(
+        &carrel_core::private_library::PrivateFact::Social(Box::new(fact.clone())),
+    )?);
+    Ok(params)
 }
 fn image_value(images: &[BlobReference]) -> Result<DataValue> {
     Ok(DataValue::Json(JsonData(

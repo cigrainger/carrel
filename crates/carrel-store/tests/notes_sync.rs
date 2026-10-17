@@ -71,6 +71,42 @@ fn edit(
         .unwrap()
 }
 
+#[test]
+fn recursive_revision_provenance_retains_both_branches_after_resolution() {
+    let p = pair();
+    let initial = root(&p, None, None);
+    p.b.accept_self_note_revision(&initial, p.ka.public())
+        .unwrap();
+    let a = edit(&p.a, &p.ka, &initial, "First independent draft");
+    let b = edit(&p.b, &p.kb, &initial, "Second independent draft");
+    p.a.accept_self_note_revision(&b, p.kb.public()).unwrap();
+    let provenance = p.a.note_ancestry(&initial.id).unwrap();
+    assert_eq!(provenance.len(), 3);
+    assert!(provenance.contains(&a));
+    assert!(provenance.contains(&b));
+    assert!(provenance.contains(&initial));
+    let merged =
+        p.a.resolve_note(
+            ResolveNoteInput {
+                id: initial.id.clone(),
+                body: "Both thoughts".into(),
+                expected_revision_ids: p
+                    .a
+                    .note_heads(&initial.id)
+                    .unwrap()
+                    .into_iter()
+                    .map(|r| r.revision_id)
+                    .collect(),
+                now_micros: Some(3),
+            },
+            &p.ka,
+        )
+        .unwrap();
+    let provenance = p.a.note_ancestry(&initial.id).unwrap();
+    assert_eq!(provenance.len(), 4);
+    assert!(provenance.contains(&merged));
+}
+
 fn legacy_revision(p: &Pair, version: i64, at: i64, body: &str, updater: &Keypair) -> NoteRevision {
     #[derive(Serialize)]
     struct Payload<'a> {

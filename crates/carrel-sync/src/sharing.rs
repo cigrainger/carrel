@@ -57,7 +57,7 @@ pub struct SocialBridge {
     doc: Doc,
     mirror: MirrorBlobs,
     author: AuthorId,
-    device: Keypair,
+    device: Arc<Keypair>,
     endpoint: Endpoint,
     requests: tokio::sync::Semaphore,
     cache_cursors: std::sync::Mutex<
@@ -132,7 +132,7 @@ impl SocialBridge {
             doc,
             mirror,
             author,
-            device,
+            device: Arc::new(device),
             endpoint,
             requests: tokio::sync::Semaphore::new(2),
             cache_cursors: std::sync::Mutex::new(std::collections::BTreeMap::new()),
@@ -149,32 +149,40 @@ impl SocialBridge {
     /// Publish one bounded history page; cache loss is repaired by cycling history.
     pub async fn publish(&self, after: Option<String>) -> Result<Option<String>> {
         let source = self.store.clone();
-        let records =
-            tokio::task::spawn_blocking(move || source.social_history(after.as_deref(), 50))
-                .await
-                .map_err(|e| transport_error("read social publication", e))??;
+        let device = self.device.clone();
+        tokio::task::spawn_blocking(move || source.publish_current_social_profiles(&device))
+            .await
+            .map_err(|e| transport_error("prepare current profile delivery", e))??;
+        let source = self.store.clone();
+        let records = tokio::task::spawn_blocking(move || {
+            source.social_publication_history(after.as_deref(), 50)
+        })
+        .await
+        .map_err(|e| transport_error("read social publication", e))??;
         let mut next = None;
         for fact in records {
             let portable = fact.key()?;
             next = Some(portable.clone());
-            let key = mirror_key(fact.recipient(), &portable);
             let bytes = fact.to_bytes()?;
-            let known = self
-                .doc
-                .get_exact(self.author, key.as_bytes(), false)
-                .await
-                .map_err(|e| transport_error("read social mirror header", e))?;
-            if let Some(entry) = known
-                && entry.content_len() == bytes.len() as u64
-                && let Ok(stored) = self.mirror.get_bytes(entry.content_hash()).await
-                && stored.as_ref() == bytes.as_slice()
-            {
-                continue;
+            for recipient in fact.recipients() {
+                let key = mirror_key(recipient, &portable);
+                let known = self
+                    .doc
+                    .get_exact(self.author, key.as_bytes(), false)
+                    .await
+                    .map_err(|e| transport_error("read social mirror header", e))?;
+                if let Some(entry) = known
+                    && entry.content_len() == bytes.len() as u64
+                    && let Ok(stored) = self.mirror.get_bytes(entry.content_hash()).await
+                    && stored.as_ref() == bytes.as_slice()
+                {
+                    continue;
+                }
+                self.doc
+                    .set_bytes(self.author, key, bytes.clone())
+                    .await
+                    .map_err(|e| transport_error("mirror signed share", e))?;
             }
-            self.doc
-                .set_bytes(self.author, key, bytes)
-                .await
-                .map_err(|e| transport_error("mirror signed share", e))?;
         }
         Ok(next)
     }
@@ -229,7 +237,10 @@ impl SocialBridge {
                 return Err(SyncError::BlobIntegrity);
             }
             let fact = ShareFact::from_bytes(&bytes)?;
-            if fact.author() != local || fact.recipient() != recipient || fact.key()? != key {
+            if (!fact.recipients().contains(&local) && fact.author() != local)
+                || !fact.recipients().contains(&recipient)
+                || fact.key()? != key
+            {
                 return Err(SyncError::InvalidEntry);
             }
             found.insert(key, fact);
@@ -401,9 +412,6 @@ impl SocialBridge {
         self.store.complete_social_contact(&card)?;
         let mut changed = false;
         for fact in records {
-            if fact.author() != expected {
-                return Err(SyncError::DeviceUnauthorized);
-            }
             let source = self.store.clone();
             let result = tokio::task::spawn_blocking(move || {
                 source.accept_social_record(&fact, &expected, now_micros())
@@ -412,6 +420,10 @@ impl SocialBridge {
             .map_err(|e| transport_error("accept signed share", e))??;
             changed |= result == SocialReceive::Applied;
         }
+        let source = self.store.clone();
+        changed |= tokio::task::spawn_blocking(move || source.promote_pending_social())
+            .await
+            .map_err(|e| transport_error("promote conversation dependencies", e))??;
         if changed {
             self.cache_cursors
                 .lock()

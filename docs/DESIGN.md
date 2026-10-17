@@ -64,7 +64,8 @@ below it illustrates two readers connected by explicit, verified contact details
 the selected article, cached images and share note travel to the friend, while
 personal annotations and reading state stay private. It explains waiting while
 offline, relay connectivity when needed, and separate private own-device sync.
-This is the implemented one-person model, not a public network or group feed.
+This illustration shows one person's connection, not a public network or group
+feed. The application also supports deliberate shares to fixed groups.
 The introduction then covers reading and keeping passages and distinguishes
 the current pre-alpha from the wider vision. Installation and recovery details
 belong to the guide rather than the opening paragraph.
@@ -759,6 +760,12 @@ unresolved version and includes its full body and stable revision reference.
 Devices without editing permission can inspect every version but cannot save
 a resolution.
 
+The note editor offers Revision provenance on request. Cozo recursively follows
+signed causal parents from every current head, showing revision and certified
+device identities without selecting a conflict winner. Unsigned legacy migration
+links are not presented as signed ancestry. Opening the disclosure leaves the
+editable draft and reader context intact.
+
 Creating a highlight with a note also retains its draft on failure. If the
 highlight succeeded first, retrying the note uses that confirmed highlight
 instead of creating another one. The editor explains this partial save.
@@ -1098,11 +1105,11 @@ feed from an incomplete article cache; diagnostic logs include a sample reason.
 Share belongs in the reader context bar as a small popover. **Copy link** copies
 the original webpage address; **Copy Carrel link** copies its private saved-item
 address. These remain useful before connecting with anyone. With a followed
-person available, **Share with a person…** opens the native composer over the
+person available, **Share with people…** opens the native composer over the
 mounted article; otherwise **Add a person…** opens Settings directly to People.
 The `c` / `C` actions follow the same recipient guard and never open an empty
 composer. A stale/failed contact read reports recovery without losing context.
-Choose one person explicitly and optionally enter a brief note. Saving queues a signed
+Choose a person or named group explicitly and optionally enter a brief note. Saving queues a signed
 vouch locally; failures retain the draft and retry identity. Sharing never
 completes or stars an article.
 
@@ -1138,12 +1145,39 @@ When multiple friends have highlighted the same passage, we show the underline o
 
 ### Share-with-note
 
+Optional name and picture are edited under Settings → People, separately from
+desktop names and the verified public key. Import a local image; show initials
+when none is chosen. Pictures are normalized locally and never fetched from a
+remote service. A person's local alias takes precedence over their proposed name.
+
+People also holds named groups, with an explicit name and member checklist.
+Groups are a convenience for selecting known people. Group names and contact
+aliases remain on this desktop; a vouch carries the chosen participant keys.
+The share composer offers a person or a group and lists every recipient before
+submission. A sent share
+fixes that audience; later group edits never change who can read its conversation.
+Removing a person stops direct exchange from this desktop without erasing received
+history or changing an earlier group's fixed audience.
+
+Conversation opens deliberately from a received vouch or sent history, in a
+native dialog over the mounted reading/list view. The article title, opening
+vouch and named participants precede chronological replies. Reply-to shows one
+shallow context quotation rather than growing indentation. Each message offers
+provenance/ancestry on request. Removed messages keep a quiet placeholder.
+The composer states its fixed audience, retains failed drafts and retry tokens,
+and sends explicitly (button or Cmd+Enter). Closing restores initiating focus
+and passage. Unsent replies stay available when reopening a conversation during
+the same app session; only explicit Send writes a durable queued message. A late
+save acknowledges its exact submitted draft and preserves newer text. A withdrawal
+leaves history readable, retains an unfinished draft for copying, and disables new replies.
+There are no reply counts, badges, notifications or typing signals.
+
 A native dialog has an explicit recipient select and a brief optional note.
 The recipient starts unselected; the dialog focuses that choice first. Submit
 through the ordinary form or Cmd+Enter; Escape cancels. Settings, palette and
 keyboard overlay guards preserve the draft. Archived content includes only the
 chosen article and approved current images, with personal annotations excluded.
-Group audiences and public sharing remain future work.
+Public sharing remains future work.
 
 ## The command palette
 

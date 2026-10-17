@@ -54,6 +54,566 @@ fn draft(a: &Person, recipient: PublicKey, token: &str) -> ShareDraft {
 }
 
 #[test]
+fn fixed_group_conversations_keep_ancestry_removals_and_private_self_history() {
+    use carrel_core::{
+        conversation::{ConversationContent as Content, ConversationRecord, ThreadScope},
+        private_library::PrivateFact,
+    };
+    let a = person(21);
+    let b = person(23);
+    let c = person(25);
+    let stranger = person(27);
+    for friend in [&b, &c, &stranger] {
+        connect(&a, friend);
+        connect(friend, &a);
+    }
+    source(
+        &a.store,
+        "original",
+        "https://example.org/thread",
+        "Shared article",
+    );
+    let mut members = vec![*b.master.public(), *c.master.public()];
+    members.sort();
+    a.store
+        .save_social_group("essays", "Essays", members.clone())
+        .unwrap();
+    let root = a
+        .store
+        .create_social_share_for(
+            draft(&a, members[0], "group-root"),
+            members.clone(),
+            100,
+            &a.device,
+        )
+        .unwrap();
+    let root_fact = ShareFact::Share(Box::new(root.clone()));
+    for recipient in [&b, &c] {
+        recipient
+            .store
+            .accept_social_record(&root_fact, a.master.public(), 101)
+            .unwrap();
+    }
+    assert!(
+        stranger
+            .store
+            .accept_social_record(&root_fact, a.master.public(), 101)
+            .is_err()
+    );
+    let first = b
+        .store
+        .reply_to_social_share(
+            &root.id,
+            "first",
+            None,
+            "One thoughtful reply — 文",
+            102,
+            &b.device,
+        )
+        .unwrap();
+    let Content::Reply { id: first_id, .. } = &first.content else {
+        panic!()
+    };
+    let second = b
+        .store
+        .reply_to_social_share(
+            &root.id,
+            "second",
+            Some(first_id.clone()),
+            "Reply with context",
+            103,
+            &b.device,
+        )
+        .unwrap();
+    let Content::Reply { id: second_id, .. } = &second.content else {
+        panic!()
+    };
+    assert_eq!(
+        a.store
+            .accept_social_record(
+                &ShareFact::Conversation(Box::new(second.clone())),
+                b.master.public(),
+                104
+            )
+            .unwrap(),
+        SocialReceive::Pending
+    );
+    assert!(
+        a.store
+            .social_conversation(&root.id)
+            .unwrap()
+            .replies
+            .is_empty()
+    );
+    a.store
+        .accept_social_record(
+            &ShareFact::Conversation(Box::new(first.clone())),
+            b.master.public(),
+            105,
+        )
+        .unwrap();
+    assert!(a.store.promote_pending_social().unwrap());
+    assert_eq!(
+        a.store.social_reply_ancestry(&root.id, second_id).unwrap(),
+        vec![second.clone(), first.clone()]
+    );
+    assert_eq!(
+        b.store
+            .reply_to_social_share(
+                &root.id,
+                "second",
+                Some(first_id.clone()),
+                "Reply with context",
+                999,
+                &b.device
+            )
+            .unwrap(),
+        second
+    );
+    assert!(
+        b.store
+            .reply_to_social_share(
+                &root.id,
+                "second",
+                Some(first_id.clone()),
+                "Changed retry",
+                999,
+                &b.device
+            )
+            .is_err()
+    );
+    let scope = ThreadScope::from_share(&root).unwrap();
+    let removal = ConversationRecord::sign(
+        Content::Remove {
+            scope: scope.clone(),
+            reply_id: first_id.clone(),
+        },
+        -1,
+        b.card.certificate.clone(),
+        &b.device,
+    )
+    .unwrap();
+    // C receives a verified member's records through the root sharer, without following B.
+    assert_eq!(
+        c.store
+            .accept_social_record(
+                &ShareFact::Conversation(Box::new(removal.clone())),
+                a.master.public(),
+                106
+            )
+            .unwrap(),
+        SocialReceive::Pending
+    );
+    c.store
+        .accept_social_record(
+            &ShareFact::Conversation(Box::new(first.clone())),
+            a.master.public(),
+            107,
+        )
+        .unwrap();
+    c.store.promote_pending_social().unwrap();
+    assert!(c.store.social_conversation(&root.id).unwrap().replies[0].removed);
+    assert!(
+        a.store
+            .remove_social_reply(&root.id, first_id, 108, &a.device)
+            .is_err()
+    );
+    assert!(
+        stranger
+            .store
+            .accept_social_record(
+                &ShareFact::Conversation(Box::new(first.clone())),
+                a.master.public(),
+                108
+            )
+            .is_err()
+    );
+    let other = a
+        .store
+        .create_social_share(
+            draft(&a, *b.master.public(), "other-audience"),
+            109,
+            &a.device,
+        )
+        .unwrap();
+    b.store
+        .accept_social_record(
+            &ShareFact::Share(Box::new(other.clone())),
+            a.master.public(),
+            110,
+        )
+        .unwrap();
+    assert!(
+        b.store
+            .reply_to_social_share(
+                &other.id,
+                "cross-thread",
+                Some(first_id.clone()),
+                "Wrong thread",
+                111,
+                &b.device
+            )
+            .is_err()
+    );
+    // Changing/removing a selection cannot change the signed participants of a sent vouch.
+    a.store
+        .save_social_group("essays", "New essays", vec![*stranger.master.public()])
+        .unwrap();
+    a.store.remove_social_group("essays").unwrap();
+    assert_eq!(
+        a.store
+            .social_conversation(&root.id)
+            .unwrap()
+            .share
+            .recipients(),
+        members
+    );
+    a.store
+        .retract_social_share(&root.id, -10, &a.device)
+        .unwrap();
+    assert!(a.store.social_conversation(&root.id).unwrap().closed);
+    let withdrawal = a
+        .store
+        .social_history(None, 100)
+        .unwrap()
+        .into_iter()
+        .find(|fact| fact.kind() == "retraction" && fact.share_id() == root.id)
+        .unwrap();
+    b.store
+        .accept_social_record(&withdrawal, a.master.public(), 113)
+        .unwrap();
+    let history = b
+        .store
+        .received_item_conversations(&carrel_store::ids::id_for_external(
+            "https://example.org/thread",
+        ))
+        .unwrap();
+    assert!(
+        history
+            .iter()
+            .any(|thread| thread.id == root.id && thread.closed),
+        "withdrawn conversations remain reachable from article Info"
+    );
+    assert!(
+        a.store
+            .reply_to_social_share(&root.id, "closed", None, "Too late", 112, &a.device)
+            .is_err()
+    );
+    a.store
+        .accept_social_record(
+            &ShareFact::Conversation(Box::new(second.clone())),
+            b.master.public(),
+            113,
+        )
+        .unwrap();
+    assert!(a.store.social_conversation(&root.id).unwrap().closed);
+    // Another certified own desktop can receive original external signatures out of order.
+    let own = Store::open_in_memory().unwrap();
+    own.migrate().unwrap();
+    let own_key = Keypair::from_seed(&[29; 32]);
+    let own_cert = DeviceCert::new_at_micros(&a.master, own_key.public(), 1, None);
+    own.bind_self_identity(&own_cert, &own_key).unwrap();
+    own.accept_self_device_certificate(&a.card.certificate)
+        .unwrap();
+    own.accept_self_private_fact(
+        &PrivateFact::Social(Box::new(ShareFact::Conversation(Box::new(second.clone())))),
+        a.device.public(),
+    )
+    .unwrap();
+    own.accept_self_private_fact(&PrivateFact::Social(Box::new(root_fact)), a.device.public())
+        .unwrap();
+    own.accept_self_private_fact(
+        &PrivateFact::Social(Box::new(ShareFact::Conversation(Box::new(first)))),
+        a.device.public(),
+    )
+    .unwrap();
+    own.promote_pending_social().unwrap();
+    assert_eq!(
+        own.social_reply_ancestry(&root.id, second_id)
+            .unwrap()
+            .len(),
+        2
+    );
+    own.accept_self_revocation(&carrel_core::identity::RevocationCert::new_at_micros(
+        &a.master,
+        a.device.public(),
+        200,
+    ))
+    .unwrap();
+    assert!(
+        own.accept_self_private_fact(
+            &PrivateFact::Social(Box::new(ShareFact::Share(Box::new(root.clone())))),
+            a.device.public()
+        )
+        .is_err(),
+        "a revoked live forwarding device cannot deliver social history"
+    );
+    assert_eq!(
+        own.social_conversation(&root.id).unwrap().replies.len(),
+        2,
+        "revocation preserves previously accepted conversation work"
+    );
+}
+
+#[test]
+fn profiles_are_recipient_scoped_and_local_aliases_win_over_remote_names() {
+    let a = person(51);
+    let b = person(53);
+    let c = person(55);
+    connect(&a, &b);
+    connect(&b, &a);
+    connect(&c, &a);
+    a.store
+        .save_social_profile("Alice 文", None, 42, &a.device)
+        .unwrap();
+    let facts = a.store.social_history(None, 100).unwrap();
+    let profile = facts
+        .iter()
+        .find(|f| f.kind() == "profile" && f.recipient() == *b.master.public())
+        .unwrap();
+    b.store
+        .accept_social_record(profile, a.master.public(), 43)
+        .unwrap();
+    assert_eq!(b.store.social_name(a.master.public()).unwrap(), "My friend");
+    assert!(
+        c.store
+            .accept_social_record(profile, a.master.public(), 43)
+            .is_err()
+    );
+    assert_eq!(
+        b.store
+            .social_profile(a.master.public())
+            .unwrap()
+            .unwrap()
+            .created_at_micros,
+        42
+    );
+    a.store
+        .save_social_profile("Later name", None, -1, &a.device)
+        .unwrap();
+    for fact in a
+        .store
+        .social_history(None, 100)
+        .unwrap()
+        .into_iter()
+        .filter(|f| f.recipients().contains(b.master.public()))
+    {
+        b.store
+            .accept_social_record(&fact, a.master.public(), 44)
+            .unwrap();
+    }
+    assert!(
+        matches!(b.store.social_profile(a.master.public()).unwrap().unwrap().content,carrel_core::conversation::ConversationContent::Profile{name,..} if name=="Later name")
+    );
+    let prefix = a.master.public().to_hex()[..12].to_owned();
+    b.store
+        .follow_social_contact(*a.master.public(), &prefix, None)
+        .unwrap();
+    assert_eq!(
+        b.store.social_name(a.master.public()).unwrap(),
+        prefix,
+        "an explicit key-like alias must never be guessed away"
+    );
+    b.store
+        .follow_social_contact(*c.master.public(), "", None)
+        .unwrap();
+    c.store
+        .follow_social_contact(*b.master.public(), "Reader", None)
+        .unwrap();
+    c.store
+        .save_social_profile("Carol", None, 45, &c.device)
+        .unwrap();
+    let profile = c
+        .store
+        .social_history(None, 100)
+        .unwrap()
+        .into_iter()
+        .find(|fact| fact.kind() == "profile" && fact.recipient() == *b.master.public())
+        .unwrap();
+    b.store
+        .accept_social_record(&profile, c.master.public(), 46)
+        .unwrap();
+    assert_eq!(
+        b.store.social_name(c.master.public()).unwrap(),
+        "Carol",
+        "a new contact without an alias uses the signed profile name"
+    );
+}
+
+#[test]
+fn cyclic_and_cross_thread_pending_parents_are_rejected_without_becoming_visible() {
+    use carrel_core::conversation::{
+        ConversationContent as Content, ConversationRecord, ThreadScope,
+    };
+    let a = person(71);
+    let b = person(73);
+    connect(&a, &b);
+    connect(&b, &a);
+    source(
+        &a.store,
+        "original",
+        "https://example.org/pending",
+        "Pending",
+    );
+    let root = a
+        .store
+        .create_social_share(draft(&a, *b.master.public(), "root"), 1, &a.device)
+        .unwrap();
+    let scope = ThreadScope::from_share(&root).unwrap();
+    let first_id = carrel_core::sharing::Share::draft_id(&a.card.certificate, "first").unwrap();
+    let second_id = carrel_core::sharing::Share::draft_id(&a.card.certificate, "second").unwrap();
+    let first = ConversationRecord::sign(
+        Content::Reply {
+            scope: scope.clone(),
+            id: first_id.clone(),
+            request_id: "first".into(),
+            parent: Some(second_id.clone()),
+            body: "First".into(),
+        },
+        2,
+        a.card.certificate.clone(),
+        &a.device,
+    )
+    .unwrap();
+    assert_eq!(
+        b.store
+            .accept_social_record(
+                &ShareFact::Conversation(Box::new(first.clone())),
+                a.master.public(),
+                3
+            )
+            .unwrap(),
+        SocialReceive::Pending
+    );
+    let second = ConversationRecord::sign(
+        Content::Reply {
+            scope,
+            id: second_id,
+            request_id: "second".into(),
+            parent: Some(first_id),
+            body: "Would make a cycle".into(),
+        },
+        4,
+        a.card.certificate.clone(),
+        &a.device,
+    )
+    .unwrap();
+    assert!(
+        b.store
+            .accept_social_record(
+                &ShareFact::Conversation(Box::new(second)),
+                a.master.public(),
+                5
+            )
+            .is_err()
+    );
+    // Shares and messages have separate typed namespaces even if a caller
+    // deliberately reuses a request token under the same device.
+    let same = a
+        .store
+        .reply_to_social_share(
+            &root.id,
+            "root",
+            None,
+            "Separate message namespace",
+            10,
+            &a.device,
+        )
+        .unwrap();
+    let Content::Reply { id: same_id, .. } = &same.content else {
+        panic!()
+    };
+    assert_eq!(same_id, &root.id);
+    a.store
+        .reply_to_social_share(
+            &root.id,
+            "reply-to-same",
+            Some(same_id.clone()),
+            "Parent lookup uses the reply namespace",
+            11,
+            &a.device,
+        )
+        .unwrap();
+    b.store
+        .accept_social_record(
+            &ShareFact::Share(Box::new(root.clone())),
+            a.master.public(),
+            6,
+        )
+        .unwrap();
+    let fork = carrel_core::sharing::Share::sign(
+        root.request_id.clone(),
+        root.recipient,
+        root.article.clone(),
+        Some("A different opening under the same draft ID".into()),
+        root.created_at_micros,
+        a.card.certificate.clone(),
+        &a.device,
+    )
+    .unwrap();
+    assert_eq!(fork.id, root.id);
+    let forked_reply = ConversationRecord::sign(
+        Content::Reply {
+            scope: ThreadScope::from_share(&fork).unwrap(),
+            id: carrel_core::sharing::Share::draft_id(&a.card.certificate, "forked").unwrap(),
+            request_id: "forked".into(),
+            parent: None,
+            body: "A reply to an incompatible original proof".into(),
+        },
+        6,
+        a.card.certificate.clone(),
+        &a.device,
+    )
+    .unwrap();
+    assert!(
+        b.store
+            .accept_social_record(
+                &ShareFact::Conversation(Box::new(forked_reply)),
+                a.master.public(),
+                6
+            )
+            .is_err()
+    );
+    assert!(!b.store.promote_pending_social().unwrap());
+    assert!(
+        b.store
+            .social_conversation(&root.id)
+            .unwrap()
+            .replies
+            .is_empty()
+    );
+    let other = a
+        .store
+        .create_social_share(draft(&a, *b.master.public(), "different"), 7, &a.device)
+        .unwrap();
+    let Content::Reply { id, .. } = &first.content else {
+        panic!()
+    };
+    let cross = ConversationRecord::sign(
+        Content::Reply {
+            scope: ThreadScope::from_share(&other).unwrap(),
+            id: carrel_core::sharing::Share::draft_id(&a.card.certificate, "cross").unwrap(),
+            request_id: "cross".into(),
+            parent: Some(id.clone()),
+            body: "Not this audience".into(),
+        },
+        8,
+        a.card.certificate.clone(),
+        &a.device,
+    )
+    .unwrap();
+    assert!(
+        b.store
+            .accept_social_record(
+                &ShareFact::Conversation(Box::new(cross)),
+                a.master.public(),
+                9
+            )
+            .is_err()
+    );
+}
+
+#[test]
 fn received_library_joins_latest_vouch_and_paginates_before_withdrawal() {
     use carrel_core::library::ItemFilter;
     let a = person(121);

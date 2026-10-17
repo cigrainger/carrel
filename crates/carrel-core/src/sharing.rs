@@ -103,7 +103,7 @@ impl ContactCard {
     }
 }
 
-/// One immutable vouch addressed to exactly one master public key.
+/// One immutable vouch with a fixed, explicitly chosen recipient set.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Share {
@@ -111,8 +111,11 @@ pub struct Share {
     pub id: String,
     /// Request token retained through retries of the same local draft.
     pub request_id: String,
-    /// Explicit recipient; no other audience members are disclosed.
+    /// Version 1 recipient, or the first member of version 2's sorted audience.
     pub recipient: PublicKey,
+    /// Version 2's fixed sorted recipient set; absent in original version 1 bytes.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub audience: Vec<PublicKey>,
     /// Public article metadata and current archived references only.
     pub article: SavedItem,
     /// Deliberately entered note, never an automatically copied private note.
@@ -164,6 +167,7 @@ impl Share {
             id: Self::draft_id(&certificate, &request_id)?,
             request_id,
             recipient,
+            audience: Vec::new(),
             article,
             note,
             created_at_micros,
@@ -179,6 +183,43 @@ impl Share {
             return Err(ShareError::Invalid);
         }
         Ok(share)
+    }
+    /// Sign one vouch for a fixed set, preserving version 1 compatibility.
+    pub fn sign_for(
+        request_id: String,
+        mut recipients: Vec<PublicKey>,
+        article: SavedItem,
+        note: Option<String>,
+        at: i64,
+        certificate: DeviceCert,
+        device: &Keypair,
+    ) -> Result<Self, ShareError> {
+        recipients.sort();
+        crate::conversation::validate_recipients(&recipients, certificate.master_pubkey)?;
+        let mut share = Self::sign(
+            request_id,
+            recipients[0],
+            article,
+            note,
+            at,
+            certificate,
+            device,
+        )?;
+        share.audience = recipients;
+        share.version = 2;
+        share.validate()?;
+        let signature = sign_canonical(device, &(share.payload(), &share.audience))
+            .map_err(|_| ShareError::Encoding)?;
+        share.signature = signature;
+        Ok(share)
+    }
+    /// All recipients named by the original proof.
+    pub fn recipients(&self) -> Vec<PublicKey> {
+        if self.version == 1 {
+            vec![self.recipient]
+        } else {
+            self.audience.clone()
+        }
     }
     fn payload(&self) -> impl Serialize + '_ {
         (
@@ -197,7 +238,9 @@ impl Share {
         self.certificate.verify()?;
         self.recipient.validate().map_err(|_| ShareError::Invalid)?;
         validate_shared_article(&self.article)?;
-        if self.version != 1
+        if !matches!(self.version, 1 | 2)
+            || self.recipient == self.certificate.master_pubkey
+            || (self.version == 1 && !self.audience.is_empty())
             || self.id != Self::draft_id(&self.certificate, &self.request_id)?
             || self
                 .note
@@ -206,11 +249,28 @@ impl Share {
         {
             return Err(ShareError::Invalid);
         }
+        if self.version == 2 {
+            crate::conversation::validate_recipients(
+                &self.audience,
+                self.certificate.master_pubkey,
+            )?;
+            if self.audience.first() != Some(&self.recipient) {
+                return Err(ShareError::Invalid);
+            }
+        }
         Ok(())
     }
     /// Verify signatures, recipient and the exclusion of private metadata.
     pub fn verify(&self) -> Result<(), ShareError> {
         self.validate()?;
+        if self.version == 2 {
+            return verify_canonical(
+                &self.certificate.device_pubkey,
+                &(self.payload(), &self.audience),
+                &self.signature,
+            )
+            .map_err(|_| ShareError::Signature);
+        }
         verify_canonical(
             &self.certificate.device_pubkey,
             &self.payload(),
@@ -300,6 +360,8 @@ pub enum ShareFact {
     Share(Box<Share>),
     /// Explicit permanent withdrawal.
     Retraction(Box<ShareRetraction>),
+    /// Private profile, reply, author removal or fixed-audience withdrawal.
+    Conversation(Box<crate::conversation::ConversationRecord>),
 }
 impl ShareFact {
     /// Verify the complete signed fact.
@@ -307,6 +369,7 @@ impl ShareFact {
         match self {
             Self::Share(record) => record.verify(),
             Self::Retraction(record) => record.verify(),
+            Self::Conversation(record) => record.verify(),
         }
     }
     /// Stable master responsible for this fact.
@@ -318,6 +381,7 @@ impl ShareFact {
         match self {
             Self::Share(record) => &record.certificate,
             Self::Retraction(record) => &record.certificate,
+            Self::Conversation(record) => &record.certificate,
         }
     }
     /// Exact recipient.
@@ -325,6 +389,7 @@ impl ShareFact {
         match self {
             Self::Share(record) => record.recipient,
             Self::Retraction(record) => record.recipient,
+            Self::Conversation(record) => record.recipients()[0],
         }
     }
     /// Referenced vouch identity.
@@ -332,6 +397,9 @@ impl ShareFact {
         match self {
             Self::Share(record) => &record.id,
             Self::Retraction(record) => &record.share_id,
+            Self::Conversation(record) => {
+                record.scope().map_or("", |scope| scope.share_id.as_str())
+            }
         }
     }
     /// Display time, never evidence overriding a retraction.
@@ -339,6 +407,7 @@ impl ShareFact {
         match self {
             Self::Share(record) => record.created_at_micros,
             Self::Retraction(record) => record.created_at_micros,
+            Self::Conversation(record) => record.created_at_micros,
         }
     }
     /// Indexed allow-list discriminant.
@@ -346,6 +415,7 @@ impl ShareFact {
         match self {
             Self::Share(_) => "share",
             Self::Retraction(_) => "retraction",
+            Self::Conversation(record) => record.kind(),
         }
     }
     /// Immutable mirror key scoped by the recipient in the sync bridge.
@@ -355,7 +425,16 @@ impl ShareFact {
             Self::Retraction(_) => {
                 format!("retraction/{}", blake3::hash(&self.to_bytes()?).to_hex())
             }
+            Self::Conversation(record) => record.key()?,
         })
+    }
+    /// Exact permitted destinations; the transport must not infer group membership.
+    pub fn recipients(&self) -> Vec<PublicKey> {
+        match self {
+            Self::Share(record) => record.recipients(),
+            Self::Retraction(record) => vec![record.recipient],
+            Self::Conversation(record) => record.recipients(),
+        }
     }
     /// Canonical bounded bytes for storage and transport.
     pub fn to_bytes(&self) -> Result<Vec<u8>, ShareError> {

@@ -250,6 +250,10 @@ pub struct SharedNoteSummary {
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct PeopleSnapshot {
+    #[serde(default)]
+    pub profile: Option<ProfileSummary>,
+    #[serde(default)]
+    pub groups: Vec<GroupSummary>,
     pub key: Option<String>,
     pub contact_code: Option<String>,
     pub ready: bool,
@@ -257,11 +261,72 @@ pub(crate) struct PeopleSnapshot {
 }
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 pub(crate) struct PersonSummary {
+    #[serde(default)]
+    pub image: Option<String>,
     pub key: String,
     pub name: String,
     pub connected: bool,
     pub followed: bool,
     pub error: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub(crate) struct ProfileSummary {
+    pub name: String,
+    pub avatar: Option<serde_json::Value>,
+    pub image: Option<String>,
+}
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub(crate) struct GroupSummary {
+    pub id: String,
+    pub name: String,
+    pub members: Vec<String>,
+}
+#[derive(Clone, Debug, Deserialize)]
+pub(crate) struct Participant {
+    pub key: String,
+    pub name: String,
+    pub image: Option<String>,
+}
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ConversationReply {
+    pub id: String,
+    pub author: Participant,
+    pub body: Option<String>,
+    pub date: String,
+    pub parent: Option<String>,
+    pub can_remove: bool,
+}
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Conversation {
+    pub id: String,
+    pub title: String,
+    pub item_id: String,
+    pub opener: Participant,
+    pub note: Option<String>,
+    pub date: String,
+    pub participants: Vec<Participant>,
+    pub replies: Vec<ConversationReply>,
+    pub closed: bool,
+}
+#[derive(Clone, Debug, Deserialize)]
+pub(crate) struct ReplyProvenance {
+    pub id: String,
+    pub author: String,
+    pub device: String,
+    pub date: String,
+    pub record: String,
+    #[serde(default)]
+    pub parents: Vec<String>,
+}
+#[derive(Clone, Debug, Deserialize)]
+pub(crate) struct ConversationLink {
+    pub id: String,
+    pub from: String,
+    pub date: String,
+    pub closed: bool,
 }
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
