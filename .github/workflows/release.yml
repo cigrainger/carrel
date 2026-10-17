@@ -91,7 +91,7 @@ jobs:
           BUNDLES: ${{ matrix.bundles }}
           APPLE_SIGNING_IDENTITY: '-'
           APPIMAGE_EXTRACT_AND_RUN: '1'
-        run: cargo tauri build --bundles "$BUNDLES" -- --locked
+        run: cargo tauri build --verbose --bundles "$BUNDLES" -- --locked
       - name: Verify engine and native regressions in release mode
         run: cargo test --workspace --release --locked
       - name: Normalize artifact names
