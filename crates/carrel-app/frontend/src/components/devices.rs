@@ -89,9 +89,8 @@ pub(crate) fn DevicesPanel() -> impl IntoView {
     status.refresh();
     #[cfg(target_arch = "wasm32")]
     on_cleanup(move || {
-        leptos::task::spawn_local(async move {
-            let _ = api::sync_action("cancel_sync_invitation", json!({})).await;
-        });
+        let text = invitation.try_get_untracked().unwrap_or_default();
+        leptos::task::spawn_local(cancel_invitation(text));
     });
     let submit = move |command: &'static str, args: serde_json::Value| {
         busy.set(true);
@@ -104,8 +103,10 @@ pub(crate) fn DevicesPanel() -> impl IntoView {
             let result = api::sync_action(command, args).await;
             status.refresh();
             if !guard.accepts(request) {
-                if command == "create_sync_invitation" && result.is_ok() {
-                    let _ = api::sync_action("cancel_sync_invitation", json!({})).await;
+                if command == "create_sync_invitation"
+                    && let Ok(Some(text)) = result
+                {
+                    cancel_invitation(text).await;
                 }
                 return;
             }
@@ -189,7 +190,14 @@ pub(crate) fn DevicesPanel() -> impl IntoView {
                             <p>"Valid for five minutes and one desktop. Keep Settings open while pairing."</p>
                         </Show>
                         <div class="dialog-actions">
-                            <button type="button" disabled=move || busy.get() on:click=move |_| { mode.set(Mode::Overview); invitation.set(String::new()); passphrase.set(String::new()); error.set(None); leptos::task::spawn_local(async move { let _ = api::sync_action("cancel_sync_invitation", json!({})).await; }); }>"Back"</button>
+                            <button type="button" disabled=move || busy.get() on:click=move |_| {
+                                let text = invitation.get_untracked();
+                                mode.set(Mode::Overview);
+                                invitation.set(String::new());
+                                passphrase.set(String::new());
+                                error.set(None);
+                                leptos::task::spawn_local(cancel_invitation(text));
+                            }>"Back"</button>
                             <Show when=move || mode.get() != Mode::Invite || invitation.get().is_empty()>
                                 <button type="submit" disabled=move || busy.get()>{move || if busy.get() {"Working…"} else {match mode.get() {Mode::Setup=>"Enable sync", Mode::Join=>"Pair desktop", Mode::Revoke=>"Remove desktop", _=>"Create invitation"}}}</button>
                             </Show>
@@ -197,5 +205,13 @@ pub(crate) fn DevicesPanel() -> impl IntoView {
                     </form>
                 </Show>
         </section>
+    }
+}
+
+async fn cancel_invitation(invitation: String) {
+    // A pending create is cleaned up by its guarded response once its own
+    // credential is known; an empty form cannot cancel another form's work.
+    if !invitation.is_empty() {
+        let _ = api::sync_action("cancel_sync_invitation", json!({"invitation": invitation})).await;
     }
 }

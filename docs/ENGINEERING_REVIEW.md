@@ -13,6 +13,7 @@ automation. This is an engineering review, not an independent security audit.
 | Extreme parsed crawl delays could panic during duration conversion | Use checked duration and clock conversion; fail closed on an unschedulable delay. Tests cover NaN, infinity, finite overflow, fractional values and absent/nonpositive values. |
 | HTTP identity still used an example domain | Use the canonical public repository URL. |
 | Archive queries and cached HTML preparation ran in synchronous native commands | Move item-list/detail reads to async commands with blocking workers, retaining their existing serialized responses. Worker failures do not serialize a panic payload; native projection tests retain behavior coverage. |
+| A delayed Devices form cleanup could cancel a newly created pairing invitation | Scope native cancellation to the exact invitation credential. Closed forms cancel their own late response; pending/foreign codes do not cancel another form's invitation. A real-endpoint regression fails against the old behavior. |
 | Package metadata did not declare the existing copyleft grant | Record AGPL-3.0-or-later throughout the workspace, retain the full license and add an explicit copyright/grant notice. |
 | Bundled JetBrains Mono lacked its notice | Include the upstream OFL notice and inventory all bundled fonts/icons. Native packages carry license resources. |
 | Native distribution needed dependency terms as well as Carrel's license | Generate the locked Rust graph's full notices with Cargo About 0.9.2, fail unresolved licensing in CI/packaging, and bundle the generated report without committing it. |
@@ -56,7 +57,7 @@ and real in-process peers. Native SSR tests and CSR/WASM checks cover different
 code paths. Temporary browser review from the reader milestones is useful UI
 evidence but uses mocked native commands.
 
-The publication changes passed all 406 Rust tests, formatting, native and
+The publication changes passed all 407 Rust tests, formatting, native and
 CSR/WASM Clippy with warnings denied, and Rustdoc link/HTML checks locally.
 Native all-target Clippy also passed on the declared minimum Rust 1.95 toolchain.
 CI treats standard Clippy warnings as failures and records pedantic findings as
@@ -64,6 +65,8 @@ an advisory pass, for focused follow-up batches rather than mechanical rewrites.
 Five release-tool tests cover version and artifact boundaries. The static guide
 builds with local links checked; temporary WebKit review covers its chapters at
 desktop and phone widths in light/dark themes, plus local search and asset use.
+The invitation regression also passed an actual CSR/WebKit close/reopen sequence
+with a deliberately delayed native response; those native commands were mocked.
 
 The full Git history was scanned with Gitleaks 8.30.1 before publication;
 the scan found no credential findings. This is a bounded tool result, not proof

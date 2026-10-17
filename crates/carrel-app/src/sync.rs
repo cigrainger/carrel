@@ -167,11 +167,32 @@ pub(crate) async fn create_sync_invitation(
 }
 
 #[tauri::command]
-pub(crate) async fn cancel_sync_invitation(state: State<'_, AppState>) -> Result<()> {
-    if let Some(invitation) = state.sync.lock().await.invitation.take() {
+pub(crate) async fn cancel_sync_invitation(
+    state: State<'_, AppState>,
+    invitation: String,
+) -> Result<()> {
+    cancel_invitation(&state, &invitation).await;
+    Ok(())
+}
+
+async fn cancel_invitation(state: &AppState, expected: &str) {
+    // A closed form can finish after a reopened form has created its own
+    // invitation. Cancel only the credential that the caller actually owns.
+    let invitation = {
+        let mut sync = state.sync.lock().await;
+        if sync
+            .invitation
+            .as_ref()
+            .is_some_and(|invitation| invitation.text == expected)
+        {
+            sync.invitation.take()
+        } else {
+            None
+        }
+    };
+    if let Some(invitation) = invitation {
         invitation.cancel().await;
     }
-    Ok(())
 }
 
 #[tauri::command]
@@ -682,6 +703,65 @@ mod tests {
         drop(bridge);
         shutdown(&a).await;
     }
+    #[tokio::test]
+    async fn stale_form_cleanup_cannot_cancel_a_newer_pairing_invitation() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = profile(dir.path());
+        // Public deterministic test material, independent of an installed app.
+        let master = Keypair::from_seed(&[41; 32]);
+        let device = crate::commands::highlights::load_device_key(&state.paths).unwrap();
+        state
+            .store
+            .bind_self_identity(&DeviceCert::new(&master, device.public(), None), &device)
+            .unwrap();
+        let bridge = {
+            let mut sync = state.sync.lock().await;
+            ensure_worker(&state, &mut sync).await.unwrap();
+            sync.worker.as_ref().unwrap().bridge.clone()
+        };
+        let previous = PairingInvitation::with_builder(
+            bridge.clone(),
+            Keypair::from_seed(&[41; 32]),
+            iroh::Endpoint::builder(iroh::endpoint::presets::Minimal)
+                .bind_addr("127.0.0.1:0")
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        let previous_text = previous.text.clone();
+        previous.cancel().await;
+        drop(previous);
+        let current = PairingInvitation::with_builder(
+            bridge,
+            master,
+            iroh::Endpoint::builder(iroh::endpoint::presets::Minimal)
+                .bind_addr("127.0.0.1:0")
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        let current_text = current.text.clone();
+        state.sync.lock().await.invitation = Some(current);
+
+        cancel_invitation(&state, &previous_text).await;
+        {
+            let sync = state.sync.lock().await;
+            let current = sync
+                .invitation
+                .as_ref()
+                .expect("new invitation must survive");
+            assert_eq!(current.text, current_text);
+            assert!(
+                !current.finished(),
+                "new invitation must still accept pairing"
+            );
+        }
+        cancel_invitation(&state, &current_text).await;
+        assert!(state.sync.lock().await.invitation.is_none());
+        cancel_invitation(&state, &current_text).await;
+        shutdown(&state).await;
+    }
+
     #[test]
     fn setup_preserves_an_existing_legacy_certificate_and_operational_key() {
         let dir = tempfile::tempdir().unwrap();

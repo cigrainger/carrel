@@ -748,8 +748,10 @@ an invitation**, with a desktop name and either a confirmed recovery passphrase
 or pasted invitation. The desktop holding the encrypted master can create an
 invitation or remove another desktop after unlocking it. Invitation text stays
 selectable for ordinary copy/paste, expires after five minutes and is cancelled
-when Settings closes. Section changes retain pairing drafts. Pairing and network
-work may show a disabled action;
+when Settings closes. Section changes retain pairing drafts. Cleanup is scoped
+to the invitation that form owns: a delayed response from a
+closed form must not cancel an invitation created after reopening Settings.
+Pairing and network work may show a disabled action;
 local reading mutations retain their immediate optimistic behavior.
 
 Incoming sync changes update lists, filters and annotations in place. An open
