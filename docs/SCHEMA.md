@@ -977,6 +977,36 @@ verified legacy records, and journals their original bytes without signing or
 rewriting them. It never follows a person or enables networking. Version is
 recorded last.
 
+### Explicit sharing mode and local send batches (version 12)
+
+One composer can select several people and local groups. The store expands the
+reviewed group snapshots, removes overlapping recipients, and enforces the same
+16-person limit. A multi-person selection requires an explicit choice: one fixed
+conversation, or an independent one-person vouch for each recipient. Separate
+vouches disclose only their own recipient and keep independent reply histories.
+Group labels, selection metadata and the other recipients never enter those
+one-person proofs.
+
+```
+:create social_send { id: String => request: Bytes, shares: [String] }
+```
+
+This device-local retry manifest records the exact normalized selection, reviewed
+group membership, mode, article identity and opening note. Its ID derives from the
+certified sending device and composer token. The manifest, all signed roots and
+their private journal/outbox entries commit atomically. No recipient can receive
+a partially committed batch. A completed retry returns the original roots even
+after group edits; changing a completed request is refused. The manifest itself
+does not sync or leave this desktop. Migration 12 is additive and resumable.
+
+Conversation person cards use the original root's fixed participants and existing
+verified profiles. A name/picture is optional; a key is the fallback. The root's
+author supplies the introduction context, without transferring trust. Connecting
+uses explicit contact-code exchange: review a signed code matching the selected
+participant's master key, then deliberately follow. Both people still choose to
+follow each other. Cards and connection addresses are never relayed just because
+someone joined a thread. No new social wire fact or audience capability is added.
+
 ## Feeds
 
 ```

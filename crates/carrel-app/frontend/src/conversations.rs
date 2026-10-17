@@ -215,8 +215,12 @@ fn ConversationOpening(
             <p>"Only "{move ||conversation_names(data)}</p>
             <p class="capture-notice">"These participants are fixed for this share. Replies may wait while desktops are offline."</p>
             <details>
-                <summary>"Participant keys"</summary>
-                <ul>{move ||data.with(|data|data.as_ref().map(|thread|thread.participants.iter().map(|person|(person.name.clone(),person.key.clone())).collect::<Vec<_>>()).unwrap_or_default()).into_iter().map(|(name,key)|view!{<li>{name}<code>{key}</code></li>}).collect_view()}</ul>
+                <summary>"People in this conversation"</summary>
+                <ul class="conversation-people"><For each=move ||data.with(|data|data.as_ref().map(|thread|thread.participants.clone()).unwrap_or_default()) key=|person|person.key.clone() let:person>
+                    {let key=StoredValue::new(person.key.clone());let fallback=StoredValue::new(person);view!{
+                        <li><crate::person_card::ConversationPersonButton share_id=data.with_untracked(|data|data.as_ref().map(|thread|thread.id.clone()).unwrap_or_default()) person=Signal::derive(move ||data.with(|data|data.as_ref().and_then(|thread|thread.participants.iter().find(|person|person.key==key.get_value()).cloned()).unwrap_or_else(||fallback.get_value())))/></li>
+                    }}
+                </For></ul>
             </details>
             <a href=move ||data.with(|data|data.as_ref().map(|thread|format!("/item/{}",thread.item_id)).unwrap_or_default()) on:click=move |event|{event.prevent_default();on_read.run(());}>"Read article"</a>
             <p>{move ||data.with(|data|data.as_ref().map(|thread|format!("{} · {}",thread.opener.name,thread.date)).unwrap_or_default())}</p>
@@ -483,7 +487,10 @@ fn ReplyRow(
     let requests = StoredValue::new(Requests::default());
     let cleanup = requests.get_value();
     on_cleanup(move || cleanup.invalidate());
-    view! {<li><div class="conversation-author"><Avatar name=Signal::derive(move ||message.get().author.name) image=Signal::derive(move ||conversation.with(|data|data.as_ref().and_then(|thread|thread.participants.iter().find(|person|person.key==message.with(|message|message.author.key.clone()))).and_then(|person|person.image.clone())))/><strong>{move ||message.get().author.name}</strong><time>{move ||message.get().date}</time></div>
+    view! {<li><div class="conversation-author"><crate::person_card::ConversationPersonButton share_id=share_id.get_value() person=Signal::derive(move || {
+            let author=message.with(|message|message.author.clone());
+            conversation.with(|data|data.as_ref().and_then(|thread|thread.participants.iter().find(|person|person.key==author.key).cloned())).unwrap_or(author)
+        })/><time>{move ||message.get().date}</time></div>
         {move ||context.get().map(|text|view!{<blockquote class="reply-parent-context">{text}</blockquote>})}
         <p class="reply-body" dir="auto">{move ||message.get().body.unwrap_or_else(||"Message removed by its author.".into())}</p>
         <Show when=move ||!closed.get()><button type="button" on:click=move |_|on_reply.run(id.get_value())>"Reply"</button></Show>

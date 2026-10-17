@@ -1153,9 +1153,12 @@ remote service. A person's local alias takes precedence over their proposed name
 People also holds named groups, with an explicit name and member checklist.
 Groups are a convenience for selecting known people. Group names and contact
 aliases remain on this desktop; a vouch carries the chosen participant keys.
-The share composer offers a person or a group and lists every recipient before
-submission. A sent share
-fixes that audience; later group edits never change who can read its conversation.
+The share composer has native checkboxes for people and groups. Overlaps resolve
+to one recipient, and the complete reviewed audience appears before submission.
+With several recipients, choose **Start a group conversation** or **Send separately**;
+neither mode is preselected. The former explains that participants see one another
+and share replies; the latter creates independent conversations and keeps each
+recipient private. A sent share fixes its audience; later group edits never change it.
 Removing a person stops direct exchange from this desktop without erasing received
 history or changing an earlier group's fixed audience.
 
@@ -1172,8 +1175,17 @@ save acknowledges its exact submitted draft and preserves newer text. A withdraw
 leaves history readable, retains an unfinished draft for copying, and disables new replies.
 There are no reply counts, badges, notifications or typing signals.
 
-A native dialog has an explicit recipient select and a brief optional note.
-The recipient starts unselected; the dialog focuses that choice first. Submit
+Participant names/avatars open a small native person card with their verified key
+and introduction context ("Introduced through …'s share"). A missing private
+profile uses the key fallback. **Connect** guides a deliberate two-way contact-code
+exchange using the existing People flow, without leaving the thread. Copy your
+own code, exchange it privately, review the other person's matching signed code,
+and explicitly follow. Both people choose independently. A mismatched code cannot
+change the card's selected identity. Joining a thread never follows someone or
+distributes their connection address. Closing restores the thread and its draft.
+
+A native dialog has an explicit audience chooser and a brief optional note.
+Recipients start unselected; the dialog focuses the first choice. Submit
 through the ordinary form or Cmd+Enter; Escape cancels. Settings, palette and
 keyboard overlay guards preserve the draft. Archived content includes only the
 chosen article and approved current images, with personal annotations excluded.

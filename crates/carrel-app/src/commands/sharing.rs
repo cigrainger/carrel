@@ -32,13 +32,13 @@ struct PersonSummary {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SentShareSummary {
-    id: String,
-    item_id: String,
-    title: String,
-    to: String,
-    note: Option<String>,
-    date: String,
-    retracted: bool,
+    pub(super) id: String,
+    pub(super) item_id: String,
+    pub(super) title: String,
+    pub(super) to: String,
+    pub(super) note: Option<String>,
+    pub(super) date: String,
+    pub(super) retracted: bool,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -55,8 +55,8 @@ pub(crate) struct ShareRequest {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ContactPreview {
-    key: String,
-    connection_info: bool,
+    pub(super) key: String,
+    pub(super) connection_info: bool,
 }
 
 #[tauri::command]
@@ -270,8 +270,37 @@ fn prepare_share_from_parts(
             "Choose a person or group again before sharing.".into(),
         ));
     }
+    let article = prepare_article(store, blobs, &request.item_id)?;
+    Ok(store.create_social_share_for(
+        ShareDraft {
+            request_id: request.request_id,
+            recipient: if let Some(group) = &group {
+                *group
+                    .members
+                    .first()
+                    .ok_or_else(|| AppError::Config("Choose people for this group first.".into()))?
+            } else {
+                parse_key(&request.recipient)?
+            },
+            article,
+            note,
+        },
+        group
+            .as_ref()
+            .map(|group| group.members.clone())
+            .unwrap_or_default(),
+        crate::feed_runner::now_micros(),
+        device,
+    )?)
+}
+
+pub(super) fn prepare_article(
+    store: &carrel_store::Store,
+    blobs: &carrel_store::blobs::BlobStore,
+    item_id: &str,
+) -> Result<carrel_core::private_library::SavedItem> {
     let snapshot = store
-        .saved_article_snapshot(&request.item_id)?
+        .saved_article_snapshot(item_id)?
         .ok_or_else(|| AppError::Config("This article is no longer available.".into()))?;
     let mut images = Vec::new();
     if let Some(body) = snapshot
@@ -306,29 +335,8 @@ fn prepare_share_from_parts(
             }
         }
     }
-    let article = public_article_snapshot(snapshot, images)
-        .map_err(|_| AppError::Config("This article cannot be prepared for sharing.".into()))?;
-    Ok(store.create_social_share_for(
-        ShareDraft {
-            request_id: request.request_id,
-            recipient: if let Some(group) = &group {
-                *group
-                    .members
-                    .first()
-                    .ok_or_else(|| AppError::Config("Choose people for this group first.".into()))?
-            } else {
-                parse_key(&request.recipient)?
-            },
-            article,
-            note,
-        },
-        group
-            .as_ref()
-            .map(|group| group.members.clone())
-            .unwrap_or_default(),
-        crate::feed_runner::now_micros(),
-        device,
-    )?)
+    public_article_snapshot(snapshot, images)
+        .map_err(|_| AppError::Config("This article cannot be prepared for sharing.".into()))
 }
 
 #[cfg(test)]
@@ -500,7 +508,7 @@ pub(super) fn parse_key(key: &str) -> Result<PublicKey> {
         .map_err(|_| AppError::Config("This public key is not valid.".into()))?;
     Ok(key)
 }
-fn parse_contact(text: &str) -> Result<(PublicKey, Option<ContactCard>)> {
+pub(super) fn parse_contact(text: &str) -> Result<(PublicKey, Option<ContactCard>)> {
     if text.trim().starts_with("carrel-contact:") {
         let card = ContactCard::from_text(text)
             .map_err(|_| AppError::Config("This contact code could not be verified.".into()))?;

@@ -155,6 +155,15 @@ does not replicate or grant a friend private document access. Avatars are small
 normalized raster payloads inside recipient-scoped signed profiles, never URLs
 or generic blob grants. See SCHEMA's version 11 contract.
 
+Audience review expands local group snapshots in the store. An explicit send mode
+creates either one fixed-audience root or independent one-person roots. A local
+version 12 manifest, all roots and their private journal/outbox entries commit in
+one transaction; retries preserve the reviewed intent across mutable group edits.
+The manifest never enters the social mirror. Contextual person cards verify both
+the reader and selected person against the original root. Contact-code inspection
+and explicit following recheck the selected master; introductions alone confer
+no contact authorization or connection-address disclosure.
+
 Settings' Devices section explicitly creates or resumes a passphrase-protected master,
 or accepts a one-time copy/paste invitation. Invitations last five minutes and
 are cancelled when dismissed. Pairing endpoints are temporary and expose only

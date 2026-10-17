@@ -47,6 +47,18 @@ pub struct ReceivedConversation {
 }
 
 impl Store {
+    /// Verify a person-card target against the original immutable conversation.
+    /// Reading an introduction grants no follow or connection authorization.
+    pub fn conversation_participant(&self, share_id: &str, person: &PublicKey) -> Result<Share> {
+        let root = self.conversation_root(share_id)?;
+        let scope = ThreadScope::from_share(&root)?;
+        let local = self.self_identity()?.ok_or(StoreError::IdentityUnbound)?;
+        if !scope.contains(&local.master_pubkey) || !scope.contains(person) {
+            return Err(invalid("person is outside this conversation"));
+        }
+        Ok(root)
+    }
+
     /// Render the fixed audience using this desktop's private contact labels.
     pub fn social_audience_name(&self, share: &Share) -> Result<String> {
         share
@@ -692,7 +704,7 @@ impl Store {
         }
         Ok(false)
     }
-    fn social_changed(&self) {
+    pub(super) fn social_changed(&self) {
         self.social_revision
             .fetch_add(1, std::sync::atomic::Ordering::Release);
     }

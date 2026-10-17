@@ -29,11 +29,23 @@ Desktop names remain separate from personal presentation.
 ## A fixed audience for each vouch
 
 People includes a name and member checklist for each local group. The share
-composer offers a person or group and spells out the recipients before Send.
+composer offers multiple people/groups and spells out their deduplicated audience
+before Send. With several people, explicitly choose a shared group conversation
+or independent one-person sends. Separate roots contain no other recipients and
+their replies stay separate. The local batch manifest and every proof/journal
+entry commit atomically, so retry or failure cannot deliver a partial selection.
 It retains the selected membership while background contacts/groups refresh.
 If the group changes before the first save, the user reviews it again without
 losing the note. Retrying a completed save returns its original proof even if
 the group has since changed.
+
+Participant names/pictures open native person cards, including the introduction's
+original sharer and verified key. Profiles stay recipient-scoped; unknown people
+use a key fallback. Connect guides the existing two-way contact-code exchange
+while keeping the thread and reply draft mounted. Exchange codes privately,
+review a signed code matching that exact participant, then choose Follow.
+Both people choose independently. A wrong key, forged code or outsider is refused.
+Opening or reviewing a card does not follow anyone or distribute connection codes.
 
 Version 1 one-person vouches retain their original canonical bytes and signatures.
 Version 2 signs a sorted, unique recipient set. Group names and contact aliases
@@ -106,7 +118,9 @@ Friend connections still pin one certified desktop and require explicit contact
 code replacement for another; automatic friend-device rotation is future work.
 
 Schema migration 11 adds projections/staging and journals original legacy sharing
-bytes without re-signing, rewriting archives or following people. Both readers
+bytes without re-signing, rewriting archives or following people. Migration 12
+adds the local atomic-send manifest, preserving the existing social wire protocol.
+Both readers
 need this source version for profiles, group vouches and conversations. These
 features are newer than the published alpha.2 packages.
 
@@ -125,7 +139,8 @@ For a first trial, use the same current build on each desktop and complete the
 1. Set distinct names/pictures. Check that a local alias still wins and that a
    newly followed person receives the current profile.
 2. Create a group with another reader. Review its recipients in the composer,
-   share an article with a vouch and open the conversation at each end.
+   select an overlapping person/group and choose one conversation. Check that each
+   person participates once. Send separately as well and verify independent audiences.
 3. Reply offline, reconnect and restart. Check parent context, author removal,
    history and the deliberate Send behavior. Keep private article notes separate.
 4. With three readers, relay a reply through the sharer. Share the same article
@@ -135,6 +150,9 @@ For a first trial, use the same current build on each desktop and complete the
 6. Pair another own desktop. Check conversation history without an automatic
    contact follow, and queue a reply through own-device sync. Import connection
    information explicitly to exchange directly with friends from that desktop.
+7. Open an unfamiliar participant's card. Check its introduction and key, exchange
+   codes privately, try a mismatched code, then deliberately follow each other.
+   Check that the draft/passage survives, and other participants receive no code.
 
 Physical desktops, native file selection and manual release packaging remain
 separate checks. This feature does not publish a new release or alter alpha.2.

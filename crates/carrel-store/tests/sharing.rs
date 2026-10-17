@@ -54,6 +54,296 @@ fn draft(a: &Person, recipient: PublicKey, token: &str) -> ShareDraft {
 }
 
 #[test]
+fn multi_selection_deduplicates_and_separate_sends_never_disclose_other_recipients() {
+    use carrel_core::sharing::{SendDraft, SendMode};
+    let a = person(121);
+    let b = person(123);
+    let c = person(125);
+    for friend in [&b, &c] {
+        connect(&a, friend);
+        connect(friend, &a);
+    }
+    source(
+        &a.store,
+        "original",
+        "https://example.org/batch",
+        "Batch article",
+    );
+    a.store
+        .save_social_group(
+            "essays",
+            "Private group label",
+            vec![*b.master.public(), *c.master.public()],
+        )
+        .unwrap();
+    let selection = a
+        .store
+        .review_social_audience(vec![*b.master.public()], &["essays".into()])
+        .unwrap();
+    assert_eq!(selection.recipients(*a.master.public()).unwrap().len(), 2);
+    let intent = SendDraft {
+        request_id: "separate-batch".into(),
+        item_id: "original".into(),
+        note: Some("Worth reading".into()),
+        selection: selection.clone(),
+        mode: SendMode::Separately,
+    };
+    let article = draft(&a, *b.master.public(), "unused").article;
+    let roots = a
+        .store
+        .create_social_send(intent.clone(), article.clone(), 100, &a.device)
+        .unwrap();
+    assert_eq!(roots.len(), 2);
+    assert_ne!(roots[0].id, roots[1].id);
+    for root in &roots {
+        assert_eq!(root.version, 1);
+        assert!(root.audience.is_empty());
+        let (recipient, other) = if root.recipient == *b.master.public() {
+            (&b, &c)
+        } else {
+            (&c, &b)
+        };
+        let fact = ShareFact::Share(Box::new(root.clone()));
+        recipient
+            .store
+            .accept_social_record(&fact, a.master.public(), 101)
+            .unwrap();
+        assert!(
+            other
+                .store
+                .accept_social_record(&fact, a.master.public(), 101)
+                .is_err()
+        );
+        let bytes = fact.to_bytes().unwrap();
+        assert!(
+            !bytes
+                .windows(32)
+                .any(|window| window == other.master.public().as_bytes())
+        );
+        assert!(
+            !bytes
+                .windows(19)
+                .any(|window| window == b"Private group label")
+        );
+    }
+    let mut together = intent;
+    together.request_id = "together-batch".into();
+    together.mode = SendMode::Conversation;
+    let roots = a
+        .store
+        .create_social_send(together, article, 102, &a.device)
+        .unwrap();
+    assert_eq!(roots.len(), 1);
+    assert_eq!(roots[0].version, 2);
+    assert_eq!(
+        roots[0].recipients(),
+        selection.recipients(*a.master.public()).unwrap()
+    );
+    for recipient in [&b, &c] {
+        recipient
+            .store
+            .accept_social_record(
+                &ShareFact::Share(Box::new(roots[0].clone())),
+                a.master.public(),
+                103,
+            )
+            .unwrap();
+    }
+}
+
+#[test]
+fn send_retry_preserves_original_review_after_group_edits_and_refuses_changed_intent() {
+    use carrel_core::sharing::{SendDraft, SendMode};
+    let a = person(131);
+    let b = person(133);
+    let c = person(135);
+    for friend in [&b, &c] {
+        connect(&a, friend);
+    }
+    source(
+        &a.store,
+        "original",
+        "https://example.org/retry",
+        "Retry article",
+    );
+    a.store
+        .save_social_group(
+            "essays",
+            "Essays",
+            vec![*b.master.public(), *c.master.public()],
+        )
+        .unwrap();
+    let selection = a
+        .store
+        .review_social_audience(vec![], &["essays".into()])
+        .unwrap();
+    let intent = SendDraft {
+        request_id: "stable-batch".into(),
+        item_id: "original".into(),
+        note: Some("A note".into()),
+        selection,
+        mode: SendMode::Separately,
+    };
+    let article = draft(&a, *b.master.public(), "unused").article;
+    a.store
+        .save_social_group("essays", "Changed", vec![*b.master.public()])
+        .unwrap();
+    assert!(
+        a.store
+            .create_social_send(intent.clone(), article.clone(), 100, &a.device)
+            .is_err()
+    );
+    assert!(a.store.social_history(None, 100).unwrap().is_empty());
+    a.store
+        .save_social_group(
+            "essays",
+            "Essays",
+            vec![*b.master.public(), *c.master.public()],
+        )
+        .unwrap();
+    let original = a
+        .store
+        .create_social_send(intent.clone(), article, 101, &a.device)
+        .unwrap();
+    a.store.remove_social_group("essays").unwrap();
+    assert_eq!(
+        a.store
+            .social_send_retry(intent.clone(), a.device.public())
+            .unwrap(),
+        Some(original)
+    );
+    let mut changed = intent.clone();
+    changed.mode = SendMode::Conversation;
+    assert!(
+        a.store
+            .social_send_retry(changed, a.device.public())
+            .is_err()
+    );
+    let mut changed = intent.clone();
+    changed.note = Some("Different note".into());
+    assert!(
+        a.store
+            .social_send_retry(changed, a.device.public())
+            .is_err()
+    );
+    let mut changed = intent;
+    changed.selection.groups[0].members.pop();
+    assert!(
+        a.store
+            .social_send_retry(changed, a.device.public())
+            .is_err()
+    );
+}
+
+#[test]
+fn a_failed_send_transaction_leaves_no_roots_or_retry_manifest() {
+    use carrel_core::sharing::{SendDraft, SendMode};
+    let a = person(141);
+    let b = person(143);
+    let c = person(145);
+    for friend in [&b, &c] {
+        connect(&a, friend);
+    }
+    source(
+        &a.store,
+        "original",
+        "https://example.org/atomic",
+        "Atomic article",
+    );
+    let selection = a
+        .store
+        .review_social_audience(vec![*b.master.public(), *c.master.public()], &[])
+        .unwrap();
+    let intent = SendDraft {
+        request_id: "atomic-batch".into(),
+        item_id: "original".into(),
+        note: None,
+        selection,
+        mode: SendMode::Separately,
+    };
+    let article = draft(&a, *b.master.public(), "unused").article;
+    let history_before = a
+        .store
+        .query("?[key,encoded] := *self_fact_history{key,encoded} :sort key")
+        .unwrap()
+        .rows;
+    a.store
+        .query(
+            "::set_triggers self_fact_outbox on put { ?[key] := _new[key,encoded] :assert none }",
+        )
+        .unwrap();
+    assert!(
+        a.store
+            .create_social_send(intent.clone(), article, 100, &a.device)
+            .is_err()
+    );
+    assert!(a.store.social_history(None, 100).unwrap().is_empty());
+    assert!(
+        a.store
+            .social_send_retry(intent, a.device.public())
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(
+        a.store
+            .query("?[key,encoded] := *self_fact_history{key,encoded} :sort key")
+            .unwrap()
+            .rows,
+        history_before
+    );
+}
+
+#[test]
+fn completed_send_manifest_and_original_proofs_survive_restart() {
+    use carrel_core::sharing::{SendDraft, SendMode};
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("send-store");
+    let master = Keypair::from_seed(&[151; 32]);
+    let device = Keypair::from_seed(&[152; 32]);
+    let friend = person(153);
+    let cert = DeviceCert::new_at_micros(&master, device.public(), 1, None);
+    let (intent, roots) = {
+        let store = Store::open(&path).unwrap();
+        store.migrate().unwrap();
+        store.bind_self_identity(&cert, &device).unwrap();
+        store
+            .follow_social_contact(*friend.master.public(), "Friend", None)
+            .unwrap();
+        source(
+            &store,
+            "original",
+            "https://example.org/restart",
+            "Restart article",
+        );
+        let selection = store
+            .review_social_audience(vec![*friend.master.public()], &[])
+            .unwrap();
+        let intent = SendDraft {
+            request_id: "restart-batch".into(),
+            item_id: "original".into(),
+            note: None,
+            selection,
+            mode: SendMode::Separately,
+        };
+        let article = public_article_snapshot(
+            store.saved_article_snapshot("original").unwrap().unwrap(),
+            vec![],
+        )
+        .unwrap();
+        let roots = store
+            .create_social_send(intent.clone(), article, 100, &device)
+            .unwrap();
+        (intent, roots)
+    };
+    let reopened = Store::open(&path).unwrap();
+    reopened.migrate().unwrap();
+    assert_eq!(
+        reopened.social_send_retry(intent, device.public()).unwrap(),
+        Some(roots)
+    );
+}
+
+#[test]
 fn fixed_group_conversations_keep_ancestry_removals_and_private_self_history() {
     use carrel_core::{
         conversation::{ConversationContent as Content, ConversationRecord, ThreadScope},

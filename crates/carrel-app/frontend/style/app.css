@@ -1684,6 +1684,35 @@ dialog::backdrop { background: var(--color-backdrop); }
 .people-list li, .sent-shares li { padding: 16px 0; border-top: 1px solid var(--color-rule); }
 .people-list button, .sent-shares button { margin: 4px 8px 4px 0; }
 .share-title { font-weight: 600; }
+.share-composer { width: min(560px, calc(100vw - 32px)); }
+.share-composer .share-choices, .share-composer .share-mode { min-width: 0; border: 0; margin: 16px 0; padding: 0; }
+.share-composer legend { float: none; width: auto; margin: 0 0 8px; padding: 0; font-weight: 600; }
+.share-choice-list { max-height: 160px; overflow: auto; border-block: 1px solid var(--color-rule); padding: 4px; }
+.share-composer :is(.share-choices,.share-mode) label { display: flex; align-items: flex-start; gap: 10px; margin: 0; padding: 8px 0; }
+.share-composer :is(.share-choices,.share-mode) label > span { min-width: 0; overflow-wrap: anywhere; }
+.share-composer :is(.share-choices,.share-mode) input { flex: none; width: 16px; height: 16px; margin: 2px 0 0; padding: 0; accent-color: var(--color-accent); }
+.share-mode label + label { border-block-start: 1px solid var(--color-rule); }
+.share-mode small { display: block; margin-block-start: 4px; color: var(--color-text-secondary); font: var(--text-sm)/1.45 var(--font-chrome); }
+.share-composer .share-choices > button { margin-block-start: 8px; padding: 4px 0; border: 0; background: transparent; color: var(--color-text-secondary); font: inherit; text-decoration: underline; text-underline-offset: 3px; }
+.conversation-dialog .conversation-person-button { display: inline-flex; max-width: 100%; align-items: center; padding: 0; border: 0; text-align: start; }
+.conversation-person-button strong { min-width: 0; overflow-wrap: anywhere; }
+.conversation-person-button .person-avatar { margin-inline-end: 8px; }
+.conversation-people { list-style: none; margin: 12px 0; padding: 0; }
+.conversation-people li + li { margin-block-start: 8px; }
+dialog.person-card { width: min(520px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); }
+.person-card > header { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; }
+.person-card-heading { display: flex; align-items: center; margin-block: 20px 12px; }
+.person-card-heading h4 { min-width: 0; overflow-wrap: anywhere; margin: 0; font-size: 20px; }
+.person-card .person-card-connect { border-block-start: 1px solid var(--color-rule); margin-block-start: 20px; padding-block-start: 16px; }
+.person-card .person-card-connect h4 { margin: 0 0 12px; font: 600 16px/1.3 var(--font-chrome); letter-spacing: normal; }
+.person-card .contact-copy textarea { min-height: 0; resize: none; }
+.person-card label { display: block; margin-block: 16px 6px; font-size: var(--text-sm); }
+.person-card :is(input,textarea) { width: 100%; padding: 8px; border: 1px solid var(--color-rule); border-radius: 0; background: var(--color-bg); color: var(--color-text); font: inherit; }
+.person-card textarea { resize: vertical; }
+.person-card button { min-height: 30px; padding: 4px 10px; border: 1px solid var(--color-rule); border-radius: 0; background: transparent; color: var(--color-text); font: inherit; }
+.person-card button:hover { background: var(--color-selected); }
+.person-card form > button { margin-block-start: 12px; }
+.person-card button:disabled { opacity: .55; }
 .received-vouch { font-family: var(--font-chrome); margin-top: 12px; }
 .received-vouch p { margin: 0 0 6px; font-size: 13px; color: var(--color-text-secondary); }
 .received-vouch blockquote, .sent-shares blockquote { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; padding-left: 12px; border-left: 2px solid var(--color-accent); font-size: 14px; line-height: 1.5; }

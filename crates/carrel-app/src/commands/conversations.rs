@@ -119,7 +119,7 @@ pub(crate) fn profile(
         image: None,
     })
 }
-fn participant(
+pub(super) fn participant(
     store: &carrel_store::Store,
     key: carrel_core::identity::PublicKey,
 ) -> Result<Participant> {

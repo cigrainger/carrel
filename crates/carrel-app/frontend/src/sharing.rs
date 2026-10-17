@@ -1,6 +1,6 @@
 //! Explicit social commands; drafts remain local until the user shares.
 use crate::components::copy_text::CopyTextField;
-use crate::{api, components::Modal, requests::Requests};
+use crate::{api, requests::Requests};
 use leptos::{html, prelude::*};
 use serde_json::json;
 
@@ -124,69 +124,8 @@ pub(crate) fn use_sharing() -> Sharing {
 #[component]
 pub(crate) fn ShareDialog() -> impl IntoView {
     let sharing = use_sharing();
-    view! { <Show when=move || sharing.target.get().is_some()><ShareForm target=sharing.target.get_untracked().expect("share target")/></Show><crate::conversations::ConversationDialog/> }
+    view! { <Show when=move || sharing.target.get().is_some()><crate::share_composer::ShareComposer target=sharing.target.get_untracked().expect("share target")/></Show><crate::conversations::ConversationDialog/> }
 }
-#[component]
-fn ShareForm(target: ShareTarget) -> impl IntoView {
-    let sharing = use_sharing();
-    let recipient = RwSignal::new(String::new());
-    let selected_group = RwSignal::new(None::<api::GroupSummary>);
-    let note = RwSignal::new(String::new());
-    let busy = RwSignal::new(false);
-    let error = RwSignal::new(None::<String>);
-    let saved = RwSignal::new(None::<String>);
-    let submit_button = NodeRef::<html::Button>::new();
-    let guard = StoredValue::new(Requests::default());
-    let cleanup = guard.get_value();
-    on_cleanup(move || cleanup.invalidate());
-    let writes = StoredValue::new(crate::writes::use_pending_writes());
-    let target = StoredValue::new(target);
-    let token = StoredValue::new(request_token());
-    let cancel = UnsyncCallback::new(move |()| sharing.target.set(None));
-    view! { <Modal label="Share article" class="feed-dialog share-dialog" on_cancel=cancel>
-        <form on:keydown=move |event| {
-            if (event.meta_key() || event.ctrl_key()) && event.key() == "Enter" {
-                event.prevent_default(); event.stop_propagation();
-                if let Some(button) = submit_button.get_untracked() { button.click(); }
-            }
-        } on:submit=move |event| {
-            event.prevent_default(); if busy.get_untracked() || saved.get_untracked().is_some() { return; }
-            if recipient.get_untracked().is_empty() { error.set(Some("Choose a person to share with.".into())); return; }
-            let requests = guard.get_value(); let request = requests.begin(); let write = writes.get_value().begin();
-            let choice=recipient.get_untracked();let group=selected_group.get_untracked();
-            let args = json!({"request":{"requestId":token.get_value(),"itemId":target.get_value().id,"recipient":if group.is_none(){choice}else{String::new()},"group":group.as_ref().map(|g|g.id.clone()),"audience":group.map(|g|g.members).unwrap_or_default(),"note":note.get_untracked()}});
-            busy.set(true); error.set(None);
-            spawn(async move {
-                let result = api::sharing_call::<api::SentShareSummary>("share_article", args).await; drop(write); sharing.refresh();
-                if result.is_ok() { sharing.history_changed(); }
-                if !requests.accepts(request) { return; }
-                match result { Ok(share) => { saved.try_set(Some(share.to)); }, Err(problem) => { error.try_set(Some(problem.message().into())); } }
-                busy.try_set(false);
-            });
-        }>
-            <h3>"Share article"</h3><p class="share-title">{target.get_value().title}</p>
-            <Show when=move || saved.get().is_none() fallback=move || view! { <p role="status">{move || format!("Share saved for {}. It will be delivered when your desktops can connect.",saved.get().unwrap_or_default())}</p><div class="feed-dialog-actions"><button type="button" on:click=move |_| cancel.run(())>"Done"</button></div> }>
-                <label for="share-person">"Share with"</label>
-                <select id="share-person" autofocus=true disabled=move || busy.get() prop:value=move || recipient.get() on:change=move |event| {let choice=event_target_value(&event);selected_group.set(choice.strip_prefix("group:").and_then(|id|sharing.people.get_untracked().groups.into_iter().find(|g|g.id==id)));recipient.set(choice);}>
-                    <option value="">"Choose a person or group"</option>
-                    {move || sharing.people.get().people.into_iter().filter(|person| person.followed).map(|person| view! { <option value=person.key>{person.name}</option> }).collect_view()}
-                    {move || sharing.people.get().groups.into_iter().map(|group|view!{<option value=format!("group:{}",group.id)>{format!("Group: {}",group.name)}</option>}).collect_view()}
-                </select>
-                <p class="share-audience">{move || {
-                    let snapshot=sharing.people.get();
-                    selected_group.get().map(|g|format!("Only {}. This conversation keeps these participants even if the group changes.",g.members.iter().map(|key|snapshot.people.iter().find(|p|p.key==*key).map(|p|p.name.clone()).unwrap_or_else(||key.chars().take(12).collect())).collect::<Vec<_>>().join(", "))).unwrap_or_default()
-                }}</p>
-                <Show when=move || !sharing.people.get().people.iter().any(|person| person.followed)><p>"Add a trusted person in Settings → People, then return to this article."</p></Show>
-                <label for="share-note">"A note (optional)"</label>
-                <textarea id="share-note" rows="5" maxlength="65536" readonly=move || busy.get() prop:value=move || note.get() on:input=move |event| note.set(event_target_value(&event))/>
-                <p class="capture-notice">"Shares the article and this note with the person you choose. Your private highlights and notes stay private."</p>
-                {move || error.get().or_else(|| sharing.error.get()).map(|message| view! { <p class="feed-error" role="alert">{message}</p> })}
-                <div class="feed-dialog-actions"><button type="button" on:click=move |_| cancel.run(())>"Cancel"</button><button node_ref=submit_button type="submit" disabled=move || busy.get() || recipient.get().is_empty()>"Share article"</button></div>
-            </Show>
-        </form>
-    </Modal> }
-}
-
 #[component]
 pub(crate) fn PeoplePanel() -> impl IntoView {
     let sharing = use_sharing();

@@ -16,6 +16,7 @@ mod item_actions;
 mod keymap;
 mod links;
 mod navigation;
+mod person_card;
 mod preferences;
 mod progress;
 #[cfg(target_arch = "wasm32")]
@@ -23,6 +24,7 @@ mod reader_images;
 mod requests;
 mod routes;
 mod selection;
+mod share_composer;
 mod sharing;
 mod status;
 mod theme;

@@ -145,7 +145,10 @@ mod tests {
             }
             assert_eq!(store.current_schema_version().unwrap(), 10);
             store.migrate().unwrap();
-            assert_eq!(store.current_schema_version().unwrap(), 11);
+            assert_eq!(
+                store.current_schema_version().unwrap(),
+                super::super::CURRENT_SCHEMA_VERSION
+            );
             assert_eq!(
                 store
                     .social_record(&fact.key().unwrap())
@@ -173,7 +176,10 @@ mod tests {
             );
             assert!(store.social_groups().unwrap().is_empty());
             up(&store.db).unwrap();
-            assert_eq!(store.current_schema_version().unwrap(), 11);
+            assert_eq!(
+                store.current_schema_version().unwrap(),
+                super::super::CURRENT_SCHEMA_VERSION
+            );
         }
     }
 }

@@ -34,6 +34,8 @@ Paths below are relative to `crates/`. Integration tests live in each crate's
 | Friend / group audience isolation | Core `sharing.rs`, `conversation.rs`; store `sharing/`; sync `sharing.rs` | Adversarial/property tests, receipts and four-peer reply relay |
 | Conversation / revision ancestry | Store `sharing/conversation.rs`, `notes.rs`; app `commands/conversations.rs` | Out-of-order/cycle/removal, branch provenance and self-bridge tests |
 | Private profiles / pictures | Core `conversation.rs`; app `commands/conversations.rs`; frontend `conversations.rs` | Recipient scope, alias precedence and bounded raster normalization |
+| Audience review / separate sends | Core `sharing/selection.rs`; store `sharing/send.rs`; app `commands/send.rs`; frontend `share_composer.rs` | Overlap property, atomic rollback, independent proofs, retry and restart |
+| Contextual introductions | App `commands/person_card.rs`; frontend `person_card.rs` | Participant/key pinning, forged/mismatched codes and no implicit follow |
 | Close / pending writes | App `close.rs`; frontend `progress.rs`, `writes.rs`, `requests.rs` | Unit tests and bounded native/browser review |
 | Keyboard / modal focus | Core `keymap/`; frontend `keymap/`, `components/modal.rs` | Keymap unit tests and actual webview review |
 

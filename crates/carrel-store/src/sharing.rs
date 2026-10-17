@@ -8,6 +8,7 @@ use carrel_core::sharing::{
 use cozo::{DataValue, JsonData, Validity};
 use std::collections::BTreeMap;
 mod conversation;
+mod send;
 pub use conversation::{Conversation, ConversationReply, ReceivedConversation, SocialGroup};
 
 /// A manually pinned person, with optional signed connection information.

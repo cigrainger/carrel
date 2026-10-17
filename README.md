@@ -25,7 +25,9 @@ and from the habit of keeping a commonplace book. Reading comes first.
   deliberate conflict resolution, Markdown export, and stable Carrel links back
   to articles and passages.
 - **Share by choice.** Follow people by public key, choose a person or group,
-  and share an archived article with a note. Private conversations keep each
+  and share an archived article with a note. Choose one group conversation or
+  separate private sends. Person cards support deliberate, key-checked contact
+  exchange. Private conversations keep each
   share's fixed audience. Optional names and pictures help recognize people;
   local contact aliases remain yours. Personal notes, highlights and reading state
   stay private. Your own devices can synchronize through a separate pairing flow.

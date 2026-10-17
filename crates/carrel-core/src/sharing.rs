@@ -7,6 +7,9 @@ use crate::private_library::SavedItem;
 use serde::{Deserialize, Serialize};
 use std::io::Cursor;
 
+mod selection;
+pub use selection::{AudienceSelection, SelectedGroup, SendDraft, SendMode};
+
 /// Maximum metadata frame; archived bytes travel separately.
 pub const MAX_SHARE_BYTES: usize = 2 * 1024 * 1024;
 /// Maximum copyable connection information.

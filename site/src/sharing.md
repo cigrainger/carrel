@@ -42,8 +42,12 @@ A bare key can be saved before the connection code arrives.
 
 ## Send an article
 
-In the reader, open **Share article → Share with people…**. Select a person or group explicitly and add an
-optional note. Saving records the share locally; background exchange retries
+In the reader, open **Share article → Share with people…**. Select people, groups,
+or both and add an optional note. Overlapping selections appear once in the final
+recipient list. With several people, choose **Start a group conversation** to
+introduce them and share replies, or **Send separately** for independent private
+conversations. Neither mode is preselected. Saving records the entire selection
+locally; background exchange retries
 while both apps are open. A saved contact code or locally saved share does not
 by itself prove delivery. Receipt in **Library → Shared with you** does.
 
@@ -62,6 +66,7 @@ precedence over their proposed name; the public key remains the identity.
 Create a group by naming it and checking its members. The Share composer lists
 the recipients before sending. Each sent share keeps those people permanently:
 editing or removing the group affects future shares, not existing conversations.
+Separate sends keep each recipient and their replies private from the others.
 If membership changes after selection, review the group again; the note stays
 available. Groups are local selections, not accounts or shared directories.
 
@@ -85,6 +90,22 @@ followed. A participant may remove their own message. Withdrawing the original
 share closes new participation while preserving history and the saved article.
 An unfinished reply remains available for copying; removal cannot erase copies
 already received. There are no reply counts or notification pings.
+
+## Connect through a conversation
+
+Open a person's name or **People in this conversation** to see their person card.
+It shows the verified participant key and who opened the share. Names/pictures are
+optional and remain private profiles; an unknown person can appear by key.
+
+**Connect** keeps the thread and reply draft behind the card. Copy your contact
+code and exchange it privately with the person; ask how to reach them in the
+conversation if needed. Your code includes a desktop connection address, so
+posting it in the thread would disclose it to everyone there. Paste their code,
+review its matching key, then choose **Follow this person**. They independently
+do the same. A mismatched code cannot change the selected identity.
+
+Participation is limited to the original conversation until you explicitly choose
+to connect. Other participants receive no contact code through this flow.
 
 These additions require the same current source build on each desktop and are
 newer than alpha.2 packages. Signed conversation/profile history follows your

@@ -288,6 +288,31 @@ pub(crate) struct Participant {
     pub name: String,
     pub image: Option<String>,
 }
+
+#[derive(Clone, Debug, Deserialize)]
+pub(crate) struct AudienceReview {
+    pub selection: serde_json::Value,
+    pub recipients: Vec<Participant>,
+}
+#[derive(Clone, Debug, Deserialize)]
+pub(crate) struct SendReceipt {
+    pub message: String,
+}
+#[derive(Clone, Copy, Debug, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum SendMode {
+    Conversation,
+    Separately,
+}
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ConversationPerson {
+    pub person: Participant,
+    pub introduced_by: String,
+    pub is_self: bool,
+    pub followed: bool,
+    pub connected: bool,
+}
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ConversationReply {
