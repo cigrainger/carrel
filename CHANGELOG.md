@@ -3,7 +3,7 @@
 Carrel is pre-alpha. This file records app releases; detailed implementation
 history remains in Git.
 
-## 0.1.0-alpha.1
+## 0.1.0-alpha.2
 
 First packaged pre-alpha for careful local and friend trials.
 
@@ -16,6 +16,8 @@ First packaged pre-alpha for careful local and friend trials.
   person, with audience isolation and local recovery controls.
 - Bounded HTTP ingestion, robots-cache expiry recovery, documented trust boundaries
   and automated native/CSR tests.
+- Pairing invitation cleanup preserves invitations created by a reopened Settings
+  form, even when an older request completes late.
 - Native Apple Silicon/Intel Mac and Linux x86-64 release packages, matching source,
   release manifest and SHA-256 checksums.
 

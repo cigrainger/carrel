@@ -20,7 +20,7 @@ Windows and Linux arm64 are not in the initial release matrix.
 
 1. Choose a reviewed commit, run local checks and review the release limitations.
    Check the app's Cargo version and `tauri.conf.json` version agree.
-2. Create and push an annotated version tag, for example `v0.1.0-alpha.1`, on
+2. Create and push an annotated version tag, for example `v0.1.0-alpha.2`, on
    the reviewed commit. Tagging starts native builds; the tag must match the
    app version. Do not move an existing published tag.
 3. Inspect the workflow's draft prerelease and its packages, source archive,

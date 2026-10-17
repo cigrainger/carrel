@@ -34,7 +34,7 @@ telemetry, and no Carrel account or service we operate.
 
 ## Status
 
-**Pre-alpha: `0.1.0-alpha.1`.** The local reader, archive, annotations, self-sync
+**Pre-alpha: `0.1.0-alpha.2`.** The local reader, archive, annotations, self-sync
 engine and first private-sharing flow are implemented. Automated tests cover
 isolated stores and real in-process peers, including audience separation,
 revocation and conflicting offline edits. The frontend has separate native and

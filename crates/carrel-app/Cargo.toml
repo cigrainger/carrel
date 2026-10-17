@@ -1,12 +1,13 @@
 [package]
 name = "carrel-app"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Carrel desktop reader and native command boundary"
+authors = ["Carrel contributors"]
+description = "A local-first reader for the open web"
 build = "build.rs"
 
 [lib]
