@@ -1,6 +1,6 @@
 [book]
 title = "Carrel"
-description = "A reading life of your own."
+description = "A reading life of your own. Carrel is a desktop reader for the open web: read, keep passages, and share with people you trust."
 authors = ["Carrel contributors"]
 language = "en"
 src = "src"
@@ -16,3 +16,8 @@ default-theme = "light"
 preferred-dark-theme = "navy"
 no-section-label = true
 additional-css = ["theme/carrel.css"]
+additional-js = ["theme/carrel.js"]
+
+# Keep guide search focused on practical documentation.
+[output.html.search.chapter]
+"README.md" = { enable = false }
