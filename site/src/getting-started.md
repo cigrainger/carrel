@@ -40,6 +40,11 @@ and exact error rather than assuming the Ubuntu build is universal.
 
 ## Add something to read
 
+An empty installation offers a short welcome sheet with **Add source**, **Save
+article** and **Import OPML**. **Not now** skips it; the app menu's **Getting
+started** reopens it whenever you want. Existing archives go straight to reading.
+There is no account or sync setup required.
+
 Use **Add source** beside Sources, in Settings → Sources, or in the context bar's
 app menu. Paste a website address or RSS/Atom/JSON feed URL. Carrel discovers
 feeds from websites; if several valid feeds exist, choose the intended one.

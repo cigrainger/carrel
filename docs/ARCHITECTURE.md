@@ -437,6 +437,13 @@ Device status observation belongs to app state and continues while Settings is
 closed. Below 720px the same sidebar overlays the left edge and closes when a
 destination or source is chosen.
 
+First-run presentation is installation-local, alongside appearance preferences.
+A native worker checks the whole archive and subscriptions before offering the
+single welcome sheet; an empty Today page is insufficient. Existing add/capture/
+OPML commands own all writes. Dismissal and explicit reopening do not alter data
+or reading state, and request guards prevent a late import from closing a newer
+sheet or interrupting another dialog.
+
 People's quiet contact refresh is independent of sent-history queries. Sender
 history uses exclusive creation-time/record-key pages filtered to the local
 master, with explicit extension and retained pages after retry or withdrawal.

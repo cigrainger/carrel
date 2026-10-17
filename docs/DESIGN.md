@@ -499,6 +499,15 @@ passage retained. Sections have equal-size labels and preserve drafts while the
 dialog stays open. Closing it clears device passphrases and cancels an unused
 pairing invitation.
 
+A new installation with no saved articles or subscriptions offers one compact
+Welcome to Carrel sheet. Add source, Save article and Import OPML use the existing
+flows; Not now dismisses it. There are no tutorial steps, account requirements,
+suggested subscriptions or progress indicators. Existing archives skip the sheet,
+including archives whose Today list is empty. The choice is remembered per
+installation. Getting started in the app menu reopens it over the current view.
+Import cancellation and failure keep the sheet available; a failure explains how
+to retry. Source and article capture keep their ordinary drafts and recovery.
+
 Aa opens a small quick-reading popover in the context bar for theme and
 typography. It shares the same preferences and controls as Settings. The status
 strip contains operation messages and contextual recovery, with no preferences.
@@ -1158,7 +1167,9 @@ reading measure has a fixed maximum. Below 720px the sidebar becomes a left
 overlay and closes when a destination or source is chosen. Destination labels
 retain the same size. Reading text does not continuously scale to fill the window.
 
-**Onboarding tutorials.** The first run shows OPML import (or skip) and that's it. Discovery happens through use. The keymap reference (`?`) is the user's reference, not a forced walkthrough.
+**Onboarding tutorials.** The first run offers one skippable sheet for adding
+reading, not a walkthrough. Discovery happens through use. The keymap reference
+(`?`) is the user's reference, not a forced tutorial.
 
 **Marketing or promotional surfaces in-app.** No "what's new" splash screens. No "upgrade" prompts (there's nothing to upgrade to). No surveys. The app does its job.
 

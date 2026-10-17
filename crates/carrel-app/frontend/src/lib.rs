@@ -23,6 +23,7 @@ mod selection;
 mod sharing;
 mod status;
 mod theme;
+mod welcome;
 mod writes;
 
 use leptos::prelude::*;
@@ -44,6 +45,7 @@ pub fn App() -> impl IntoView {
     components::devices::provide_device_status();
     components::provide_context_bar();
     status::provide_status_controller();
+    welcome::provide_welcome();
     item_actions::provide_item_actions();
     annotation_actions::provide_annotation_actions();
     progress::provide_progress_writer();
@@ -55,6 +57,7 @@ pub fn App() -> impl IntoView {
         <Router>
             <KeymapProvider>
                 <GlobalKeymapActions/>
+                <welcome::Welcome/>
                 <components::save_article::ArticleCapture/>
                 <sharing::ShareDialog/>
                 <components::FeedActivity/>

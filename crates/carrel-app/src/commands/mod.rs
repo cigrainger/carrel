@@ -10,3 +10,4 @@ pub(crate) mod links;
 pub(crate) mod sharing;
 pub(crate) mod status;
 pub(crate) mod subscriptions;
+pub(crate) mod welcome;

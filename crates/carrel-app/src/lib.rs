@@ -90,6 +90,7 @@ pub fn run() -> Result<()> {
             commands::items::set_item_star,
             commands::items::update_read_progress,
             commands::status::version,
+            commands::welcome::welcome_is_needed,
             commands::status::search_status,
             commands::status::rebuild_search,
             commands::sharing::list_people,

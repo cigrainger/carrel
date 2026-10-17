@@ -6,6 +6,15 @@ use serde::{Deserialize, Serialize};
 pub use carrel_core::annotation::{AnnotationCursor, AnnotationPage};
 pub use carrel_core::library::{ItemCursor, ItemFilter, ItemPage, ItemView};
 
+/// First-run help is eligible only for an empty whole archive and no sources.
+#[cfg(target_arch = "wasm32")]
+pub(crate) async fn welcome_is_needed() -> Result<bool, ApiError> {
+    let value = tauri_invoke("welcome_is_needed", wasm_bindgen::JsValue::UNDEFINED)
+        .await
+        .map_err(api_error_from_js)?;
+    serde_wasm_bindgen::from_value(value).map_err(|error| ApiError::new(error.to_string()))
+}
+
 /// Result of explicitly archiving an article URL.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]

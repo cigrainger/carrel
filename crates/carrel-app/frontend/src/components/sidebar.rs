@@ -111,6 +111,7 @@ fn ContextMenu() -> impl IntoView {
     let open = RwSignal::new(false);
     let preferences = crate::preferences::use_preferences();
     let feeds = use_feed_controller();
+    let welcome = crate::welcome::use_welcome();
     let capture = crate::components::save_article::use_capture_dialog();
     let close = UnsyncCallback::new(move |restore: bool| {
         if let Some(menu) = menu.get_untracked() {
@@ -134,6 +135,7 @@ fn ContextMenu() -> impl IntoView {
                 <hr/>
                 <button type="button" on:click=move |_| { close.run(true); crate::keymap::open_palette(); }><span><Icon name=IconName::Search/>"Commands"</span><kbd>"⌘K"</kbd></button>
                 <button type="button" on:click=move |_| { close.run(true); crate::keymap::open_help(); }>"Keyboard reference"<kbd>"?"</kbd></button>
+                <button type="button" on:click=move |_| { close.run(true); welcome.show(); }>"Getting started"</button>
                 <button type="button" on:click=move |_| { close.run(true); preferences.settings_open.set(true); }>"Settings"<kbd>"⌘,"</kbd></button>
             </div>
         </details>

@@ -103,7 +103,7 @@ pub(crate) fn use_feed_controller() -> FeedController {
 pub(crate) async fn subscription_file(
     controller: FeedController,
     import: bool,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     let guard = controller.writes.get_value().begin();
     let result = if import {
         api::import_subscriptions().await
@@ -111,18 +111,19 @@ pub(crate) async fn subscription_file(
         api::export_subscriptions().await
     };
     drop(guard);
-    if result.map_err(message)? {
+    let selected = result.map_err(message)?;
+    if selected {
         refresh(controller, import).await;
     }
-    Ok(())
+    Ok(selected)
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) async fn subscription_file(
     _controller: FeedController,
     _import: bool,
-) -> Result<(), String> {
-    Ok(())
+) -> Result<bool, String> {
+    Ok(false)
 }
 
 /// Route path for a feed URL.
