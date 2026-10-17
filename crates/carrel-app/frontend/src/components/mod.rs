@@ -21,3 +21,6 @@ pub(crate) use sidebar::{ContextControls, provide_context_bar};
 pub(crate) use sidebar::{FieldNavigation, SubscriptionFiles};
 pub use status_strip::StatusStrip;
 pub(crate) use status_strip::{AppearanceMenu, ThemeControls};
+
+pub(crate) mod copy_text;
+pub(crate) mod share_menu;

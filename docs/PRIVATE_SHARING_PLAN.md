@@ -16,7 +16,9 @@ The first private connection requires each person to pin the other's public key;
 exchange can start when either has the other's signed connection code. This
 does not expose either person's private self-sync document or archive.
 
-Share article opens a native dialog over the current reader. Choose one
+The reader Share menu offers both link-copy actions. With a followed person,
+Share with a person opens a native dialog over the current reader; otherwise
+Add a person opens People settings. Choose one
 person explicitly and optionally add a brief note. Saving writes a durable
 signed share locally; background exchange retries while the apps are open.
 Closing or retrying retains normal modal focus and reading context. Nothing
@@ -83,7 +85,7 @@ article archives, image scope and personal reading facts use ordinary self-sync.
 ## First friend trial
 
 Use the same Carrel build on both desktops. Each person sets up their own
-identity through Settings → Devices → Set up sync, with their own recovery
+identity through Settings → Devices → Create identity, with their own recovery
 passphrase. Exchange contact codes from Settings → People. Desktop pairing
 in Devices connects your own installations; People connects distinct readers.
 

@@ -83,6 +83,11 @@ pub fn ReadingView() -> impl IntoView {
     let feeds = use_feed_controller();
     let actions = use_item_actions();
     let sharing = crate::sharing::use_sharing();
+    Effect::new(move |_| {
+        item_id.track();
+        sharing.cancel_pending();
+    });
+    on_cleanup(move || sharing.cancel_pending());
     let sidebar = use_reading_sidebar();
     let progress_writer = use_progress_writer();
     let writes = StoredValue::new(crate::writes::use_pending_writes());
@@ -556,7 +561,6 @@ pub fn ReaderActions(
     #[prop(default = String::from("Back"))] back_label: String,
     #[prop(default = UnsyncCallback::new(|_: String| {}))] on_open_original: UnsyncCallback<String>,
 ) -> impl IntoView {
-    let share_button = NodeRef::<html::Button>::new();
     view! {
         <nav class="reader-actions" aria-label="Reader controls">
             <div class="reader-action-group">
@@ -588,7 +592,7 @@ pub fn ReaderActions(
                 </button>
             </div>
             <div class="reader-action-group">
-                <button node_ref=share_button type="button" disabled=move || item.with(Option::is_none) aria-label="Share article" title="Share article (C)" on:click=move |_| { if let Some(button) = share_button.get_untracked() { let _ = button.focus(); } on_share.run(()); }><Icon name=IconName::Share/></button>
+                <crate::components::share_menu::ShareMenu item=item on_share=on_share/>
                 <Show when=move || item.with(|item| item.as_ref().is_some_and(|detail| detail.primary_url.is_some()))
                     fallback=|| view! { <button type="button" disabled=true aria-label="Open original" title="Open original"><Icon name=IconName::Original/></button> }>
                     <a class="reader-action-link" aria-label="Open original" title="Open original" href=move || item.with(|item| item.as_ref().and_then(|detail| detail.primary_url.clone()).unwrap_or_default()) target="_blank" rel="noreferrer"

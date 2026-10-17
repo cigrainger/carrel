@@ -5,14 +5,7 @@ use crate::components::{
 };
 use leptos::prelude::*;
 
-#[derive(Clone, Copy, PartialEq)]
-enum Section {
-    Reading,
-    Sources,
-    People,
-    Devices,
-    Keyboard,
-}
+use crate::preferences::SettingsSection as Section;
 
 #[component]
 pub(crate) fn Settings() -> impl IntoView {
@@ -24,7 +17,7 @@ pub(crate) fn Settings() -> impl IntoView {
 fn SettingsDialog() -> impl IntoView {
     let preferences = crate::preferences::use_preferences();
     let feeds = crate::feeds::use_feed_controller();
-    let selected = RwSignal::new(Section::Reading);
+    let selected = preferences.settings_section;
     let add_button = NodeRef::<leptos::html::Button>::new();
     let close = UnsyncCallback::new(move |()| preferences.settings_open.set(false));
     view! {

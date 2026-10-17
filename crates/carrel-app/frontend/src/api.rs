@@ -538,6 +538,14 @@ impl ApiError {
         self.kind.as_deref() == Some("annotation_conflict")
     }
 
+    pub(crate) fn is_pairing_invitation_error(&self) -> bool {
+        self.kind.as_deref() == Some("pairing_invitation")
+    }
+
+    pub(crate) fn is_recovery_passphrase_error(&self) -> bool {
+        self.kind.as_deref() == Some("recovery_passphrase")
+    }
+
     #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
     pub(crate) fn new(message: impl Into<String>) -> Self {
         Self {

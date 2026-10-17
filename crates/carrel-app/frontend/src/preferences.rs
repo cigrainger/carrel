@@ -3,16 +3,32 @@
 use carrel_core::reading::{ListDensity, ReadingFont, ReadingPreferences};
 use leptos::prelude::*;
 
+#[derive(Clone, Copy, Default, PartialEq)]
+pub(crate) enum SettingsSection {
+    #[default]
+    Reading,
+    Sources,
+    People,
+    Devices,
+    Keyboard,
+}
+
 #[derive(Clone, Copy)]
 pub(crate) struct PreferencesController {
     pub(crate) current: RwSignal<ReadingPreferences>,
     pub(crate) appearance_open: RwSignal<bool>,
     pub(crate) settings_open: RwSignal<bool>,
+    pub(crate) settings_section: RwSignal<SettingsSection>,
     #[cfg(target_arch = "wasm32")]
     anchor: StoredValue<Option<LayoutAnchor>, LocalStorage>,
 }
 
 impl PreferencesController {
+    pub(crate) fn open_settings(self, section: SettingsSection) {
+        self.appearance_open.set(false);
+        self.settings_section.set(section);
+        self.settings_open.set(true);
+    }
     /// Retain the visible passage when shell geometry changes before the next paint.
     #[cfg(target_arch = "wasm32")]
     pub(crate) fn preserve_layout(self, change: impl FnOnce()) {
@@ -71,6 +87,7 @@ pub(crate) fn provide_preferences() {
         current: RwSignal::new(initial),
         appearance_open: RwSignal::new(false),
         settings_open: RwSignal::new(false),
+        settings_section: RwSignal::new(SettingsSection::Reading),
         #[cfg(target_arch = "wasm32")]
         anchor: StoredValue::new_local(None),
     });

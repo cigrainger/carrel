@@ -87,6 +87,7 @@ impl Serialize for AppError {
         let kind = match self {
             Self::BackgroundTask { .. } => "background_task",
             Self::Capture(_) => "capture",
+            Self::Sync(carrel_sync::SyncError::InvalidInvitation) => "pairing_invitation",
             Self::Sync(_) => "sync",
             Self::Config(_) => "config",
             Self::Store(carrel_store::StoreError::AnnotationConflict { .. }) => {
@@ -94,6 +95,9 @@ impl Serialize for AppError {
             }
             Self::Store(_) => "store",
             Self::Blob(_) => "blob",
+            Self::Keystore(carrel_store::keystore::KeystoreError::WrongPassphrase) => {
+                "recovery_passphrase"
+            }
             Self::Keystore(_) => "keystore",
             Self::Feed(_) => "feed",
             Self::SubscriptionFile(_) => "subscription_file",
@@ -115,6 +119,22 @@ impl Serialize for AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pairing_recovery_errors_have_typed_ui_kinds() {
+        for (error, kind) in [
+            (
+                AppError::Sync(carrel_sync::SyncError::InvalidInvitation),
+                "pairing_invitation",
+            ),
+            (
+                AppError::Keystore(carrel_store::keystore::KeystoreError::WrongPassphrase),
+                "recovery_passphrase",
+            ),
+        ] {
+            assert_eq!(serde_json::to_value(error).unwrap()["kind"], kind);
+        }
+    }
 
     #[tokio::test]
     async fn failed_native_worker_does_not_serialize_its_panic_payload() {

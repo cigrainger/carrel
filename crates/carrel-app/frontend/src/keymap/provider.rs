@@ -136,7 +136,7 @@ pub fn GlobalKeymapActions() -> impl IntoView {
     let preferences = crate::preferences::use_preferences();
     use_action_handler("open-settings", move || {
         preferences.appearance_open.set(false);
-        preferences.settings_open.set(true);
+        preferences.open_settings(crate::preferences::SettingsSection::Reading);
     });
     let feeds = crate::feeds::use_feed_controller();
     use_action_handler("add-source", move || feeds.add_open.set(true));

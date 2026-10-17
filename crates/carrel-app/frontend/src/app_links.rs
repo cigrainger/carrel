@@ -8,14 +8,27 @@ use crate::{components::Modal, requests::Requests, status::StatusController};
 #[derive(Clone, Copy)]
 pub(crate) struct AppLinksController {
     pub(crate) activation: RwSignal<u64>,
-    fallback: RwSignal<Option<String>>,
+    fallback: RwSignal<Option<CopyLink>>,
     copies: StoredValue<Requests>,
     status: StatusController,
 }
 
+#[derive(Clone)]
+struct CopyLink {
+    text: String,
+    private: bool,
+}
+
 impl AppLinksController {
     pub(crate) fn copy(self, link: AppLink) {
-        let text = link.to_string();
+        self.copy_link(link.to_string(), true);
+    }
+
+    pub(crate) fn copy_original(self, url: String) {
+        self.copy_link(url, false);
+    }
+
+    fn copy_link(self, text: String, private: bool) {
         let copy = crate::clipboard::start_copy(&text);
         let guard = self.copies.get_value();
         let generation = guard.begin();
@@ -25,9 +38,13 @@ impl AppLinksController {
                 return;
             }
             if copied {
-                self.status.info("Carrel link copied.");
+                self.status.info(if private {
+                    "Carrel link copied."
+                } else {
+                    "Link copied."
+                });
             } else {
-                self.fallback.set(Some(text));
+                self.fallback.set(Some(CopyLink { text, private }));
             }
         });
     }
@@ -71,14 +88,24 @@ pub(crate) fn AppLinks() -> impl IntoView {
     install_delivery(controller);
     view! {
         <Show when=move || controller.fallback.get().is_some()>
-            <CopyLinkDialog text=controller.fallback.get().unwrap_or_default()
+            <CopyLinkDialog link=controller.fallback.get().expect("copy target")
                 on_close=UnsyncCallback::new(move |()| controller.fallback.set(None))/>
         </Show>
     }
 }
 
 #[component]
-fn CopyLinkDialog(text: String, on_close: UnsyncCallback<()>) -> impl IntoView {
+fn CopyLinkDialog(link: CopyLink, on_close: UnsyncCallback<()>) -> impl IntoView {
+    let label = if link.private {
+        "Copy Carrel link"
+    } else {
+        "Copy link"
+    };
+    let field_label = if link.private {
+        "Carrel link"
+    } else {
+        "Article link"
+    };
     let field = NodeRef::<html::Textarea>::new();
     #[cfg(target_arch = "wasm32")]
     Effect::new(move |_| {
@@ -97,13 +124,13 @@ fn CopyLinkDialog(text: String, on_close: UnsyncCallback<()>) -> impl IntoView {
         }
     });
     view! {
-        <Modal label="Copy Carrel link" class="note-dialog" on_cancel=on_close>
-            <h2>"Copy Carrel link"</h2>
+        <Modal label=label class="note-dialog" on_cancel=on_close>
+            <h2>{label}</h2>
             <p>"Clipboard access is unavailable. Copy the selected link with your usual copy shortcut."</p>
-            <label for="carrel-link-copy">"Carrel link"</label>
+            <label for="carrel-link-copy">{field_label}</label>
             <textarea id="carrel-link-copy" node_ref=field rows="3" readonly=true autofocus=true
-                prop:value=text on:focus=move |_| { if let Some(field) = field.get() { field.select(); } }/>
-            <p>"This opens on desktops where the article or highlight is already saved. It does not share access."</p>
+                prop:value=link.text on:focus=move |_| { if let Some(field) = field.get() { field.select(); } }/>
+            <p>{if link.private { "This opens on desktops where the article or highlight is already saved. It does not share access." } else { "This opens the publisher’s original webpage." }}</p>
             <div class="note-dialog-actions"><button type="button" on:click=move |_| on_close.run(())>"Done"</button></div>
         </Modal>
     }

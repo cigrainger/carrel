@@ -1,5 +1,5 @@
 //! Explicit social commands; drafts remain local until the user shares.
-use crate::clipboard::{finish_copy, start_copy};
+use crate::components::copy_text::CopyTextField;
 use crate::{api, components::Modal, requests::Requests};
 use leptos::{html, prelude::*};
 use serde_json::json;
@@ -15,32 +15,62 @@ pub(crate) struct Sharing {
     pub people: RwSignal<api::PeopleSnapshot>,
     pub error: RwSignal<Option<String>>,
     pub target: RwSignal<Option<ShareTarget>>,
+    pub(crate) loading: RwSignal<bool>,
+    pub(crate) loaded: RwSignal<bool>,
     history_revision: RwSignal<u64>,
+    status: crate::status::StatusController,
+    preferences: crate::preferences::PreferencesController,
     requests: StoredValue<Requests>,
 }
 impl Sharing {
+    /// Leaving the article supersedes a composer that has not opened yet.
+    pub(crate) fn cancel_pending(self) {
+        self.requests.get_value().invalidate();
+        self.loading.try_set(false);
+    }
     fn history_changed(self) {
         self.history_revision.try_update(|revision| *revision += 1);
     }
     pub fn refresh(self) {
+        self.load_people(None);
+    }
+    fn load_people(self, target: Option<ShareTarget>) {
         let guard = self.requests.get_value();
         let request = guard.begin();
+        self.loading.set(true);
         spawn(async move {
             match api::sharing_call::<api::PeopleSnapshot>("list_people", json!({})).await {
                 Ok(snapshot) if guard.accepts(request) => {
+                    let available = has_recipients(&snapshot);
                     self.people.try_set(snapshot);
+                    self.loaded.try_set(true);
                     self.error.try_set(None);
+                    if let Some(target) = target {
+                        if available {
+                            self.target.try_set(Some(target));
+                        } else {
+                            self.preferences
+                                .open_settings(crate::preferences::SettingsSection::People);
+                            self.status
+                                .info("Add a person to share an article and note with them.");
+                        }
+                    }
                 }
                 Err(error) if guard.accepts(request) => {
                     self.error.try_set(Some(error.message().into()));
+                    if target.is_some() {
+                        self.status.warn("Could not check your people. Try Share again or open Settings → People.");
+                    }
                 }
                 _ => {}
+            }
+            if guard.accepts(request) {
+                self.loading.try_set(false);
             }
         });
     }
     pub fn open(self, id: String, title: String) {
-        self.refresh();
-        self.target.set(Some(ShareTarget { id, title }));
+        self.load_people(Some(ShareTarget { id, title }));
     }
 }
 pub(crate) fn provide_sharing() {
@@ -48,12 +78,20 @@ pub(crate) fn provide_sharing() {
         people: RwSignal::new(api::PeopleSnapshot::default()),
         error: RwSignal::new(None),
         target: RwSignal::new(None),
+        loading: RwSignal::new(false),
+        loaded: RwSignal::new(false),
         history_revision: RwSignal::new(0),
+        status: crate::status::use_status_controller(),
+        preferences: crate::preferences::use_preferences(),
         requests: StoredValue::new(Requests::default()),
     };
     provide_context(sharing);
     let guard = sharing.requests.get_value();
     on_cleanup(move || guard.invalidate());
+    sharing.refresh();
+}
+fn has_recipients(snapshot: &api::PeopleSnapshot) -> bool {
+    snapshot.people.iter().any(|person| person.followed)
 }
 pub(crate) fn use_sharing() -> Sharing {
     expect_context::<Sharing>()
@@ -203,10 +241,10 @@ pub(crate) fn PeoplePanel() -> impl IntoView {
     };
     view! { <section class="people-panel"><h3>"People"</h3><p>"Choose the people whose reading you trust. Exchange contact codes directly and check their public key before following."</p>
         {move || error.get().or_else(|| sharing.error.get()).map(|message| view! { <p class="feed-error" role="alert">{message}</p> })}
-        <Show when=move || sharing.people.get().key.is_some() fallback=|| view! { <p>"Set up your identity in Settings → Devices first."</p> }>
-            <ContactCopy id="social-key" label="Your public key" button="Copy public key" text=Signal::derive(move || sharing.people.get().key.unwrap_or_default())/>
+        <Show when=move || sharing.people.get().key.is_some() fallback=move || view! { <p>"Create your identity before connecting with a person. You can keep reading without one."</p><button type="button" on:click=move |_| sharing.preferences.open_settings(crate::preferences::SettingsSection::Devices)>"Create identity"</button> }>
+            <CopyTextField id="social-key" label="Your public key" button="Copy public key" text=Signal::derive(move || sharing.people.get().key.unwrap_or_default())/>
             <Show when=move || sharing.people.get().ready fallback=|| view! { <p>"Your contact code is preparing. Reading remains available."</p> }>
-                <ContactCopy id="social-code" label="Your contact code" button="Copy contact code" text=Signal::derive(move || sharing.people.get().contact_code.unwrap_or_default())/>
+                <CopyTextField id="social-code" label="Your contact code" button="Copy contact code" text=Signal::derive(move || sharing.people.get().contact_code.unwrap_or_default())/>
                 <p class="capture-notice">"This code identifies this desktop and its connection address. Send it only to a person you want to connect with."</p>
             </Show>
             <form class="follow-person" on:submit=move |event| {
@@ -233,43 +271,6 @@ pub(crate) fn PeoplePanel() -> impl IntoView {
         <h4>"Sent articles"</h4><p>"Withdrawing removes your vouch. A person may keep an article they already received."</p>
         <SentHistory busy=busy on_retract=UnsyncCallback::new(move |id: String| change("retract_share",json!({"id":id})))/>
     </section> }
-}
-#[component]
-fn ContactCopy(
-    id: &'static str,
-    label: &'static str,
-    button: &'static str,
-    text: Signal<String>,
-) -> impl IntoView {
-    let field = NodeRef::<html::Textarea>::new();
-    let displayed = RwSignal::new(text.get_untracked());
-    let focused = RwSignal::new(false);
-    let message = RwSignal::new(None::<String>);
-    let busy = RwSignal::new(false);
-    let requests = StoredValue::new(Requests::default());
-    let cleanup = requests.get_value();
-    on_cleanup(move || cleanup.invalidate());
-    Effect::new(move |_| {
-        let next = text.get();
-        if !focused.get() && displayed.get_untracked() != next {
-            displayed.set(next);
-            message.set(None);
-        }
-    });
-    view! { <div class="contact-copy"><label for=id>{label}</label><textarea node_ref=field id=id rows="2" readonly=true prop:value=move ||displayed.get() on:focus=move |_| {focused.set(true);if let Some(area)=field.get(){area.select();}} on:blur=move |_|focused.set(false)/>
-        <button type="button" disabled=move ||busy.get() || displayed.get().is_empty() on:click=move |_| {
-            let guard=requests.get_value();let request=guard.begin();busy.set(true);message.set(None);
-            // Start within pointer/keyboard activation, before awaiting anything.
-            let copy=start_copy(&displayed.get_untracked());
-            spawn(async move {
-                let copied=finish_copy(copy).await;
-                if !guard.accepts(request) {return;}
-                if copied {message.try_set(Some(format!("{label} copied.")));}
-                else {if let Some(area)=field.get_untracked(){let _=area.focus();area.select();}message.try_set(Some("Clipboard access is unavailable. The complete text is selected; use Copy from the Edit menu or your usual copy shortcut.".into()));}
-                busy.try_set(false);
-            });
-        }>{button}</button>{move ||message.get().map(|text|view!{<p role="status" class="copy-status">{text}</p>})}
-    </div> }
 }
 #[component]
 fn SentHistory(busy: RwSignal<bool>, on_retract: UnsyncCallback<String>) -> impl IntoView {
@@ -423,3 +424,28 @@ fn spawn(task: impl std::future::Future<Output = ()> + 'static) {
 }
 #[cfg(not(target_arch = "wasm32"))]
 fn spawn(_task: impl std::future::Future<Output = ()> + 'static) {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sharing_needs_a_followed_person_but_can_queue_while_they_are_offline() {
+        let mut snapshot = api::PeopleSnapshot::default();
+        assert!(!has_recipients(&snapshot));
+        snapshot.people.push(api::PersonSummary {
+            key: "test-key".into(),
+            name: "Friend".into(),
+            connected: false,
+            followed: false,
+            error: None,
+        });
+        assert!(!has_recipients(&snapshot));
+        snapshot.people[0].followed = true;
+        assert!(has_recipients(&snapshot));
+        snapshot.people[0].connected = true;
+        assert!(has_recipients(&snapshot));
+        snapshot.people[0].followed = false;
+        assert!(!has_recipients(&snapshot));
+    }
+}

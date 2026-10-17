@@ -799,13 +799,19 @@ The note is the primary content; the item is the supporting context. This is the
 
 ## Keyboard
 
-**Settings → Devices** opens desktop sync management. Local
-reading requires no setup. The initial section offers **Set up sync** and **Use
-an invitation**, with a desktop name and either a confirmed recovery passphrase
-or pasted invitation. The desktop holding the encrypted master can create an
-invitation or remove another desktop after unlocking it. Invitation text stays
-selectable for ordinary copy/paste, expires after five minutes and is cancelled
-when Settings closes. Section changes retain pairing drafts. Cleanup is scoped
+**Settings → Devices** opens identity setup and desktop sync management. Local
+reading requires no setup. The first-desktop action creates an identity; a
+separate action uses an invitation from another desktop you own. People and
+Devices link to each other and explain their distinct access: a friend receives
+deliberate shares; a paired desktop receives your private archive.
+Setup, invitation creation and joining each show a short heading and instructions
+for the desktop the user is currently on. Recovery copy explains that Carrel
+cannot reset the passphrase. Generated invitations have an explicit **Copy
+invitation** action with selectable-text fallback; they expire after five minutes
+and are cancelled when Settings closes. Pairing success confirms authorization,
+without claiming the archive has finished copying. Failed joins retain the
+invitation/name and offer specific recovery for invalid or expired credentials.
+Section changes retain pairing drafts. Cleanup is scoped
 to the invitation that form owns: a delayed response from a
 closed form must not cancel an invitation created after reopening Settings.
 Pairing and network work may show a disabled action;
@@ -1089,9 +1095,14 @@ feed from an incomplete article cache; diagnostic logs include a sample reason.
 
 ### Share affordance
 
-Share article belongs in the reader context bar and the current item's `c` / `C`
-actions. It opens a native dialog over the mounted article. Choose one
-person explicitly and optionally enter a brief note. Saving queues a signed
+Share belongs in the reader context bar as a small popover. **Copy link** copies
+the original webpage address; **Copy Carrel link** copies its private saved-item
+address. These remain useful before connecting with anyone. With a followed
+person available, **Share with a person…** opens the native composer over the
+mounted article; otherwise **Add a person…** opens Settings directly to People.
+The `c` / `C` actions follow the same recipient guard and never open an empty
+composer. A stale/failed contact read reports recovery without losing context.
+Choose one person explicitly and optionally enter a brief note. Saving queues a signed
 vouch locally; failures retain the draft and retry identity. Sharing never
 completes or stars an article.
 

@@ -451,6 +451,14 @@ The webview owns only mounted-page and focus state. Clipboard writes start from
 explicit user activation, with complete-text selection as the fallback; nothing
 reads clipboard contents. Contact rows keep their identity during status updates
 so an in-progress confirmation stays mounted.
+The Share popover separates copying the publisher URL from copying a private
+Carrel address. A fresh contact read guards composer creation; an empty result
+opens People settings instead. Leaving the article invalidates a pending open,
+while an already mounted composer's failed save retains its draft. Settings can
+open a named section without remounting its other panels. People, device
+invitations and link fallback use shared clipboard primitives; invitation text
+is never inferred from or written to a persistent preference. Native pairing
+errors expose typed recovery kinds rather than parsing developer error strings.
 Calendar DTOs are derived from publication metadata, with explicitly labelled
 arrival dates for undated posts; the webview only renders and groups them.
 

@@ -21,7 +21,7 @@ apps are open; a locally saved share is not a delivery receipt.
 
 ## Set up your identity
 
-Open Settings → Devices → **Set up sync**, and choose your own recovery
+Open Settings → Devices → **Create identity**, and choose your own recovery
 passphrase. Your master key stays encrypted on its originating desktop. Ordinary
 reading uses that desktop's operational key. There is no account service or
 password-reset service.
@@ -42,7 +42,7 @@ A bare key can be saved before the connection code arrives.
 
 ## Send an article
 
-In the reader, choose **Share article**. Select a person explicitly and add an
+In the reader, open **Share article → Share with a person…**. Select a person explicitly and add an
 optional note. Saving records the share locally; background exchange retries
 while both apps are open. A saved contact code or locally saved share does not
 by itself prove delivery. Receipt in **Library → Shared with you** does.
@@ -67,3 +67,14 @@ archives. Assume a recipient can keep anything you deliberately send them.
 For a practical trial, follow the
 [two-desktop checklist](https://github.com/cigrainger/carrel/blob/main/docs/PRIVATE_SHARING_PLAN.md#first-friend-trial),
 including offline reading, restart, withdrawal and private-note separation.
+
+## Sharing and copying links
+
+The reader's Share control opens a small menu. **Copy link** copies the original
+webpage address; **Copy Carrel link** returns to your saved article on a desktop
+that already has it. Copying does not send the archive or grant access.
+
+Choose **Share with a person…** to send an archived article and optional note.
+If you have not followed anyone, **Add a person…** opens People settings instead
+of an empty composer. A followed person can be offline: the share waits locally.
+Device pairing is for your own private library; connect with friends in People.

@@ -196,10 +196,9 @@ flow are implemented and verified. Physical two-machine networking and a manual
 pass over the new Devices dialog remain useful release checks; the in-process
 and native backend tests do not claim to verify those environments.
 
-To try it, run `just dev` and open **Settings → Devices**. Choose **Set up
-sync**, enter a desktop name and confirm a recovery passphrase. Then choose
+To try it, run `just dev` and open **Settings → Devices**. Choose **Create identity**, enter a desktop name and confirm a recovery passphrase. Then choose
 **Pair another desktop**, unlock the recovery key and copy the invitation.
-On the other installation, open **Settings → Devices → Use an invitation**,
+On the other installation, open **Settings → Devices → Pair this desktop**,
 paste it and name that desktop. Keep Settings open until pairing finishes.
 Ordinary reading and subsequent sync do not require the passphrase. The desktop
 holding the encrypted master can remove another desktop from this same dialog.
