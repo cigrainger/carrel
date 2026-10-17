@@ -12,6 +12,7 @@ use crate::config::InstallPaths;
 /// State available to command handlers.
 #[derive(Clone)]
 pub struct AppState {
+    pub(crate) backup: Arc<Mutex<crate::backup::BackupReview>>,
     pub(crate) blobs: BlobStore,
     pub(crate) feed_fetch_lock: Arc<AsyncMutex<()>>,
     // Includes first-use key creation, before the store's annotation write lock.
@@ -27,6 +28,7 @@ pub struct AppState {
 impl AppState {
     pub(crate) fn new(store: Store, blobs: BlobStore, paths: InstallPaths) -> Self {
         Self {
+            backup: Arc::new(Mutex::new(crate::backup::BackupReview::default())),
             blobs,
             feed_fetch_lock: Arc::new(AsyncMutex::new(())),
             annotation_lock: Arc::new(Mutex::new(())),

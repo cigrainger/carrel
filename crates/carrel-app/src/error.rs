@@ -8,6 +8,9 @@ pub type Result<T> = std::result::Result<T, AppError>;
 /// Errors raised by the desktop shell.
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
+    /// Encrypted local backup or staged activation failed.
+    #[error(transparent)]
+    Backup(#[from] carrel_store::backup::BackupError),
     /// A blocking native operation did not return a result.
     #[error("background operation did not finish: {operation}")]
     BackgroundTask {
@@ -85,6 +88,7 @@ impl Serialize for AppError {
         S: serde::Serializer,
     {
         let kind = match self {
+            Self::Backup(_) => "backup",
             Self::BackgroundTask { .. } => "background_task",
             Self::Capture(_) => "capture",
             Self::Sync(carrel_sync::SyncError::InvalidInvitation) => "pairing_invitation",

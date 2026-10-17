@@ -4,6 +4,7 @@
 
 mod app_links;
 mod background;
+mod backup;
 mod chrome;
 mod close;
 mod commands;
@@ -58,10 +59,16 @@ pub fn run() -> Result<()> {
         })
         .setup(move |app| {
             let paths = config::InstallPaths::resolve()?;
+            let restore_message = backup::activate_pending(&paths)?;
             let store = carrel_store::Store::open(&paths.store)?;
             let blobs = BlobStore::open(&paths.blobs);
             store.migrate()?;
             let background_state = state::AppState::new(store, blobs, paths);
+            if let Some(message) = restore_message {
+                background_state
+                    .feed_status
+                    .set_idle(message, state::FeedStatusCounts::default());
+            }
             app.manage(background_state.clone());
             app_links::install(app.handle())?;
             background::spawn_feed_loop(background_state.clone());
@@ -70,6 +77,15 @@ pub fn run() -> Result<()> {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            commands::backups::backup_status,
+            commands::backups::create_backup,
+            commands::backups::preview_backup,
+            commands::backups::cancel_backup_review,
+            commands::backups::restore_backup,
+            commands::backups::cancel_pending_restore,
+            commands::backups::restart_prepared_restore,
+            commands::backups::inspect_recovered_desktop,
+            commands::backups::connect_recovered_desktop,
             app_links::take_app_link,
             chrome::set_window_appearance,
             close::frontend_ready,

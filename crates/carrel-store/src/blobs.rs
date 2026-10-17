@@ -14,6 +14,9 @@ pub struct BlobStore {
 }
 
 impl BlobStore {
+    pub(crate) fn root(&self) -> &std::path::Path {
+        &self.path
+    }
     /// Open a blob store rooted at `path`.
     pub fn open(path: impl Into<PathBuf>) -> Self {
         Self { path: path.into() }

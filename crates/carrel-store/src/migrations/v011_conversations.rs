@@ -104,7 +104,16 @@ mod tests {
             let device = Keypair::from_seed(&[82; 32]);
             let friend = Keypair::from_seed(&[83; 32]);
             let certificate = DeviceCert::new_at_micros(&master, device.public(), 1, None);
-            store.bind_self_identity(&certificate, &device).unwrap();
+            // Construct the legacy binding directly: current identity commands
+            // require the complete current schema, which this fixture predates.
+            store.query_with_params(
+                "{ ?[master_pubkey,device_pubkey,device_cert] <- [[$master,$device,$cert]] :put device_certificate {master_pubkey,device_pubkey=>device_cert} } { ?[singleton,master_pubkey,device_pubkey] <- [[0,$master,$device]] :put self_identity {singleton=>master_pubkey,device_pubkey} }",
+                BTreeMap::from([
+                    ("master".into(), DataValue::Bytes(master.public().as_bytes().to_vec())),
+                    ("device".into(), DataValue::Bytes(device.public().as_bytes().to_vec())),
+                    ("cert".into(), DataValue::Bytes(certificate.to_bytes().unwrap())),
+                ]),
+            ).unwrap();
             let root = Share::sign(
                 "legacy".into(),
                 *friend.public(),

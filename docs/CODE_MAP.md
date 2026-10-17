@@ -30,6 +30,7 @@ Paths below are relative to `crates/`. Integration tests live in each crate's
 | OPML / source folders | Feeds `opml.rs`; store `feeds.rs`; app `subscriptions.rs` | OPML, subscription and command tests |
 | Note branches / explicit intent | Core `annotation/note.rs`, `private_state.rs`; store `notes.rs`, `private_state.rs` | Property tests, store notes/state tests |
 | Identity / key files | Core `identity/`; store `keystore.rs`, `identity.rs` | Keystore/identity tests and fixed compatibility fixture |
+| Encrypted backup / fresh-device recovery | Store `backup.rs`, `recovery.rs`; app `backup.rs`, `commands/backups.rs`; frontend `backups.rs` | Store round trips and property tests; activation interruption/eligibility tests; app recovery over real Iroh peers |
 | Private device authorization | Sync `authorization.rs`, `transport.rs`, `pairing.rs` | Real-peer transport/pairing, revocation and restart tests |
 | Friend / group audience isolation | Core `sharing.rs`, `conversation.rs`; store `sharing/`; sync `sharing.rs` | Adversarial/property tests, receipts and four-peer reply relay |
 | Conversation / revision ancestry | Store `sharing/conversation.rs`, `notes.rs`; app `commands/conversations.rs` | Out-of-order/cycle/removal, branch provenance and self-bridge tests |

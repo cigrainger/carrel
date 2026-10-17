@@ -50,6 +50,10 @@ article** and **Import OPML**. **Not now** skips it; the app menu's **Getting
 started** reopens it whenever you want. Existing archives go straight to reading.
 There is no account or sync setup required.
 
+Current source also offers **Restore backup** here and in **Settings → Backups**.
+It previews an encrypted archive before importing into an empty installation;
+this is not in the alpha.3 installers. See [Encrypted backups](backups.md).
+
 Use **Add source** beside Sources, in Settings → Sources, or in the context bar's
 app menu. Paste a website address or RSS/Atom/JSON feed URL. Carrel discovers
 feeds from websites; if several valid feeds exist, choose the intended one.

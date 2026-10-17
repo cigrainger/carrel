@@ -45,12 +45,18 @@ struct Request {
     name: String,
     device: PublicKey,
     signature: Signature,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    recovery: bool,
 }
 
 impl Request {
     fn payload(&self, client: [u8; 32], inviter: [u8; 32]) -> impl Serialize + '_ {
         (
-            "carrel-pair-device-v1",
+            if self.recovery {
+                "carrel-pair-recovery-v1"
+            } else {
+                "carrel-pair-device-v1"
+            },
             self.token,
             &self.name,
             self.device,
@@ -310,6 +316,9 @@ async fn serve(
     if device == *master.public() {
         return Err(SyncError::InvalidInvitation);
     }
+    if bridge.store.self_device_denied(&device)? {
+        return Err(SyncError::DeviceUnauthorized);
+    }
     let existing = bridge.store.self_devices()?;
     let certificate = if let Some(row) = existing
         .iter()
@@ -319,6 +328,8 @@ async fn serve(
             return Err(SyncError::DeviceUnauthorized);
         }
         row.certificate.clone()
+    } else if request.recovery {
+        DeviceCert::for_recovery(master, &device)
     } else {
         DeviceCert::new(master, &device, Some(request.name))
     };
@@ -418,12 +429,40 @@ impl PairingSession {
         Self::with_builder(text, device, name, Endpoint::builder(presets::N0)).await
     }
 
+    /// Request stable recovery authorization for this installation's device key.
+    ///
+    /// Existing certificates take precedence. This request authorizes no additional
+    /// historical authors and fails signature verification with older inviters.
+    pub async fn recover(text: &str, device: &Keypair, name: String) -> Result<Self> {
+        Self::recover_with_builder(text, device, name, Endpoint::builder(presets::N0)).await
+    }
+
     /// Join through a custom address transport while retaining proof verification.
     pub async fn with_builder(
         text: &str,
         device: &Keypair,
         name: String,
         builder: Builder,
+    ) -> Result<Self> {
+        Self::join_with_builder(text, device, name, builder, false).await
+    }
+
+    /// Request recovery authorization through a custom address transport.
+    pub async fn recover_with_builder(
+        text: &str,
+        device: &Keypair,
+        name: String,
+        builder: Builder,
+    ) -> Result<Self> {
+        Self::join_with_builder(text, device, name, builder, true).await
+    }
+
+    async fn join_with_builder(
+        text: &str,
+        device: &Keypair,
+        name: String,
+        builder: Builder,
+        recovery: bool,
     ) -> Result<Self> {
         let invitation = parse_invitation(text)?;
         if name.len() > 256 {
@@ -447,6 +486,7 @@ impl PairingSession {
                 name,
                 device: *device.public(),
                 signature: Signature::from_bytes([0; 64]),
+                recovery,
             };
             let signature = sign_canonical(
                 device,
@@ -561,7 +601,14 @@ fn same_token(a: &[u8; 32], b: &[u8; 32]) -> bool {
 mod tests {
     use super::*;
     use crate::transport::SelfTransport;
+    use carrel_core::identity::canonical_bytes;
     use carrel_store::{Store, blobs::BlobStore};
+
+    fn local_builder() -> Builder {
+        Endpoint::builder(presets::Minimal)
+            .bind_addr("127.0.0.1:0")
+            .unwrap()
+    }
 
     async fn source(dir: &std::path::Path, root: &Keypair, key: &Keypair) -> Arc<SelfBridge> {
         let store = Store::open(&dir.join("source")).unwrap();
@@ -589,6 +636,291 @@ mod tests {
                 .await
                 .unwrap(),
         )
+    }
+
+    #[test]
+    fn ordinary_requests_preserve_existing_serialization_and_signature_bytes() {
+        #[derive(Serialize, Deserialize)]
+        struct OrdinaryRequest {
+            token: [u8; 32],
+            name: String,
+            device: PublicKey,
+            signature: Signature,
+        }
+
+        let key = Keypair::from_seed(&[9; 32]);
+        let client = [1; 32];
+        let inviter = [2; 32];
+        let mut request = Request {
+            token: [3; 32],
+            name: "Reading desktop · 書斎".into(),
+            device: *key.public(),
+            signature: Signature::from_bytes([0; 64]),
+            recovery: false,
+        };
+        let original_payload = (
+            "carrel-pair-device-v1",
+            request.token,
+            &request.name,
+            request.device,
+            client,
+            inviter,
+        );
+        assert_eq!(
+            canonical_bytes(&request.payload(client, inviter)).unwrap(),
+            canonical_bytes(&original_payload).unwrap()
+        );
+        request.signature = sign_canonical(&key, &original_payload).unwrap();
+        assert_eq!(
+            sign_canonical(&key, &request.payload(client, inviter)).unwrap(),
+            request.signature
+        );
+        let original = OrdinaryRequest {
+            token: request.token,
+            name: request.name.clone(),
+            device: request.device,
+            signature: request.signature,
+        };
+        let bytes = serde_json::to_vec(&original).unwrap();
+        assert_eq!(serde_json::to_vec(&request).unwrap(), bytes);
+        let decoded: Request = serde_json::from_slice(&bytes).unwrap();
+        assert!(!decoded.recovery);
+        verify_canonical(
+            key.public(),
+            &decoded.payload(client, inviter),
+            &decoded.signature,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn recovery_requests_bind_the_flag_and_fail_the_ordinary_domain() {
+        let key = Keypair::from_seed(&[9; 32]);
+        let client = [1; 32];
+        let inviter = [2; 32];
+        for recovery in [false, true] {
+            let mut request = Request {
+                token: [3; 32],
+                name: "Recovered desktop".into(),
+                device: *key.public(),
+                signature: Signature::from_bytes([0; 64]),
+                recovery,
+            };
+            let signature = sign_canonical(&key, &request.payload(client, inviter)).unwrap();
+            request.signature = signature;
+            let mut encoded = serde_json::to_value(&request).unwrap();
+            assert_eq!(encoded.get("recovery").is_some(), recovery);
+            if recovery {
+                let ordinary_payload = (
+                    "carrel-pair-device-v1",
+                    request.token,
+                    &request.name,
+                    request.device,
+                    client,
+                    inviter,
+                );
+                assert!(
+                    verify_canonical(key.public(), &ordinary_payload, &request.signature).is_err()
+                );
+                let recovery_payload = (
+                    "carrel-pair-recovery-v1",
+                    request.token,
+                    &request.name,
+                    request.device,
+                    client,
+                    inviter,
+                );
+                verify_canonical(key.public(), &recovery_payload, &request.signature).unwrap();
+                encoded.as_object_mut().unwrap().remove("recovery");
+            } else {
+                encoded["recovery"] = serde_json::json!(true);
+            }
+            let tampered: Request = serde_json::from_value(encoded).unwrap();
+            assert!(
+                verify_canonical(
+                    key.public(),
+                    &tampered.payload(client, inviter),
+                    &tampered.signature,
+                )
+                .is_err()
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn recovery_pairing_rejects_tampering_then_issues_the_exact_recovery_certificate() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = Keypair::generate();
+        let akey = Keypair::generate();
+        let bkey = Keypair::generate();
+        let expected = DeviceCert::for_recovery(&root, bkey.public());
+        let a = source(dir.path(), &root, &akey).await;
+        let invitation = PairingInvitation::with_builder(a.clone(), root, local_builder())
+            .await
+            .unwrap();
+        let contents = parse_invitation(&invitation.text).unwrap();
+
+        for recovery in [false, true] {
+            let client = local_builder().bind().await.unwrap();
+            let connection = client
+                .connect(contents.endpoint.clone(), ALPN)
+                .await
+                .unwrap();
+            let (mut send, mut recv) = connection.open_bi().await.unwrap();
+            let mut request = Request {
+                token: contents.token,
+                name: "Tampered recovery".into(),
+                device: *bkey.public(),
+                signature: Signature::from_bytes([0; 64]),
+                recovery,
+            };
+            let signature = sign_canonical(
+                &bkey,
+                &request.payload(*client.id().as_bytes(), *contents.endpoint.id.as_bytes()),
+            )
+            .unwrap();
+            request.signature = signature;
+            request.recovery = !recovery;
+            send.write_all(&serde_json::to_vec(&request).unwrap())
+                .await
+                .unwrap();
+            send.finish().unwrap();
+            assert!(recv.read_to_end(MAX_MESSAGE).await.is_err());
+            client.close().await;
+            assert!(!invitation.finished());
+            assert_eq!(a.store.self_devices().unwrap().len(), 1);
+        }
+
+        let session = PairingSession::recover_with_builder(
+            &invitation.text,
+            &bkey,
+            "A separately chosen name".into(),
+            local_builder(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(session.grant.certificate, expected);
+        assert_eq!(
+            session.grant.certificate.to_bytes().unwrap(),
+            expected.to_bytes().unwrap()
+        );
+        let devices = a.store.self_devices().unwrap();
+        assert_eq!(devices.len(), 2);
+        assert_eq!(session.grant.devices.len(), 2);
+        assert_eq!(
+            devices
+                .iter()
+                .find(|row| row.certificate.device_pubkey == *bkey.public())
+                .unwrap()
+                .certificate,
+            expected
+        );
+        session.endpoint.close().await;
+        invitation.cancel().await;
+        a.doc.close().await.unwrap();
+        a.host.endpoint().close().await;
+    }
+
+    #[tokio::test]
+    async fn recovery_pairing_retains_an_existing_certificate() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = Keypair::generate();
+        let akey = Keypair::generate();
+        let bkey = Keypair::generate();
+        let a = source(dir.path(), &root, &akey).await;
+        let original =
+            DeviceCert::new_at_micros(&root, bkey.public(), 42, Some("Original name".into()));
+        assert_ne!(original, DeviceCert::for_recovery(&root, bkey.public()));
+        a.store.accept_self_device_certificate(&original).unwrap();
+        let before = a.store.self_devices().unwrap();
+        let invitation = PairingInvitation::with_builder(a.clone(), root, local_builder())
+            .await
+            .unwrap();
+        let session = PairingSession::recover_with_builder(
+            &invitation.text,
+            &bkey,
+            "Replacement name".into(),
+            local_builder(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(session.grant.certificate, original);
+        assert_eq!(a.store.self_devices().unwrap(), before);
+        session.endpoint.close().await;
+        invitation.cancel().await;
+        a.doc.close().await.unwrap();
+        a.host.endpoint().close().await;
+    }
+
+    #[tokio::test]
+    async fn recovery_pairing_refuses_denied_keys_with_or_without_certificates() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = Keypair::generate();
+        let akey = Keypair::generate();
+        let a = source(dir.path(), &root, &akey).await;
+        let mut denied = Vec::new();
+        for (certified, blocked) in [(false, false), (false, true), (true, false), (true, true)] {
+            let key = Keypair::generate();
+            if certified {
+                a.store
+                    .accept_self_device_certificate(&DeviceCert::new(
+                        &root,
+                        key.public(),
+                        Some("Denied desktop".into()),
+                    ))
+                    .unwrap();
+            }
+            if blocked {
+                let params = serde_json::from_value(serde_json::json!({
+                    "master": {"Bytes": root.public().as_bytes()},
+                    "device": {"Bytes": key.public().as_bytes()},
+                }))
+                .unwrap();
+                a.store.query_with_params(
+                    "?[master_pubkey,device_pubkey,reason] <- [[$master,$device,'legacy denial']] :put device_local_block {master_pubkey,device_pubkey=>reason}",
+                    params,
+                ).unwrap();
+            } else {
+                a.store
+                    .accept_self_revocation(&RevocationCert::new(&root, key.public()))
+                    .unwrap();
+            }
+            assert!(a.store.self_device_denied(key.public()).unwrap());
+            denied.push(key);
+        }
+        let before = a.store.self_devices().unwrap();
+        let allowed = Keypair::generate();
+        let expected = DeviceCert::for_recovery(&root, allowed.public());
+        let invitation = PairingInvitation::with_builder(a.clone(), root, local_builder())
+            .await
+            .unwrap();
+        for key in denied {
+            assert!(
+                PairingSession::recover_with_builder(
+                    &invitation.text,
+                    &key,
+                    "Cannot clear denial".into(),
+                    local_builder(),
+                )
+                .await
+                .is_err()
+            );
+            assert_eq!(a.store.self_devices().unwrap(), before);
+            assert!(!invitation.finished());
+        }
+        let session = PairingSession::recover_with_builder(
+            &invitation.text,
+            &allowed,
+            "Permitted recovery".into(),
+            local_builder(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(session.grant.certificate, expected);
+        session.endpoint.close().await;
+        invitation.cancel().await;
+        a.doc.close().await.unwrap();
+        a.host.endpoint().close().await;
     }
 
     #[tokio::test]
@@ -619,6 +951,11 @@ mod tests {
         )
         .await
         .unwrap();
+        assert_eq!(
+            session.grant.certificate.device_name.as_deref(),
+            Some("Second desktop")
+        );
+        assert!(session.grant.certificate.authorized_at_micros > 0);
         assert_ne!(
             session.grant.certificate.device_pubkey,
             akey.public().to_owned()

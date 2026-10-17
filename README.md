@@ -50,6 +50,10 @@ conversations. Alpha.2 does not support those additions. See the
 [release notes](https://github.com/cigrainger/carrel/releases/tag/v0.1.0-alpha.3)
 for the changes and upgrade guidance.
 
+Current source also adds encrypted backups and previewed restore into an empty
+installation, with a fresh device key and explicit identity recovery. These are
+not in the published alpha.3 installers. See [backup and recovery](site/src/backups.md).
+
 Physical two-computer sharing, installed app-link handoff and passage focus,
 native file-picker selection and broader platform usability remain manual release
 checks. This is an early tool for

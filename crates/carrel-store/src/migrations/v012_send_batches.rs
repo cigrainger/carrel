@@ -24,14 +24,22 @@ pub fn up(db: &DbInstance) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use crate::{CURRENT_SCHEMA_VERSION, Store};
+    use cozo::DataValue;
+    use std::collections::BTreeMap;
     #[test]
     fn interrupted_send_migration_resumes_without_selecting_an_identity() {
         for created in [false, true] {
             let store = Store::open_in_memory().unwrap();
             store.migrate().unwrap();
-            store
-                .query("?[version] <- [[12]] :rm schema_version {version}")
-                .unwrap();
+            for version in 12..=CURRENT_SCHEMA_VERSION {
+                store
+                    .query_with_params(
+                        "?[version] <- [[$version]] :rm schema_version {version}",
+                        BTreeMap::from([("version".into(), DataValue::from(i64::from(version)))]),
+                    )
+                    .unwrap();
+            }
+            assert_eq!(store.current_schema_version().unwrap(), 11);
             if !created {
                 store.query("::remove social_send").unwrap();
             }

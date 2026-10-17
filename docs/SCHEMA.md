@@ -1007,6 +1007,80 @@ participant's master key, then deliberately follow. Both people still choose to
 follow each other. Cards and connection addresses are never relayed just because
 someone joined a thread. No new social wire fact or audience capability is added.
 
+## Local backup recovery (version 13)
+
+```
+:create restore_origin {
+    singleton: Int => master_pubkey: Bytes?, device_pubkey: Bytes, legacy_devices: [Bytes]
+}
+```
+
+This local-only singleton exists only in a validated restored archive. It names
+the source's bound master, if any, and the original locally owned annotation
+keys, and the newly generated local operational key. It never enters a social or
+self wire record. Restore preserves signed history, certificates and private
+document capabilities but clears the installation binding and stale peer-address
+hints, and writes a fresh operational key. It never starts a
+second endpoint with the source desktop's private operational key.
+
+Until explicit authorization, the restored archive remains usable locally. The
+fresh local key may edit restored personal annotations through this explicit
+local ownership grant; no remote sender can create it. A restored bound identity
+may resume only under the same master, by unlocking the encrypted master or
+receiving a fresh matching pairing authorization. A restored unbound archive can
+explicitly create an identity that certifies its original local author keys as
+history. Pairing an unbound restored archive into a different existing identity
+is deferred; it would need authorization for those old authors as well.
+
+Successful recovery binds the independently generated device with verified
+certificates. If another backup was made before that recovery was authorized,
+explicit master resumption also certifies its retained, previously uncertified
+local operational authors. This keeps notes written between successive restores
+usable without rewriting their signatures. Existing certificates are preserved;
+known revocations and blocks remain authoritative. The local
+ownership grant remains for provenance/continued local access; a completed
+binding uses only normal verified certificate permissions. The marker's expected
+master guard prevents a backup from silently adopting a different identity.
+Pairing may bind only when retained or verified grant certificates cover every
+retained local author. Otherwise recovery stays unbound and locally editable,
+with an explanation that master authorization is needed. Root resumption issues
+recovery certificates by a stable rule so independent restorations cannot create
+conflicting certificates for the same historical operational key.
+This same issuance rule applies when a restored fresh key is authorized by an
+own-device invitation. The request's opt-in `recovery` boolean defaults to false
+and is omitted when false. Recovery requests sign the distinct
+`carrel-pair-recovery-v1` domain; ordinary requests retain the exact existing
+`carrel-pair-device-v1` signed bytes. The native join path selects
+`PairingSession::recover` only when `restore_origin` is present, and otherwise
+uses ordinary `join`. An older inviter must fail verification rather than issue
+a conflicting ordinary certificate for a recovery key. The root preserves an
+existing verified certificate and rejects denied devices; otherwise a recovery
+request uses `DeviceCert::for_recovery(master, device)`. No additional author keys
+are requested or authorized by this flag.
+Recovery issuance fixes the authorization timestamp at zero and the label at
+`Recovered desktop` for both the fresh key and any missing historical local
+authors. Zero is a format sentinel, not an assertion about when recovery occurred.
+Retained certificates take precedence over this rule.
+Migration 13 only creates this relation and records its version last; ordinary
+installations and their immutable identity bindings are untouched.
+Only store-internal preparation of a validated isolated restore temporarily
+removes the copied binding's deletion guard, clears that binding, and reinstalls
+the ordinary guard before activation. Live stores keep the unchanged guard.
+
+A recovered originating master can authorize a fresh device whose certificate
+other existing own desktops do not yet know. Devices therefore permits explicit
+review/import of that desktop's signed contact code. Its master must match the
+already bound identity; the certificate, operational signature, address identity,
+revocation and immutable-certificate guards are rechecked. The certificate,
+private journal work and peer-address hint commit together. This transfers no
+private-document capability, changes no identity binding and follows no social
+contact. A friend code for another master is always refused.
+
+An installation is eligible for restore only when every non-derived data relation
+is empty, including historical/tombstoned facts, contacts, groups and identity.
+An empty Library is insufficient. Eligibility is rechecked against the actual
+store at startup activation, before replacing its initialized but unused store.
+
 ## Feeds
 
 ```

@@ -75,6 +75,9 @@ pub(crate) fn DevicesPanel() -> impl IntoView {
     let mode = RwSignal::new(Mode::Overview);
     let status = expect_context::<DeviceStatus>();
     let snapshot = status.snapshot;
+    let restoring_master =
+        Memo::new(move |_| snapshot.get().recovery.is_some_and(|r| r.has_master_key));
+    let recovering = Memo::new(move |_| snapshot.get().recovery.is_some());
     let name = RwSignal::new(String::new());
     let passphrase = RwSignal::new(String::new());
     let confirm = RwSignal::new(String::new());
@@ -86,6 +89,7 @@ pub(crate) fn DevicesPanel() -> impl IntoView {
     let heading = NodeRef::<leptos::html::H3>::new();
     let name_input = NodeRef::<leptos::html::Input>::new();
     let passphrase_input = NodeRef::<leptos::html::Input>::new();
+    let invitation_input = NodeRef::<leptos::html::Textarea>::new();
     let preferences = crate::preferences::use_preferences();
     let sharing = crate::sharing::use_sharing();
     let feeds = feeds::use_feed_controller();
@@ -107,11 +111,24 @@ pub(crate) fn DevicesPanel() -> impl IntoView {
                     std::time::Duration::ZERO,
                 );
             }
-        } else if let Some(input) = if matches!(current, Mode::Setup | Mode::Join) {
-            name_input.get()
-        } else {
-            passphrase_input.get()
-        } {
+        } else if current == Mode::Join && recovering.get() {
+            if let Some(input) = invitation_input.get() {
+                set_timeout(
+                    move || {
+                        if input.is_connected() {
+                            let _ = input.focus();
+                        }
+                    },
+                    std::time::Duration::ZERO,
+                );
+            }
+        } else if let Some(input) =
+            if matches!(current, Mode::Setup | Mode::Join) && !recovering.get() {
+                name_input.get()
+            } else {
+                passphrase_input.get()
+            }
+        {
             set_timeout(
                 move || {
                     if input.is_connected() {
@@ -184,10 +201,16 @@ pub(crate) fn DevicesPanel() -> impl IntoView {
                 <Show when=move || mode.get() == Mode::Overview>
                     {move || success.get().map(|text| view! { <p class="pairing-result" role="status">{text}</p> })}
                     <Show when=move || snapshot.get().enabled fallback=move || view! {
-                        <p>"First desktop? Create an identity to connect with people or sync your own desktops. Local reading needs no setup."</p>
+                        <p>{move||match snapshot.get().recovery {
+                            Some(recovery) if recovery.has_master_key=>"Your archive is restored with a fresh device key. Resume the original identity using its recovery passphrase, then review this desktop’s new contact code on your other own desktops. You can also pair from another own desktop’s invitation.",
+                            Some(recovery) if recovery.master.is_some()=>"Your archive is restored locally. This backup contains no master recovery key. Pair with an invitation from another desktop belonging to the same identity.",
+                            Some(_)=>"Your local archive is restored. Create an identity only if you want to sync or share; its original notes keep their authors.",
+                            None=>"First desktop? Create an identity to connect with people or sync your own desktops. Local reading needs no setup.",
+                        }}</p>
+                        {move||snapshot.get().recovery.and_then(|r|r.master).map(|key|view!{<p>"Original identity: "<code>{key}</code></p>})}
                         <div class="dialog-actions">
-                            <button type="button" on:click=move |_| { error.set(None); mode.set(Mode::Setup); }>"Create identity"</button>
-                            <button type="button" on:click=move |_| { error.set(None); mode.set(Mode::Join); }>"Pair this desktop"</button>
+                            <Show when=move||snapshot.get().recovery.is_none_or(|r|r.has_master_key||r.master.is_none())><button type="button" on:click=move |_| { error.set(None); mode.set(Mode::Setup); }>{move||if restoring_master.get(){"Resume identity"}else{"Create identity"}}</button></Show>
+                            <Show when=move||snapshot.get().recovery.is_none_or(|r|r.master.is_some())><button type="button" on:click=move |_| { error.set(None); mode.set(Mode::Join); }>"Pair this desktop"</button></Show>
                         </div>
                         <p>"Already use Carrel on another desktop? Use its invitation to keep the same identity."</p>
                     }>
@@ -209,39 +232,43 @@ pub(crate) fn DevicesPanel() -> impl IntoView {
                             <button type="button" on:click=move |_| mode.set(Mode::Invite)>"Pair another desktop"</button>
                         </Show>
                         <Show when=move || !snapshot.get().can_invite><p>"To pair or remove another desktop, use the desktop where you created this identity. Its recovery key stays there."</p></Show>
+                        <crate::backups::RecoveredDesktop/>
                     </Show>
                 </Show>
                 <Show when=move || mode.get() != Mode::Overview>
-                    <h4>{move || match mode.get() { Mode::Setup => "Create your identity", Mode::Join => "Pair this desktop", Mode::Invite => "Pair another desktop", Mode::Revoke => "Remove desktop", Mode::Overview => "" }}</h4>
-                    <Show when=move || mode.get() == Mode::Join><ol class="pairing-steps"><li>"On your other desktop, open Settings → Devices → Pair another desktop."</li><li>"Create an invitation there and keep Settings open."</li><li>"Name this desktop and paste the complete invitation below."</li></ol></Show>
+                    <h4>{move || match mode.get() { Mode::Setup if restoring_master.get()=>"Resume your identity",Mode::Setup => "Create your identity", Mode::Join => "Pair this desktop", Mode::Invite => "Pair another desktop", Mode::Revoke => "Remove desktop", Mode::Overview => "" }}</h4>
+                    <Show when=move || mode.get() == Mode::Join><ol class="pairing-steps"><li>"On your other desktop, open Settings → Devices → Pair another desktop."</li><li>"Create an invitation there and keep Settings open."</li><li>{move||if recovering.get(){"Paste the complete invitation below."}else{"Name this desktop and paste the complete invitation below."}}</li></ol></Show>
                     <Show when=move || mode.get() == Mode::Invite && invitation.get().is_empty()><p>"Unlock your recovery key to create a one-use invitation for another desktop you own."</p></Show>
                     <Show when=move || mode.get() == Mode::Revoke><p>"Remove "<strong>{move || snapshot.get().devices.into_iter().find(|device| device.key == selected_device.get()).map(|device| device.name).unwrap_or_else(|| "this desktop".into())}</strong>" from private sync? This stops future sync. It cannot erase the library already copied to that desktop."</p></Show>
                     <form on:submit=move |event| {
                         event.prevent_default();
                         if busy.get_untracked() { return; }
                         let current = mode.get_untracked();
-                        if current == Mode::Setup && passphrase.get_untracked() != confirm.get_untracked() { error.set(Some("The passphrases do not match.".into())); return; }
+                        if current == Mode::Setup && !restoring_master.get_untracked() && passphrase.get_untracked() != confirm.get_untracked() { error.set(Some("The passphrases do not match.".into())); return; }
+                        let desktop_name=if recovering.get_untracked(){"Recovered desktop".into()}else{name.get_untracked()};
                         match current {
-                            Mode::Setup => submit("enable_sync", json!({"passphrase":passphrase.get_untracked(), "name":name.get_untracked()})),
-                            Mode::Join => submit("join_sync_invitation", json!({"invitation":invitation.get_untracked(), "name":name.get_untracked()})),
+                            Mode::Setup => submit("enable_sync", json!({"passphrase":passphrase.get_untracked(), "name":desktop_name})),
+                            Mode::Join => submit("join_sync_invitation", json!({"invitation":invitation.get_untracked(), "name":desktop_name})),
                             Mode::Invite => submit("create_sync_invitation", json!({"passphrase":passphrase.get_untracked()})),
                             Mode::Revoke => submit("revoke_sync_device", json!({"passphrase":passphrase.get_untracked(), "key":selected_device.get_untracked()})),
                             Mode::Overview => {},
                         }
                     }>
-                        <Show when=move || matches!(mode.get(), Mode::Setup | Mode::Join)>
+                        <Show when=move || matches!(mode.get(), Mode::Setup | Mode::Join) && !recovering.get()>
                             <label>"Desktop name"<input node_ref=name_input type="text" required maxlength="256" autocomplete="off" placeholder="For example, My MacBook" readonly=move || busy.get() prop:value=move || name.get() on:input=move |event| name.set(event_target_value(&event))/></label>
                         </Show>
+                        <Show when=move||matches!(mode.get(),Mode::Setup|Mode::Join)&&recovering.get()><p>"This desktop will appear as “Recovered desktop” on your other desktops."</p></Show>
                         <Show when=move || mode.get() != Mode::Join && invitation.get().is_empty()>
-                            <label>"Recovery passphrase"<input node_ref=passphrase_input type="password" required minlength="8" autocomplete="off" readonly=move || busy.get() prop:value=move || passphrase.get() on:input=move |event| passphrase.set(event_target_value(&event))/></label>
+                            <label>"Recovery passphrase"<input node_ref=passphrase_input type="password" required minlength=move||if restoring_master.get(){"1"}else{"8"} autocomplete="off" readonly=move || busy.get() prop:value=move || passphrase.get() on:input=move |event| passphrase.set(event_target_value(&event))/></label>
                         </Show>
-                        <Show when=move || mode.get() == Mode::Setup>
+                        <Show when=move || mode.get() == Mode::Setup && !restoring_master.get()>
                             <p>"Use at least eight characters and keep this passphrase somewhere safe. It protects the recovery key on this desktop; Carrel cannot reset it. Ordinary reading and sync do not require it."</p>
                             <label>"Repeat passphrase"<input type="password" required minlength="8" autocomplete="off" readonly=move || busy.get() prop:value=move || confirm.get() on:input=move |event| confirm.set(event_target_value(&event))/></label>
                         </Show>
+                        <Show when=move||mode.get()==Mode::Setup&&restoring_master.get()><p>"Enter the original identity recovery passphrase. The backup passphrase does not replace it. This authorizes the fresh device and keeps existing signed history."</p></Show>
                         <Show when=move || mode.get() == Mode::Join>
                             <label>"Paste invitation"
-                                <textarea required rows="4" spellcheck="false" autocapitalize="off" autocomplete="off" readonly=move || busy.get() prop:value=move || invitation.get() on:input=move |event| invitation.set(event_target_value(&event))/>
+                                <textarea node_ref=invitation_input required rows="4" spellcheck="false" autocapitalize="off" autocomplete="off" readonly=move || busy.get() prop:value=move || invitation.get() on:input=move |event| invitation.set(event_target_value(&event))/>
                             </label>
                         </Show>
                         <Show when=move || mode.get() == Mode::Invite && !invitation.get().is_empty()>
@@ -260,7 +287,7 @@ pub(crate) fn DevicesPanel() -> impl IntoView {
                                 leptos::task::spawn_local(cancel_invitation(text));
                             }>{move || if mode.get() == Mode::Invite && !invitation.get().is_empty() { "Cancel invitation" } else { "Back" }}</button>
                             <Show when=move || mode.get() != Mode::Invite || invitation.get().is_empty()>
-                                <button type="submit" disabled=move || busy.get()>{move || if busy.get() {"Working…"} else {match mode.get() {Mode::Setup=>"Create identity", Mode::Join=>"Pair desktop", Mode::Revoke=>"Remove desktop", _=>"Create invitation"}}}</button>
+                                <button type="submit" disabled=move || busy.get()>{move || if busy.get() {"Working…"} else {match mode.get() {Mode::Setup if restoring_master.get()=>"Resume identity",Mode::Setup=>"Create identity", Mode::Join=>"Pair desktop", Mode::Revoke=>"Remove desktop", _=>"Create invitation"}}}</button>
                             </Show>
                         </div>
                     </form>

@@ -19,6 +19,7 @@ repository = "https://github.com/cigrainger/carrel"
 homepage = "https://cigrainger.github.io/carrel/"
 
 [workspace.dependencies]
+age = { version = "0.12.1", default-features = false }
 ammonia = "4.2.1"
 anyhow = "1.0.104"
 argon2 = "0.6.0"
@@ -31,7 +32,7 @@ carrel-sync = { path = "crates/carrel-sync" }
 chacha20poly1305 = "0.11.0"
 ciborium = "0.2"
 clap = { version = "4.6.7", features = ["derive"] }
-cozo = { version = "0.7.6", default-features = false, features = ["rayon", "storage-rocksdb"] }
+cozo = { version = "0.7.6", default-features = false, features = ["rayon", "storage-rocksdb", "storage-sqlite"] }
 ed25519-dalek = "3.0.0"
 feed-rs = "3.0.0"
 futures-core = "0.3.34"

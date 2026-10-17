@@ -12,6 +12,7 @@
 # Reference
 
 - [Your data and recovery](data-and-recovery.md)
+- [Encrypted backups](backups.md)
 - [Troubleshooting](troubleshooting.md)
 - [Development](development.md)
 - [Releases](releases.md)

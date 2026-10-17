@@ -16,9 +16,10 @@ mod v009_private_sharing;
 mod v010_current_image_scope;
 mod v011_conversations;
 mod v012_send_batches;
+mod v013_restore_origin;
 
 /// The latest schema version known to this crate.
-pub const CURRENT_SCHEMA_VERSION: u32 = 12;
+pub const CURRENT_SCHEMA_VERSION: u32 = 13;
 
 /// Apply all migrations newer than `current_version`.
 pub fn migrate(db: &DbInstance, current_version: u32) -> Result<()> {
@@ -57,6 +58,9 @@ pub fn migrate(db: &DbInstance, current_version: u32) -> Result<()> {
     }
     if current_version < 12 {
         v012_send_batches::up(db)?;
+    }
+    if current_version < 13 {
+        v013_restore_origin::up(db)?;
     }
 
     Ok(())

@@ -104,6 +104,7 @@ pub(crate) fn Welcome() -> impl IntoView {
 #[component]
 fn WelcomeSheet() -> impl IntoView {
     let controller = use_welcome();
+    let preferences = crate::preferences::use_preferences();
     let feeds = use_feed_controller();
     let capture = crate::components::save_article::use_capture_dialog();
     let busy = RwSignal::new(false);
@@ -137,6 +138,10 @@ fn WelcomeSheet() -> impl IntoView {
                         }
                     });
                 }><Icon name=IconName::Import/><span><strong>"Import OPML"</strong><small>"Bring subscriptions from another reader."</small></span></button>
+                <button type="button" disabled=move ||busy.get() on:click=move |_| {
+                    controller.dismiss();
+                    preferences.open_settings(crate::preferences::SettingsSection::Backups);
+                }><Icon name=IconName::Import/><span><strong>"Restore backup"</strong><small>"Recover your archive from an encrypted file."</small></span></button>
             </div>
             {move || error.get().map(|message| view! { <p class="feed-error" role="alert">{message}</p> })}
             <p class="welcome-note">"Sync and sharing are optional. You can set them up later in Settings."</p>

@@ -10,7 +10,8 @@ notifications, reply counts or popularity signals.
 
 **Planned; not in alpha.3.** Prioritize the experience of a mutual friend bringing
 people together around an article they thought each person would appreciate.
-Backup and restore is the other immediate priority; see
+Encrypted backup/restore is implemented in current source and awaits a release;
+see
 [BACKUP_RESTORE_PLAN.md](BACKUP_RESTORE_PLAN.md).
 
 The opening should make the human context clear: who brought the conversation

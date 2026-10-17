@@ -10,6 +10,7 @@ pub(crate) enum SettingsSection {
     Sources,
     People,
     Devices,
+    Backups,
     Keyboard,
 }
 

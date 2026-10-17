@@ -9,6 +9,7 @@ repository.workspace = true
 description = "Cozo-backed local facts, archive and key persistence for Carrel"
 
 [dependencies]
+age = { workspace = true }
 argon2 = { workspace = true }
 blake3 = { workspace = true }
 bytes = { workspace = true }

@@ -26,9 +26,10 @@ pub struct DeviceCert {
     pub master_pubkey: PublicKey,
     /// The device sub-key authorized by the master identity.
     pub device_pubkey: PublicKey,
-    /// The authorization timestamp in microseconds since the Unix epoch.
+    /// Authorization time in Unix microseconds; recovery certificates use zero
+    /// for stable issuance, not as a claim about the actual recovery date.
     pub authorized_at_micros: i64,
-    /// A local, user-chosen label for the device.
+    /// A user-chosen label, or the fixed recovery label.
     pub device_name: Option<String>,
     /// The master key's signature over the certificate payload.
     pub master_signature: Signature,
@@ -38,6 +39,15 @@ impl DeviceCert {
     /// Create a certificate for `device_pubkey` using the current time.
     pub fn new(master: &Keypair, device_pubkey: &PublicKey, device_name: Option<String>) -> Self {
         Self::new_at_micros(master, device_pubkey, now_micros(), device_name)
+    }
+
+    /// Certify a recovery key with stable bytes across independent restorations.
+    ///
+    /// Both live recovered devices and retained uncertified authors use this rule,
+    /// including when authorized by an own-device invitation. Callers must keep
+    /// an existing certificate instead of reissuing it, and enforce revocations.
+    pub fn for_recovery(master: &Keypair, device_pubkey: &PublicKey) -> Self {
+        Self::new_at_micros(master, device_pubkey, 0, Some("Recovered desktop".into()))
     }
 
     /// Create a certificate for `device_pubkey` at a supplied timestamp.
@@ -314,6 +324,44 @@ mod tests {
     }
 
     #[test]
+    fn recovery_certificate_has_a_fixed_signed_time_and_label() {
+        let master = Keypair::from_seed(&[21; 32]);
+        let device = Keypair::from_seed(&[22; 32]);
+        let certificate = DeviceCert::for_recovery(&master, device.public());
+        assert_eq!(certificate.authorized_at_micros, 0);
+        assert_eq!(
+            certificate.device_name.as_deref(),
+            Some("Recovered desktop")
+        );
+        let bytes = certificate.to_bytes().unwrap();
+        assert_eq!(DeviceCert::from_bytes(&bytes).unwrap(), certificate);
+        let mut changed_time = certificate.clone();
+        changed_time.authorized_at_micros = 1;
+        assert!(changed_time.verify().is_err());
+        let mut changed_label = certificate;
+        changed_label.device_name = Some("Another desktop".into());
+        assert!(changed_label.verify().is_err());
+    }
+
+    #[test]
+    fn recovery_certificate_binds_both_the_master_and_device() {
+        let master = Keypair::from_seed(&[23; 32]);
+        let device = Keypair::from_seed(&[24; 32]);
+        let other = Keypair::from_seed(&[25; 32]);
+        let certificate = DeviceCert::for_recovery(&master, device.public());
+        for different in [
+            DeviceCert::for_recovery(&other, device.public()),
+            DeviceCert::for_recovery(&master, other.public()),
+        ] {
+            different.verify().unwrap();
+            assert_ne!(
+                certificate.to_bytes().unwrap(),
+                different.to_bytes().unwrap()
+            );
+        }
+    }
+
+    #[test]
     fn tampered_device_cert_fails_verification() {
         let master = Keypair::from_seed(&[3_u8; 32]);
         let device = Keypair::from_seed(&[4_u8; 32]);
@@ -424,6 +472,22 @@ mod tests {
     }
 
     proptest! {
+        #[test]
+        fn recovery_certificates_are_stable_for_each_master_and_device(
+            master_seed in any::<[u8; 32]>(),
+            device_seed in any::<[u8; 32]>(),
+        ) {
+            let master = Keypair::from_seed(&master_seed);
+            let device = Keypair::from_seed(&device_seed);
+            let original = DeviceCert::for_recovery(&master, device.public());
+            let restored_master = Keypair::from_seed(&master_seed);
+            let restored_device = Keypair::from_seed(&device_seed);
+            let restored = DeviceCert::for_recovery(&restored_master, restored_device.public());
+            prop_assert!(original.verify().is_ok());
+            prop_assert!(restored.verify().is_ok());
+            prop_assert_eq!(original.to_bytes().unwrap(), restored.to_bytes().unwrap());
+        }
+
         #[test]
         fn generated_certs_verify(
             master_seed in any::<[u8; 32]>(),

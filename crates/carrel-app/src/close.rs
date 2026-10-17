@@ -9,6 +9,7 @@ struct CloseStatus {
     ready: bool,
     pending: bool,
     allowed: bool,
+    restart: bool,
 }
 
 impl CloseStatus {
@@ -30,6 +31,7 @@ impl CloseStatus {
 
     fn cancel(&mut self) {
         self.pending = false;
+        self.restart = false;
     }
 }
 
@@ -52,10 +54,36 @@ pub(crate) async fn finish_app_close(
     state: State<'_, CloseState>,
     data: State<'_, crate::state::AppState>,
 ) -> crate::Result<()> {
-    let allowed = state.0.lock().expect("close state poisoned").finish();
+    let (allowed, restart) = {
+        let mut status = state.0.lock().expect("close state poisoned");
+        (status.finish(), status.restart)
+    };
     if allowed {
         crate::sync::shutdown(&data).await;
-        app.exit(0);
+        if restart {
+            app.request_restart();
+        } else {
+            app.exit(0);
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn request_restore_restart(app: &AppHandle) -> crate::Result<()> {
+    app.state::<CloseState>()
+        .0
+        .lock()
+        .expect("close state poisoned")
+        .restart = true;
+    if !request_close(app) {
+        app.state::<CloseState>()
+            .0
+            .lock()
+            .expect("close state poisoned")
+            .restart = false;
+        return Err(crate::AppError::Config(
+            "Restore is prepared. Quit and reopen Carrel to finish it.".into(),
+        ));
     }
     Ok(())
 }
@@ -132,5 +160,20 @@ mod tests {
         assert!(state.request());
         assert!(state.finish());
         assert!(!state.request());
+    }
+
+    #[test]
+    fn cancelled_save_does_not_turn_a_later_ordinary_quit_into_a_restart() {
+        let mut state = CloseStatus {
+            ready: true,
+            restart: true,
+            ..Default::default()
+        };
+        assert!(state.request());
+        state.cancel();
+        assert!(!state.restart);
+        assert!(state.request());
+        assert!(state.finish());
+        assert!(!state.restart);
     }
 }

@@ -1716,3 +1716,28 @@ dialog.person-card { width: min(520px, calc(100vw - 32px)); max-height: calc(100
 .received-vouch { font-family: var(--font-chrome); margin-top: 12px; }
 .received-vouch p { margin: 0 0 6px; font-size: 13px; color: var(--color-text-secondary); }
 .received-vouch blockquote, .sent-shares blockquote { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; padding-left: 12px; border-left: 2px solid var(--color-accent); font-size: 14px; line-height: 1.5; }
+/* Backups use the same native form vocabulary as other Settings sections. */
+.backup-form,
+.backup-restore,
+.backup-recovery {
+  margin-block: 24px;
+  padding-block-start: 16px;
+  border-block-start: 1px solid var(--color-rule);
+}
+.backup-form { display: grid; gap: 8px; }
+.backup-form :is(input, textarea) { width: 100%; min-width: 0; padding: var(--space-2); border: 1px solid var(--color-rule); border-radius: 0; background: var(--color-bg); color: var(--color-text); font: inherit; }
+.backup-form button { justify-self: start; margin-block-start: 4px; }
+.backup-panel p { line-height: 1.5; }
+.backup-panel h4 { margin-block: 0 12px; }
+.backup-preview {
+  padding: 16px;
+  border: 1px solid var(--color-rule-strong);
+  background: var(--color-bg-elevated);
+}
+.backup-preview h5 { margin-block: 0 16px; font-size: 1rem; }
+.backup-preview h5:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 3px; }
+.backup-preview dl { margin: 0; }
+.backup-preview dt { color: var(--color-text-secondary); margin-block-start: 12px; }
+.backup-preview dd { margin-inline-start: 0; }
+.backup-preview code,
+.devices-panel code { overflow-wrap: anywhere; }

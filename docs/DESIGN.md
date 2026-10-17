@@ -491,7 +491,7 @@ than becoming a horizontal source strip; choosing a destination or source closes
 that narrow overlay.
 
 The sidebar ends with one Settings control. Settings opens a dedicated dialog
-(Cmd+,), with Reading, Sources, People, Devices and Keyboard sections. Reading holds
+(Cmd+,), with Reading, Sources, Devices, People, Backups and Keyboard sections. Reading holds
 theme, typography and list density; Sources holds subscriptions, OPML and source
 recovery; People holds trusted contacts and sent vouches; Devices holds desktop
 pairing; Keyboard shows the effective keymap.
@@ -1113,7 +1113,7 @@ Choose a person or named group explicitly and optionally enter a brief note. Sav
 vouch locally; failures retain the draft and retry identity. Sharing never
 completes or stars an article.
 
-People lives in Settings, alongside Reading, Sources, Devices and Keyboard.
+Settings contains Reading, Sources, Devices, People, Backups and Keyboard.
 Add a trusted public key or verified contact code; show the full key before
 Follow. Contact information grants no private archive access. The four primary
 destinations remain. Library gains Shared with you, ordered by latest vouch;
@@ -1195,9 +1195,28 @@ they never infer a follow or disclose a contact code. The receiving engine owns
 consent, including restart and sync behavior; see
 [the introduction plan](CONVERSATION_PLAN.md#next-priority-introductions-with-a-choice).
 
-Backup and restore is the other immediate priority. Its proposed native-file,
-passphrase and preview flow is recorded in [BACKUP_RESTORE_PLAN.md](BACKUP_RESTORE_PLAN.md).
-It remains planned; current Settings and Getting started do not offer it.
+Backup and restore is implemented in current source, beyond the alpha.3 packages.
+Settings provides Backups with
+Create encrypted backup and Restore backup. Creation asks for a new backup
+passphrase and confirmation; recovery retains its separate master passphrase.
+Restore is available only for an empty installation, checked against hidden
+history and identity as well as the visible Library. Native file dialogs own the
+paths. After complete validation, preview the backup date, source build, identity,
+master-key availability and any incomplete cache, then explicitly Restart and
+restore. Cancel preserves the current installation. Getting started offers Restore
+backup by opening this same Settings section. Password fields clear when closed;
+errors preserve the form for correction and retry. The restored archive remains
+usable locally; Devices explains how to authorize its fresh operational key.
+An existing own desktop offers Reconnect a recovered desktop: paste its signed
+contact code, review the identity and fresh key, then explicitly authorize. Review
+alone writes nothing. This separate recovery control does not follow a friend or
+change the reading identity. Restore preview takes focus when validation finishes;
+Cancel review returns focus to its passphrase field. Closing Settings clears form
+secrets and cancels the owned preview, while leaving the reader mounted.
+Recovered devices use the stable label “Recovered desktop”; recovery forms explain
+that name and focus the passphrase or invitation rather than offering a name that
+would be discarded. Ordinary identity setup and pairing retain their name field.
+See [BACKUP_RESTORE_PLAN.md](BACKUP_RESTORE_PLAN.md).
 
 A native dialog has an explicit audience chooser and a brief optional note.
 Recipients start unselected; the dialog focuses the first choice. Submit

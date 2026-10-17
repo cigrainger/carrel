@@ -7,6 +7,7 @@
 #![warn(missing_docs)]
 
 pub mod articles;
+pub mod backup;
 pub mod blobs;
 mod error;
 pub mod feeds;
@@ -21,6 +22,7 @@ pub mod notes;
 pub mod private_library;
 pub mod private_state;
 pub mod private_transport;
+pub mod recovery;
 pub mod schema;
 pub mod search;
 pub mod sharing;
@@ -72,7 +74,11 @@ impl Store {
         })?;
 
         let db = DbInstance::new("rocksdb", path, "")?;
-        Ok(Self {
+        Ok(Self::from_database(db))
+    }
+
+    fn from_database(db: DbInstance) -> Self {
+        Self {
             db,
             annotation_lock: Arc::new(Mutex::new(())),
             identity_lock: Arc::new(Mutex::new(())),
@@ -80,21 +86,13 @@ impl Store {
             social_lock: Arc::new(Mutex::new(())),
             social_revision: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             identity_revision: watch::channel(0).0,
-        })
+        }
     }
 
     /// Open an in-memory store for tests and short-lived tools.
     pub fn open_in_memory() -> Result<Self> {
         let db = DbInstance::new("mem", "", "")?;
-        Ok(Self {
-            db,
-            annotation_lock: Arc::new(Mutex::new(())),
-            identity_lock: Arc::new(Mutex::new(())),
-            private_state_lock: Arc::new(Mutex::new(())),
-            social_lock: Arc::new(Mutex::new(())),
-            social_revision: Arc::new(std::sync::atomic::AtomicU64::new(0)),
-            identity_revision: watch::channel(0).0,
-        })
+        Ok(Self::from_database(db))
     }
 
     /// Return the newest applied schema version, or zero for an unmigrated DB.

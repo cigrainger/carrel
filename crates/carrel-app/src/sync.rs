@@ -40,6 +40,7 @@ pub(crate) struct SyncSnapshot {
     revision: u64,
     error: Option<String>,
     devices: Vec<DeviceSummary>,
+    recovery: Option<RecoverySummary>,
 }
 
 #[derive(Serialize)]
@@ -49,6 +50,13 @@ struct DeviceSummary {
     name: String,
     local: bool,
     revoked: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RecoverySummary {
+    master: Option<String>,
+    has_master_key: bool,
 }
 
 #[tauri::command]
@@ -80,6 +88,15 @@ pub(crate) async fn sync_status(state: State<'_, AppState>) -> Result<SyncSnapsh
         Vec::new()
     };
     Ok(SyncSnapshot {
+        recovery: if binding.is_none() {
+            state.store.restore_origin()?.map(|origin| RecoverySummary {
+                master: origin.master_pubkey.map(|k| k.to_hex()),
+                has_master_key: master_available(&Keystore::open(&state.paths.keys))
+                    .unwrap_or(false),
+            })
+        } else {
+            None
+        },
         enabled: binding.is_some(),
         active: sync.worker.is_some() && authorized,
         can_invite: master_available(&Keystore::open(&state.paths.keys))?
@@ -101,9 +118,22 @@ pub(crate) async fn enable_sync(
     name: String,
 ) -> Result<()> {
     let passphrase = Zeroizing::new(passphrase);
-    if passphrase.len() < 8 || name.trim().is_empty() || name.len() > 256 {
+    let unlocking = master_available(&Keystore::open(&state.paths.keys))?;
+    if (if unlocking {
+        passphrase.is_empty()
+    } else {
+        passphrase.len() < 8
+    }) || passphrase.len() > 4096
+        || name.trim().is_empty()
+        || name.len() > 256
+    {
         return Err(AppError::Config(
-            "Enter a desktop name and a passphrase of at least eight characters.".into(),
+            if unlocking {
+                "Enter a desktop name and the original identity recovery passphrase."
+            } else {
+                "Enter a desktop name and a passphrase of at least eight characters."
+            }
+            .into(),
         ));
     }
     let mut sync = state.sync.lock().await;
@@ -118,6 +148,9 @@ pub(crate) async fn enable_sync(
         let master = if master_available(&keys)? {
             keys.load_master(&passphrase)?
         } else {
+            if worker.store.restore_origin()?.is_some_and(|origin|origin.master_pubkey.is_some()) {
+                return Err(AppError::Config("This backup has no master recovery key. Use an invitation from another desktop belonging to the restored identity.".into()));
+            }
             let master = Keypair::generate();
             keys.create_master(&master, &passphrase)?;
             master
@@ -131,7 +164,11 @@ pub(crate) async fn enable_sync(
                 ));
             }
         } else {
-            bind_local_identity(&worker, &master, &device, name.trim())?;
+            if worker.store.restore_origin()?.is_some() {
+                worker.store.authorize_restored_identity(&master,&device,name.trim())?;
+            } else {
+                bind_local_identity(&worker, &master, &device, name.trim())?;
+            }
         }
         Ok::<_, AppError>(())
     })
@@ -208,7 +245,8 @@ async fn join(state: &AppState, invitation: String, name: String) -> Result<()> 
     let invitation = Zeroizing::new(invitation);
     let mut sync = state.sync.lock().await;
     if state.store.self_identity()?.is_some()
-        || master_available(&Keystore::open(&state.paths.keys))?
+        || (master_available(&Keystore::open(&state.paths.keys))?
+            && state.store.restore_origin()?.is_none())
     {
         return Err(AppError::Config("This installation already has a reading identity. Use a separate Carrel profile to pair another identity.".into()));
     }
@@ -219,7 +257,8 @@ async fn join(state: &AppState, invitation: String, name: String) -> Result<()> 
         let _guard = state.annotation_lock.lock().expect("annotation setup lock");
         crate::commands::highlights::load_device_key(&state.paths)?
     };
-    let session = join_session(&invitation, &device, name.trim().into()).await?;
+    let recovery = state.store.restore_origin()?.is_some();
+    let session = join_session(&invitation, &device, name.trim().into(), recovery).await?;
     // Pasting and submitting is the user's explicit choice of this Root. No
     // received certificate can otherwise bind an installation automatically.
     state
@@ -537,22 +576,26 @@ async fn join_session(
     text: &str,
     device: &Keypair,
     name: String,
+    recovery: bool,
 ) -> carrel_sync::Result<PairingSession> {
     #[cfg(test)]
     {
-        PairingSession::with_builder(
-            text,
-            device,
-            name,
-            iroh::Endpoint::builder(iroh::endpoint::presets::Minimal)
-                .bind_addr("127.0.0.1:0")
-                .unwrap(),
-        )
-        .await
+        let builder = iroh::Endpoint::builder(iroh::endpoint::presets::Minimal)
+            .bind_addr("127.0.0.1:0")
+            .unwrap();
+        if recovery {
+            PairingSession::recover_with_builder(text, device, name, builder).await
+        } else {
+            PairingSession::with_builder(text, device, name, builder).await
+        }
     }
     #[cfg(not(test))]
     {
-        PairingSession::join(text, device, name).await
+        if recovery {
+            PairingSession::recover(text, device, name).await
+        } else {
+            PairingSession::join(text, device, name).await
+        }
     }
 }
 
@@ -785,5 +828,203 @@ mod tests {
                 .public(),
             device.public()
         );
+    }
+
+    #[tokio::test]
+    async fn recovered_master_uses_a_fresh_endpoint_and_reconnects_only_after_explicit_review() {
+        use carrel_core::private_state::SubscriptionState;
+        let dir = tempfile::tempdir().unwrap();
+        let a = profile(&dir.path().join("original"));
+        let b = profile(&dir.path().join("other"));
+        let master = Keypair::from_seed(&[201; 32]);
+        let original = crate::commands::highlights::load_device_key(&a.paths).unwrap();
+        Keystore::open(&a.paths.keys)
+            .create_master(&master, "original recovery password")
+            .unwrap();
+        a.store
+            .bind_self_identity(
+                &DeviceCert::new(&master, original.public(), Some("Original".into())),
+                &original,
+            )
+            .unwrap();
+        {
+            let mut state = a.sync.lock().await;
+            ensure_worker(&a, &mut state).await.unwrap();
+        }
+        let bridge = a.sync.lock().await.worker.as_ref().unwrap().bridge.clone();
+        let invitation = PairingInvitation::with_builder(
+            bridge,
+            Keypair::from_seed(&[201; 32]),
+            iroh::Endpoint::builder(iroh::endpoint::presets::Minimal)
+                .bind_addr("127.0.0.1:0")
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        join(&b, invitation.text.clone(), "Other".into())
+            .await
+            .unwrap();
+        let backup = dir.path().join("reading.carrel-backup");
+        a.store
+            .create_backup(
+                &a.blobs,
+                &Keystore::open(&a.paths.keys),
+                std::fs::File::create(&backup).unwrap(),
+                "a separate backup password",
+                "native fixture",
+                1,
+            )
+            .unwrap();
+        shutdown(&a).await;
+        let target = profile(&dir.path().join("restored"));
+        let paths = target.paths.clone();
+        let restored =
+            carrel_store::backup::open_backup(&backup, "a separate backup password", &paths.root)
+                .unwrap();
+        crate::backup::prepare(&paths, &target.store, restored).unwrap();
+        drop(target);
+        crate::backup::activate_pending(&paths).unwrap();
+        let c = profile(&paths.root);
+        let fresh = Keystore::open(&c.paths.keys).load_device().unwrap();
+        assert_ne!(fresh.public(), original.public());
+        assert!(!b.store.self_device_authorized(fresh.public()).unwrap());
+        c.store
+            .authorize_restored_identity(&master, &fresh, "Recovered")
+            .unwrap();
+        {
+            let mut state = c.sync.lock().await;
+            ensure_worker(&c, &mut state).await.unwrap();
+        }
+        let card = c
+            .sync
+            .lock()
+            .await
+            .worker
+            .as_ref()
+            .unwrap()
+            .bridge
+            .sharing()
+            .unwrap()
+            .contact_card()
+            .unwrap();
+        b.store.register_recovered_desktop(&card).unwrap();
+        assert!(b.store.self_device_authorized(fresh.public()).unwrap());
+        assert!(
+            b.store.social_contacts().unwrap().is_empty(),
+            "own-device recovery follows no person"
+        );
+        let url = "https://recovered.example/feed";
+        c.store
+            .write_private_state(
+                StateKey {
+                    kind: StateKind::Subscription,
+                    target: url.into(),
+                },
+                StateValue::Subscription(SubscriptionState {
+                    subscribed: true,
+                    title: Some("Recovered".into()),
+                    folder: None,
+                    auto_mark_read: false,
+                }),
+                2,
+                &fresh,
+            )
+            .unwrap();
+        until(|| b.store.get_feed(url).unwrap().is_some()).await;
+        assert!(
+            a.store.get_feed(url).unwrap().is_none(),
+            "the original archive was never rewritten"
+        );
+        // A paired desktop never holds the master. Its backup resumes only
+        // through a fresh matching invitation, while preserving the namespace.
+        let paired_backup = dir.path().join("paired.carrel-backup");
+        let preview = b
+            .store
+            .create_backup(
+                &b.blobs,
+                &Keystore::open(&b.paths.keys),
+                std::fs::File::create(&paired_backup).unwrap(),
+                "a separate backup password",
+                "native fixture",
+                3,
+            )
+            .unwrap();
+        assert!(!preview.has_master_key);
+        let target = profile(&dir.path().join("restored-paired"));
+        let paired_paths = target.paths.clone();
+        let archive = carrel_store::backup::open_backup(
+            &paired_backup,
+            "a separate backup password",
+            &paired_paths.root,
+        )
+        .unwrap();
+        crate::backup::prepare(&paired_paths, &target.store, archive).unwrap();
+        drop(target);
+        crate::backup::activate_pending(&paired_paths).unwrap();
+        let d = profile(&paired_paths.root);
+        let paired_fresh = Keystore::open(&d.paths.keys).load_device().unwrap();
+        assert!(d.store.self_identity().unwrap().is_none());
+        assert!(
+            Keystore::open(&d.paths.keys)
+                .encrypted_master()
+                .unwrap()
+                .is_none()
+        );
+        let recovered_bridge = c.sync.lock().await.worker.as_ref().unwrap().bridge.clone();
+        let recovery_invitation = PairingInvitation::with_builder(
+            recovered_bridge,
+            Keypair::from_seed(&[201; 32]),
+            iroh::Endpoint::builder(iroh::endpoint::presets::Minimal)
+                .bind_addr("127.0.0.1:0")
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        join(
+            &d,
+            recovery_invitation.text.clone(),
+            "Recovered paired desktop".into(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            d.store.self_identity().unwrap().unwrap().device_pubkey,
+            *paired_fresh.public()
+        );
+        assert_ne!(
+            d.store.self_identity().unwrap().unwrap().device_pubkey,
+            b.store.self_identity().unwrap().unwrap().device_pubkey
+        );
+        let paired_url = "https://paired-recovery.example/feed";
+        d.store
+            .write_private_state(
+                StateKey {
+                    kind: StateKind::Subscription,
+                    target: paired_url.into(),
+                },
+                StateValue::Subscription(SubscriptionState {
+                    subscribed: true,
+                    title: None,
+                    folder: None,
+                    auto_mark_read: false,
+                }),
+                4,
+                &paired_fresh,
+            )
+            .unwrap();
+        until(|| c.store.get_feed(paired_url).unwrap().is_some()).await;
+        assert!(d.store.social_contacts().unwrap().is_empty());
+        recovery_invitation.cancel().await;
+        shutdown(&d).await;
+        b.store
+            .accept_self_revocation(&RevocationCert::new(&master, fresh.public()))
+            .unwrap();
+        assert!(
+            b.store.register_recovered_desktop(&card).is_err(),
+            "a replay cannot undo revocation"
+        );
+        invitation.cancel().await;
+        shutdown(&b).await;
+        shutdown(&c).await;
     }
 }

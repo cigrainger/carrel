@@ -49,6 +49,82 @@ impl Keystore {
         self.write_master(keypair, passphrase, true)
     }
 
+    /// Copy only the already-encrypted recovery key into a private backup.
+    pub fn encrypted_master(&self) -> Result<Option<Vec<u8>>> {
+        match self.master_public_key() {
+            Ok(_) => self
+                .read_json::<EncryptedMasterKeyFile>(&self.master_path())
+                .and_then(|file| serde_json::to_vec(&file).map_err(KeystoreError::SerializeKeyFile))
+                .map(Some),
+            Err(KeystoreError::ReadKeyFile { source, .. })
+                if source.kind() == std::io::ErrorKind::NotFound =>
+            {
+                Ok(None)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    /// An empty installation may discard its unused device key, never other key files.
+    pub fn contains_only_device_key(&self) -> Result<bool> {
+        let entries = match fs::read_dir(&self.path) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(true),
+            Err(source) => {
+                return Err(KeystoreError::ReadKeyFile {
+                    path: self.path.clone(),
+                    source,
+                });
+            }
+        };
+        for entry in entries {
+            let entry = entry.map_err(|source| KeystoreError::ReadKeyFile {
+                path: self.path.clone(),
+                source,
+            })?;
+            let kind = entry
+                .file_type()
+                .map_err(|source| KeystoreError::ReadKeyFile {
+                    path: entry.path(),
+                    source,
+                })?;
+            if entry.file_name() != DEVICE_KEY_FILE || !kind.is_file() {
+                return Ok(false);
+            }
+            self.load_device()?;
+        }
+        Ok(true)
+    }
+
+    /// Install a bounded encrypted master from a validated backup, without unlocking it.
+    pub fn import_encrypted_master(&self, bytes: &[u8]) -> Result<PublicKey> {
+        // Use the existing bounded reader and format validator, then create rather
+        // than replace. The staging directory is owned by the recovery operation.
+        if bytes.len() > MAX_KEY_FILE_BYTES as usize {
+            return Err(KeystoreError::KeyFileTooLarge {
+                path: self.master_path(),
+            });
+        }
+        let file: EncryptedMasterKeyFile =
+            serde_json::from_slice(bytes).map_err(|source| KeystoreError::ParseKeyFile {
+                path: self.master_path(),
+                source,
+            })?;
+        file.require_version(&self.master_path())?;
+        file.require_algorithm(&self.master_path())?;
+        decode_hex::<SALT_LENGTH>("master salt", &file.salt)?;
+        decode_hex::<XCHACHA_NONCE_LENGTH>("master nonce", &file.nonce)?;
+        decode_hex::<48>("encrypted master seed", &file.ciphertext)?;
+        let public = PublicKey::from_bytes(decode_hex("master public key", &file.public_key)?);
+        public
+            .validate()
+            .map_err(|_| KeystoreError::InvalidPublicKey {
+                path: self.master_path(),
+            })?;
+        self.write_json(self.master_path(), &file, true)?;
+        Ok(public)
+    }
+
     fn write_master(&self, keypair: &Keypair, passphrase: &str, create: bool) -> Result<()> {
         let mut salt = [0_u8; SALT_LENGTH];
         let mut nonce = [0_u8; XCHACHA_NONCE_LENGTH];
@@ -145,7 +221,7 @@ impl Keystore {
         let file = PlainDeviceKeyFile {
             version: FORMAT_VERSION,
             public_key: keypair.public().to_hex(),
-            seed: hex::encode(seed.as_ref()),
+            seed: hex::encode(&seed[..]),
         };
 
         self.write_json(self.device_path(), &file, create)

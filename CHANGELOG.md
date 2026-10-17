@@ -3,6 +3,20 @@
 Carrel is pre-alpha. This file records app releases; detailed implementation
 history remains in Git.
 
+## Unreleased
+
+- Encrypted local backup of the complete database, available offline content,
+  annotation and conversation history, contacts/groups and held encrypted master.
+- Validated preview and recoverable restart into an empty installation, with a
+  fresh operational key. Original signatures and identity remain intact; own-device
+  reconnection requires explicit authorization. Appearance/keymap stay local.
+- Settings → Backups and Getting started → Restore backup, with recovery guidance
+  and a reviewed fresh-device reconnection flow in Settings → Devices.
+
+These changes require schema 13 and are not in the alpha.3 installers. Do not
+open a migrated archive with an older app. Physical file-picker/recovery trials
+remain manual checks.
+
 ## 0.1.0-alpha.3
 
 Private conversations and a more complete first-friend trial.

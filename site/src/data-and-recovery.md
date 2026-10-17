@@ -15,7 +15,14 @@ The keymap lives in `~/.config/carrel/keymap.toml` on macOS/Linux, respecting
 `XDG_CONFIG_HOME`; `CARREL_CONFIG_DIR` overrides its directory. Theme/reading
 preferences are kept in the installation's webview storage.
 
-## Make a private backup
+## Encrypted backup in current source
+
+Current source adds **Settings → Backups**, with encrypted files and a validated
+preview before restoring into an empty installation. It is not included in the
+published alpha.3 packages. See [Encrypted backups](backups.md) for the full flow
+and the distinction between a backup passphrase and identity recovery.
+
+## Alpha.3 directory backup
 
 Close Carrel normally and let pending saves finish. Copy the **whole archive
 directory**, including `store`, `blobs`, `keys` and any sync storage, into your
@@ -25,7 +32,8 @@ protect the backup accordingly.
 
 Before restoring, keep a separate copy of the existing directory. Restore with
 Carrel closed and retain filesystem ownership and permissions. This is a manual
-same-installation recovery procedure, not an in-app recovery wizard. Webview
+same-installation recovery procedure for alpha.3. Do not use a directory clone as
+a second running endpoint. Webview
 appearance preferences may need to be set again.
 
 ## Identity is not an installer
@@ -36,12 +44,14 @@ key files to a friend or use a copied archive as a substitute for device pairing
 
 The master key is passphrase-encrypted. Its passphrase is needed for identity
 authorization operations; Carrel cannot recover it through a central service.
-Master-key backup/recovery UI is deferred. Keep the originating desktop and a
-private backup safe while testing.
+Alpha.3 has no master-key backup/recovery UI. Current source's encrypted backup
+includes the encrypted master only when held locally, and restores with a fresh
+operational key. Keep the originating desktop and a private backup safe while
+testing either flow.
 
 ## Portable exports
 
 Export subscriptions as OPML from Settings → Sources. Export highlights and
 notes as Markdown from Highlights. These are useful portable copies, but they
 do not contain the complete identity, archived article cache or sync history.
-Use the whole-directory backup when you need that state.
+Use a full backup when you need that state.

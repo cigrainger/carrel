@@ -1,21 +1,20 @@
 # Backup and restore
 
-**Next priority; not implemented in alpha.3.** A Carrel backup should preserve a
+**Implemented in current source; not included in the published alpha.3 packages.**
+A Carrel backup preserves a
 reading life: archived text/images, annotations and their complete history,
 subscriptions/folders, personal state, conversations, local contact/group settings
 and the identity material actually held on this desktop. Private sharing and
 introductions remain the other immediate priority, described in
 [CONVERSATION_PLAN.md](CONVERSATION_PLAN.md#next-priority-introductions-with-a-choice).
 
-## Proposed first delivery
+## Agreed first delivery
 
 Create an explicitly chosen, encrypted backup file through a native save dialog.
 Offer restore through Getting started and Settings, using a native file picker,
-passphrase entry and a preview before activation. The initial proposed scope is
+passphrase entry and a preview before activation. The first version supports
 restoration into an empty installation, with no merging or replacement of a
-populated archive. The maintainer's choice between that scope and replacement of
-an existing archive is pending; do not treat this proposal as approval to overwrite
-anything.
+populated archive. This scope was explicitly selected by the maintainer.
 
 The preview identifies the backup date, app/schema compatibility, identity and
 whether master-key recovery is available. Technical counts belong to validation
@@ -39,9 +38,9 @@ preview/results and never accepts arbitrary filesystem paths or database scripts
 Use the database's supported full backup path, retaining schema, indexes,
 triggers, validity values and original signed bytes. Cozo 0.7.6's `backup_db`
 copies a transaction snapshot into a SQLite backup file. It requires enabling
-Cozo's `storage-sqlite` feature, currently absent from Carrel's feature selection;
-this is a backup container, not a migration away from the live RocksDB store.
-Verify the additional dependency/license footprint before adopting it.
+Cozo's `storage-sqlite` feature, enabled for this purpose. This is a backup
+container; the live store remains RocksDB. The added dependencies pass the
+repository's license policy and appear in the generated notices.
 
 Its `restore_backup` requires a truly fresh database, before migrations create
 relations. The application's current startup calls `migrate` immediately after
@@ -69,13 +68,19 @@ as identity keys.
 
 ## Encryption and validation
 
-Choose a reviewed streaming authenticated-encryption format/library before
-implementation. Large archives must not require loading all cached bodies into
+The file uses Rust age 0.12.1's passphrase-encrypted streaming format, without
+armor, plugins or external recipients. Its scrypt identity must bound the work
+factor before deriving a key from an untrusted header. Large archives must not require loading all cached bodies into
 memory. Version the outer format and authenticate its manifest, entry order,
 lengths and final completion. Bound work and lengths before allocation or expensive
 passphrase derivation. Keep all sensitive filenames, keys and metadata inside
 the encrypted payload. Do not invent a new cryptographic primitive or reuse a
-nonce/key pair.
+nonce/key pair. Format 1 requires schema 13 exactly. Its fixed entries are
+`database.sqlite`, optional `master.enc`, and `blobs/<lowercase BLAKE3 hash>`.
+The encrypted manifest is bounded to 16 MiB and 100,002 entries, total declared
+content to 1 TiB, and the age header to 8 KiB. The scrypt work factor and accepted
+maximum are both 18. This first format deliberately refuses incompatible schemas
+rather than guessing a migration path. See [ADR 0005](ADR-0005-local-backup-recovery.md).
 
 Write to an owner-only temporary destination, sync it, then install the completed
 file atomically. Existing backups are replaced only through the native save
@@ -104,10 +109,19 @@ Otherwise retain the restored archive and guide the user through authorization
 from another own desktop. Do not silently create another master identity.
 Friend connections must explicitly review any replacement certified contact code.
 
-Document this recovery/rebinding exception and capability handling in SCHEMA and
-ARCHITECTURE before implementing it. All ordinary immutable-binding, certificate,
+The recovery/rebinding exception and capability handling are documented in SCHEMA,
+ARCHITECTURE and ADR 0005. All ordinary immutable-binding, certificate,
 revocation and peer allow-list guarantees continue to apply. In particular, an old
 backup cannot silently undo a device revocation learned by another desktop.
+
+When the recovered desktop resumes with its master key, existing own desktops
+must explicitly review its new contact code in Settings → Devices → Reconnect a
+recovered desktop. The code must carry a valid certificate under their existing
+master and bind the advertised endpoint to that device key. Inspection writes
+nothing; confirmation atomically records its certificate, private publication
+work and signed connection hint. A blocked/revoked key remains denied. This is
+own-device authorization and never follows a social contact. Existing friends
+review the replacement contact code separately in People.
 
 ## Activation and verification
 
@@ -119,12 +133,13 @@ An interruption at any stage leaves either the old installation usable or the
 fully validated replacement, with a recoverable activation record. Startup must
 handle that record before opening Cozo and launching workers.
 
-Done means a tested restore, rather than just a successful export:
+Verification covers a tested restore, rather than just a successful export:
 
 - Restore Unicode articles, offline images, historical highlight content,
   unresolved note branches, read/star positions, removed subscriptions and folders.
-- Preserve sent/received conversations, withdrawals, reply removals, consent/leave
-  decisions, local contacts/groups, signed provenance and durable pending work.
+- Preserve sent/received conversations, withdrawals, reply removals, local
+  contacts/groups, signed provenance and durable pending work. Consent/leave
+  facts remain part of the separate upcoming conversation milestone.
 - Cover unbound reading, originating-master and paired-device backups; no cloned
   operational identity, automatic friend follow or wider audience after restore.
 - Exercise wrong passphrases, corrupt/truncated files, excessive input bounds,
@@ -133,8 +148,10 @@ Done means a tested restore, rather than just a successful export:
 - Run against real temporary RocksDB stores; reopen the final restored store,
   verify offline content and signatures, then verify permitted network behavior
   with distinct in-process device identities.
-- Perform a native create/choose/preview/cancel/restore/restart pass, recording
-  physical/native evidence separately from fixture and library tests.
+- Native activation and distinct in-process Iroh peers exercise recovery and
+  explicit reconnection. Actual create/choose file-picker selection and physical
+  two-desktop recovery remain manual platform checks; browser fixtures do not
+  establish those results.
 
 OPML and Markdown exports remain useful independent formats. Their existing
 contracts stay intact; neither contains enough information to substitute for

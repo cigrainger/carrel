@@ -31,6 +31,16 @@ test-only dependency for observing the real denied document-sync result.
 
 ## Applied version changes
 
+The 18 October backup implementation adds `age` 0.12.1 with default features
+disabled, using only passphrase streaming encryption. Its explicit scrypt work
+limit bounds untrusted backup headers. Cozo's existing `storage-sqlite` feature
+provides the full snapshot container; active storage stays RocksDB. These choices,
+format bounds and recovery ownership are recorded in
+[ADR 0005](ADR-0005-local-backup-recovery.md). Locked dependency notices regenerate
+successfully through the existing cargo-about policy, including the additional
+crypto and SQLite dependencies. This is a scoped backup dependency decision,
+separate from the historical general review above.
+
 The manifests and lockfile were refreshed to current stable releases compatible with the workspace's Rust 1.95 requirement. Rust 1.99 stable is already installed on this machine; the workspace minimum stays at 1.95.
 
 | Dependency | Previous lock | Updated lock |

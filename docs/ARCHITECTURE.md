@@ -10,16 +10,18 @@ This is also a living document. When an architectural decision changes, this doc
 
 The current implementation is pre-alpha. The local reader, archive/search,
 annotations, private self-sync, private profiles and fixed-audience group
-conversations exist. Public syndication, OPDS, mobile and identity-recovery UI are future
+conversations exist. Current source also implements encrypted backup and recovery
+into an empty installation. Public syndication, OPDS and mobile are future
 designs. They are marked below; a design sketch does not establish an implemented
 API. [CODE_MAP.md](CODE_MAP.md) locates source and tests.
 
-The next priorities are recipient consent and leaving mutual-friend conversations,
-and encrypted backup/restore. Their planned contracts are in
+The next priority is recipient consent and leaving mutual-friend conversations,
+described in
 [CONVERSATION_PLAN.md](CONVERSATION_PLAN.md#next-priority-introductions-with-a-choice)
-and [BACKUP_RESTORE_PLAN.md](BACKUP_RESTORE_PLAN.md). Neither is implemented by the
-alpha.3 release; recovery/rebinding and any new signed consent facts require schema
-decisions before code changes.
+and distinct from the implemented [backup contract](BACKUP_RESTORE_PLAN.md).
+Neither is included in the published alpha.3 packages. The recovery ownership
+relation is specified in schema 13; future signed consent facts require their own
+schema decision before code changes.
 
 ## The shape of the system
 
@@ -376,6 +378,39 @@ read the master public key without decrypting its seed. Unlocking the master is
 needed to issue authorizations or revocations, not for ordinary reading.
 
 The master key is persisted as a passphrase-encrypted key file: Argon2id derives a local encryption key and XChaCha20-Poly1305 encrypts the Ed25519 seed. Key-file format v1 fixes Argon2id version 0x13 with 19,456 KiB of memory, two iterations, one lane, and a 32-byte output; these were the argon2 0.5.3 defaults and must remain stable across dependency updates. Compatibility fixtures check that older encrypted keys and canonical Ed25519 signatures still work. Device keys are persisted in plain local JSON in v1 because they are used continuously and the device filesystem is the trust boundary. The master key is the recovery secret; the device key is an operational sub-key.
+
+### Backup and recovery
+
+`carrel-store::backup` creates a complete Cozo transaction snapshot under the
+existing private-state → annotation → identity → social lock order, then streams
+verified content-addressed blobs and the encrypted master header, when held, into
+a password-encrypted age file. The operational private key and Iroh disk mirror
+are excluded. Private document capabilities stay inside the encrypted database.
+
+Native backup commands own file dialogs and opaque review tokens. Restoration
+authenticates the entire stream into owner-only staging, restores a truly fresh
+database, checks schema/catalog/triggers and portable signatures, then generates a
+fresh operational key. Schema 13's local `restore_origin` grant permits local
+editing of retained authors' annotations without granting any peer authorization.
+The copied immutable identity binding is cleared only within isolated staging;
+its ordinary guards are reinstated. Existing authors and signed bytes stay intact.
+
+Confirmation rechecks an entirely empty destination, syncs staged files and writes
+an activation journal. The normal close handshake flushes progress and queued
+writes before shutdown/restart. Startup processes the journal before opening Cozo
+or launching workers. Directory renames and the final cleanup phase roll forward
+after interruption; data created after preview cancels replacement. No populated
+archive is merged or replaced.
+
+Devices resumes the original master after local unlocking, or accepts a matching
+own-device invitation for a paired backup. An unbound archive can explicitly
+create an identity that certifies its original local authors. Other own desktops
+review the recovered device's signed contact code before connecting; revoked keys
+stay denied. Friends review the replacement endpoint separately. See
+[ADR 0005](ADR-0005-local-backup-recovery.md) and the
+[backup contract](BACKUP_RESTORE_PLAN.md) for bounds and evidence limits.
+
+### Following
 
 Following currently uses an explicitly reviewed public key and optional signed
 contact card, exchanged as copy/paste text. The card binds a certified device
@@ -806,9 +841,10 @@ Honest accounting of what's hard about this architecture, so future-us doesn't g
 **Garbage collection deferred.** Facts grow unbounded. We accept this for v1 because at our scale (one user, hundreds of feeds, thousands of items per year) it doesn't matter for years.
 
 **Identity recovery is unforgiving.** Losing the master key or its passphrase can
-lose the ability to authorize/revoke devices. The encrypted originating key and
-manual private backups matter. Recovery UI and Shamir splitting are not
-implemented; there is no recovery server.
+lose the ability to authorize/revoke devices. Encrypted backups include the
+encrypted master only on desktops that hold it; restoring still needs its original
+passphrase or authorization from another own desktop. There is no password reset,
+recovery server or Shamir splitting.
 
 ## What we don't know yet
 

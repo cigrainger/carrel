@@ -67,6 +67,8 @@ pub(crate) async fn save_article(_url: String) -> Result<SavedArticle, ApiError>
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SyncSnapshot {
+    #[serde(default)]
+    pub recovery: Option<RecoverySummary>,
     pub enabled: bool,
     pub active: bool,
     pub can_invite: bool,
@@ -74,6 +76,13 @@ pub(crate) struct SyncSnapshot {
     pub revision: u64,
     pub error: Option<String>,
     pub devices: Vec<SyncDevice>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RecoverySummary {
+    pub master: Option<String>,
+    pub has_master_key: bool,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -401,8 +410,10 @@ pub(crate) async fn sharing_call<T: serde::de::DeserializeOwned>(
     _command: &str,
     _args: serde_json::Value,
 ) -> Result<T, ApiError> {
-    Err(ApiError::new("Sharing requires the desktop app"))
+    Err(ApiError::new("This action requires the desktop app"))
 }
+
+pub(crate) use sharing_call as local_call;
 
 /// Highlight creation request passed to the native shell.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]

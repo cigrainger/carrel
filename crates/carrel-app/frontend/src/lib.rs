@@ -6,6 +6,7 @@
 mod annotation_actions;
 pub mod api;
 mod app_links;
+mod backups;
 mod clipboard;
 mod components;
 mod conversations;
