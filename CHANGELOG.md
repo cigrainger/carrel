@@ -21,7 +21,8 @@ First packaged pre-alpha for careful local and friend trials.
 - Native Apple Silicon/Intel Mac and Linux x86-64 release packages, matching source,
   release manifest and SHA-256 checksums.
 
-Mac packages are ad-hoc signed and not notarized. Physical two-desktop sharing,
-native file-picker selection and broad platform usability remain manual trial
-checks. These builds have not had an independent security audit. Read the
-installation guide and keep a private backup of irreplaceable material.
+Mac packages are Developer ID signed and notarized, with tickets attached to
+both the app and disk image. Physical two-desktop sharing, native file-picker
+selection and broad platform usability remain manual trial checks. These builds
+have not had an independent security audit. Read the installation guide and keep
+a private backup of irreplaceable material.

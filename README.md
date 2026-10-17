@@ -47,9 +47,10 @@ and the [first-friend checklist](docs/PRIVATE_SHARING_PLAN.md#first-friend-trial
 
 Release automation builds native Apple Silicon and Intel Mac packages, plus
 Linux x86-64 packages, with SHA-256 checksums. A version tag creates a **draft
-prerelease** for review. Mac trial builds are ad-hoc signed and not notarized;
-see the [installation guide](site/src/getting-started.md). Published builds, when
-available, are on [GitHub Releases](https://github.com/cigrainger/carrel/releases).
+prerelease** for review. Published Mac packages use Developer ID signing and
+Apple notarization; the maintainer completes that step before publication.
+See the [installation guide](site/src/getting-started.md) and
+[GitHub Releases](https://github.com/cigrainger/carrel/releases).
 
 Books/papers metadata, Pocket import, send-to-ereader, mobile and public sharing
 are future work. The [vision](docs/VISION.md) describes the destination; this

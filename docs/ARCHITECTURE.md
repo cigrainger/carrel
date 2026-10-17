@@ -697,8 +697,11 @@ Property-based tests (via `proptest`) are used heavily in `carrel-core` to verif
 The release workflow uses recorded tools and Cargo.lock on native Apple Silicon,
 Intel Mac and Linux x86-64 runners. Tags produce draft prereleases with DMGs,
 Debian/AppImage packages, matching source, a manifest and SHA-256 checksums.
-Mac trial builds are ad-hoc signed, not Developer ID signed/notarized. Flatpak,
-Windows, authenticated signing and bit-for-bit reproducibility are future work.
+CI's draft Mac packages are ad-hoc signed. Before publication, the maintainer
+signs both apps and disk images with Developer ID and notarizes them using a local
+Keychain, then regenerates checksums while retaining the original source commit
+and Linux bytes. The signing private key is not stored in GitHub Actions.
+Flatpak, Windows and bit-for-bit reproducibility are future work.
 Updates are manual; no silent updater is implemented. See the
 [release guide](../site/src/releases.md).
 

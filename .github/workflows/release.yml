@@ -89,6 +89,7 @@ jobs:
         working-directory: crates/carrel-app
         env:
           BUNDLES: ${{ matrix.bundles }}
+          # Draft only. Developer ID signing/notarization happens locally before publication.
           APPLE_SIGNING_IDENTITY: '-'
           APPIMAGE_EXTRACT_AND_RUN: '1'
         run: cargo tauri build --verbose --bundles "$BUNDLES" -- --locked

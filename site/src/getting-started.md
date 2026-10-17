@@ -11,10 +11,12 @@ Open the `.dmg`, drag **Carrel** into **Applications**, eject the disk image and
 open Carrel from Applications. Apple Silicon uses the `macos-arm64` package;
 Intel uses `macos-x86_64`. You do not need Rust, Node or a development server.
 
-Trial packages are ad-hoc signed, without Developer ID signing or notarization.
-If macOS blocks a trusted copy you downloaded from this repository, try opening
-it first, then use **System Settings → Privacy & Security → Open Anyway**.
-See [Apple's instructions](https://support.apple.com/en-au/102445).
+Published Mac packages are Developer ID signed and notarized by Apple. Both the
+app and disk image include their notarization tickets. macOS may still ask you
+to confirm the first launch of an app downloaded from the internet. If it reports
+an unverified developer or a damaged app, check that you have the current package
+and verify its [checksum](releases.md#verify-a-download) before reporting the exact
+message. See [Apple's explanation](https://support.apple.com/en-au/102445).
 
 ## Linux
 
