@@ -107,8 +107,8 @@ do the same. A mismatched code cannot change the selected identity.
 Participation is limited to the original conversation until you explicitly choose
 to connect. Other participants receive no contact code through this flow.
 
-These additions require the same current source build on each desktop and are
-newer than alpha.2 packages. Signed conversation/profile history follows your
+These additions require alpha.3 on each participating desktop. Use matching
+versions during the trial. Signed conversation/profile history follows your
 private own-device sync; contacts, group selections and connection information
 must still be set up explicitly for direct friend exchange on another desktop.
 That desktop can read retained history and queue replies through own-device sync.

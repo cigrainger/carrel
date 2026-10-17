@@ -24,7 +24,7 @@ and from the habit of keeping a commonplace book. Reading comes first.
 - **Keep what you notice.** Durable highlights and notes, full annotation review,
   deliberate conflict resolution, Markdown export, and stable Carrel links back
   to articles and passages.
-- **Share by choice.** Follow people by public key, choose a person or group,
+- **Share by choice.** Follow people by public key, select people and groups,
   and share an archived article with a note. Choose one group conversation or
   separate private sends. Person cards support deliberate, key-checked contact
   exchange. Private conversations keep each
@@ -39,20 +39,20 @@ telemetry, and no Carrel account or service we operate.
 
 ## Status
 
-**Pre-alpha: `0.1.0-alpha.2`.** The local reader, archive, annotations, self-sync
-engine and first private-sharing flow are implemented. Automated tests cover
+**Pre-alpha: `0.1.0-alpha.3`.** The local reader, archive, annotations, self-sync,
+private profiles and group conversations are implemented. Automated tests cover
 isolated stores and real in-process peers, including audience separation,
 revocation and conflicting offline edits. The frontend has separate native and
 CSR/WASM checks.
 
-Current source also includes sidebar folder creation and drag/drop, a skippable
-welcome sheet, and private `carrel://` links. These are not in alpha.2 packages.
-It also includes private profiles, group sharing and conversations, with recursive
-reply ancestry and note revision provenance. Both readers need a current build
-for these additions; they are not in alpha.2 packages.
+Use alpha.3 on every desktop participating in profiles, group sharing or
+conversations. Alpha.2 does not support those additions. See the
+[release notes](https://github.com/cigrainger/carrel/releases/tag/v0.1.0-alpha.3)
+for the changes and upgrade guidance.
 
-Physical two-computer sharing, live native file-picker selection and broader
-platform usability remain manual release checks. This is an early tool for
+Physical two-computer sharing, installed app-link handoff and passage focus,
+native file-picker selection and broader platform usability remain manual release
+checks. This is an early tool for
 careful trials, with no independent security audit. See [security](SECURITY.md)
 and the [first-friend checklist](docs/PRIVATE_SHARING_PLAN.md#first-friend-trial).
 

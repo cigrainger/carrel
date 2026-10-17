@@ -37,7 +37,7 @@ in place. Record the package, OS and result with the release evidence.
 
 1. Choose a reviewed commit, run local checks and review the release limitations.
    Check the app's Cargo version and `tauri.conf.json` version agree.
-2. Create and push an annotated version tag, for example `v0.1.0-alpha.2`, on
+2. Create and push an annotated version tag, for example `v0.1.0-alpha.3`, on
    the reviewed commit. Tagging starts native builds; the tag must match the
    app version. Do not move an existing published tag.
 3. Inspect the workflow's draft prerelease and its packages, source archive,

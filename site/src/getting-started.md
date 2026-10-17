@@ -5,10 +5,10 @@ Choose the package for your computer from
 are Apple Silicon Mac, Intel Mac and Linux x86-64. Draft releases are maintainer
 review builds; published prereleases remain early software.
 
-This guide follows the current source. Sidebar folder organization, the welcome
-sheet, Carrel links, refined Share/pairing controls, private profiles, group shares
-and conversations are newer than alpha.2; see each release's notes for the
-features included in its packages.
+The alpha.3 packages include sidebar folder organization, the welcome sheet,
+Carrel links, refined Share/pairing controls, private profiles, group shares and
+conversations. Use alpha.3 on every participating desktop; alpha.2 does not
+support profiles, groups or conversations. Read the release notes before upgrading.
 
 ## macOS
 
