@@ -57,5 +57,11 @@ Settings → Sources offers **Import OPML** and **Export OPML** using native fil
 dialogs. Import skips existing subscriptions and preserves their title/folder
 settings. Optional source folders also round-trip through OPML.
 
+Use **New folder** beside Sources to name a group and choose its first source.
+Drag sources onto folder headings or **Unfiled** to move them. Each source's
+**Organize** control offers the same folder choices from the keyboard, plus
+**New folder** and removal. Folder names open combined chronological lists;
+the separate arrow expands or collapses their sources.
+
 The [reading guide](reading.md) covers navigation, appearance and annotations.
 You can read locally without setting up peer sync or adding a person.

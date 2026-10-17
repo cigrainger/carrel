@@ -8,6 +8,7 @@ mod modal;
 pub(crate) mod save_article;
 pub(crate) mod settings;
 mod sidebar;
+mod source_organization;
 mod status_strip;
 
 pub(crate) use feed_activity::FeedActivity;

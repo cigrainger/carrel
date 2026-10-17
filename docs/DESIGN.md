@@ -982,7 +982,7 @@ the heading consistently in the confirmation, Library and reader.
 
 The Sources section lists subscribed feed titles, falling back to host or URL
 when the feed has not been fetched yet. Feed rows are plain navigation rows
-with a small explicit remove affordance. Selecting a feed opens a normal item
+with a quiet Organize control for folders and removal. Selecting a feed opens a normal item
 list filtered to that feed. No unread counts, badges, or freshness counters
 appear beside feeds.
 
@@ -995,6 +995,15 @@ chronological list, with search, Load older and the usual reader-return context.
 Folder membership is exact, including imported paths such as Research / Papers;
 there is no hierarchy editor. A refresh never moves a source within its group.
 Folders carry no counts and do not change saved articles or their reading state.
+The sidebar also offers New folder: name it and choose its first source. Folders
+are groups of subscriptions, so an empty group disappears when its last source
+moves out. A source's quiet Organize control offers a native folder select,
+New folder and the existing explicit removal confirmation. This provides the
+keyboard alternative to dragging a source onto a folder heading or Unfiled.
+Only a drag begun on a current source in this window can move it. A pending move
+appears immediately, serializes further moves of that source and rolls back on
+failure, retaining the current article or list. Folder disclosure and navigation
+remain separate; dropping onto a collapsed group keeps it collapsed.
 Source and folder article lists sort by publication date, newest first, with
 first-arrival time used only for undated posts. Equal dates use a stable item-ID
 tie breaker. A batch fetch or its feed-entry order cannot reverse the chronology.

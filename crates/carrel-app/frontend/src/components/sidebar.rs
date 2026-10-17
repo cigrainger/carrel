@@ -6,6 +6,7 @@ use leptos::html;
 use leptos::prelude::*;
 use leptos_router::hooks::use_location;
 
+use super::source_organization::{self, DropTarget, Organization, OrganizationDialog};
 use crate::api::{self, FeedCandidate};
 use crate::components::{Icon, IconName, Modal};
 use crate::feeds::{self, use_feed_controller};
@@ -193,7 +194,8 @@ fn close_narrow_sidebar(_sidebar: crate::navigation::ReadingSidebar) {
 pub fn Sidebar() -> impl IntoView {
     let active_path = use_navigation_path();
     let feed_controller = use_feed_controller();
-    let feeds = feed_controller.feeds();
+    let organization = source_organization::provide();
+    let feeds = organization.feeds;
     let controller_error = feed_controller.error();
     let add_open = feed_controller.add_open;
     let remove_target = feed_controller.remove_target;
@@ -209,6 +211,7 @@ pub fn Sidebar() -> impl IntoView {
                 <div class="sidebar-section-header">
                     <h2>"Sources"</h2>
                     <div class="sidebar-section-actions">
+                        <button type="button" aria-label="New folder" title="New folder" disabled=move || feeds.get().is_empty() on:click=move |_| organization.new_folder()><Icon name=IconName::NewFolder/></button>
                         <button
                             type="button"
                             aria-label="Add source"
@@ -229,8 +232,10 @@ pub fn Sidebar() -> impl IntoView {
                     fallback=move || view! { <p>"No feeds yet"</p> }
                 >
                     <div class="source-groups">
-                    <Show when=move || feeds.with(|feeds| feeds.iter().any(|feed| feed.folder.is_none()) && feeds.iter().any(|feed| feed.folder.is_some()))><p class="source-group-label">"Unfiled"</p></Show>
-                    <SourceRows folder=None active_path=active_path/>
+                    <DropTarget folder=None>
+                        <Show when=move || organization.dragging() || feeds.with(|feeds| feeds.iter().any(|feed| feed.folder.is_some()))><p class="source-group-label">"Unfiled"</p></Show>
+                        <SourceRows folder=None active_path=active_path/>
+                    </DropTarget>
                     <For each=move || feeds.with(|feeds| feeds.iter().filter_map(|feed| feed.folder.clone()).collect::<std::collections::BTreeSet<_>>().into_iter().collect::<Vec<_>>()) key=|folder| folder.clone() let:folder>
                         <SourceFolder folder=folder active_path=active_path/>
                     </For>
@@ -244,6 +249,7 @@ pub fn Sidebar() -> impl IntoView {
                 }><Icon name=IconName::Settings/><span>"Settings"</span></button>
             </div>
         </aside>
+            <OrganizationDialog/>
             <Show when=move || add_open.get()>
                 <AddSource/>
             </Show>
@@ -293,13 +299,15 @@ fn SourceFolder(folder: String, active_path: Memo<String>) -> impl IntoView {
     let href = feeds::folder_href(&folder);
     let selected_href = href.clone();
     let label = folder.clone();
+    let heading = folder.clone();
+    let disclosure = format!("Show or hide {folder} sources");
     let sidebar = crate::navigation::use_reading_sidebar();
     view! {
         <div class="source-group">
-            <div class="source-group-heading">
-                <button type="button" aria-label=format!("Show or hide {folder} sources") aria-expanded=move || expanded.get().to_string() on:click=move |_| expanded.update(|open| *open = !*open)><span aria-hidden="true">{move || if expanded.get() { "▾" } else { "▸" }}</span></button>
-                <a href=href title=label aria-current=move || active_path.with(|path| (path == &selected_href).then_some("page")) on:click=move |_| close_narrow_sidebar(sidebar)>{folder.clone()}</a>
-            </div>
+            <DropTarget folder=Some(folder.clone())><div class="source-group-heading">
+                <button type="button" aria-label=disclosure aria-expanded=move || expanded.get().to_string() on:click=move |_| expanded.update(|open| *open = !*open)><span aria-hidden="true">{move || if expanded.get() { "▾" } else { "▸" }}</span></button>
+                <a href=href title=label aria-current=move || active_path.with(|path| (path == &selected_href).then_some("page")) on:click=move |_| close_narrow_sidebar(sidebar)>{heading}</a>
+            </div></DropTarget>
             <div hidden=move || !expanded.get()><SourceRows folder=Some(folder) active_path=active_path/></div>
         </div>
     }
@@ -307,8 +315,8 @@ fn SourceFolder(folder: String, active_path: Memo<String>) -> impl IntoView {
 
 #[component]
 fn SourceRows(folder: Option<String>, active_path: Memo<String>) -> impl IntoView {
-    let controller = use_feed_controller();
-    let feeds = controller.feeds();
+    let organization = expect_context::<Organization>();
+    let feeds = organization.feeds;
     let sidebar = crate::navigation::use_reading_sidebar();
     view! {
         <ul class="feed-list">
@@ -316,11 +324,13 @@ fn SourceRows(folder: Option<String>, active_path: Memo<String>) -> impl IntoVie
                 {
                     let href = feeds::feed_href(&url);
                     let selected_href = href.clone();
+                    let drag_url = url.clone();
+                    let busy_url = url.clone();
                     let current = Memo::new(move |_| feeds.with(|feeds| feeds.iter().find(|feed| feed.url == url).cloned()));
                     view! {
                         <li class="feed-nav-row">
-                            <a href=href aria-current=move || active_path.with(|path| (path == &selected_href).then_some("page")) title=move || current.with(|feed| feed.as_ref().map(|feed| feed.display_name.clone()).unwrap_or_default()) on:click=move |_| close_narrow_sidebar(sidebar)>{move || current.with(|feed| feed.as_ref().map(|feed| feed.display_name.clone()).unwrap_or_default())}</a>
-                            <button type="button" aria-label=move || current.with(|feed| format!("Remove {}", feed.as_ref().map(|feed| feed.display_name.as_str()).unwrap_or_default())) title="Remove feed" on:click=move |_| controller.remove_target.set(current.get_untracked())><Icon name=IconName::Close/></button>
+                            <a href=href draggable=move || (!organization.busy(&busy_url)).to_string() on:dragstart=move |event| organization.start_drag(event, drag_url.clone()) on:dragend=move |_| organization.end_drag() aria-current=move || active_path.with(|path| (path == &selected_href).then_some("page")) title=move || current.with(|feed| feed.as_ref().map(|feed| feed.display_name.clone()).unwrap_or_default()) on:click=move |_| close_narrow_sidebar(sidebar)>{move || current.with(|feed| feed.as_ref().map(|feed| feed.display_name.clone()).unwrap_or_default())}</a>
+                            <button type="button" aria-label=move || current.with(|feed| format!("Organize {}", feed.as_ref().map(|feed| feed.display_name.as_str()).unwrap_or_default())) title="Organize source" disabled=move || current.with(|feed| feed.as_ref().is_none_or(|feed| organization.busy(&feed.url))) on:click=move |_| { if let Some(feed) = current.get_untracked() { organization.organize(feed); } }><Icon name=IconName::More/></button>
                         </li>
                     }
                 }

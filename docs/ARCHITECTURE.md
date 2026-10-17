@@ -487,6 +487,9 @@ articles. Folder assignment is a typed signed subscription action, preserving
 other portable settings and device-local HTTP metadata. A stale edit to a
 removed subscription fails. Sidebar groups render this state; they do not own
 subscription writes or query articles themselves.
+Sidebar drag/drop and its keyboard-accessible organizer use that same native
+command. A per-source pending projection preserves current native/sync metadata;
+clearing a failed move reveals the latest snapshot rather than an earlier copy.
 
 Local search uses Cozo's existing full-text machinery. Pure, bounded literal
 query tokenization lives beside the list contracts in `carrel-core`; the store

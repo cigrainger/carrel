@@ -30,7 +30,7 @@ ssr = ["leptos/ssr", "leptos_router/ssr"]
 carrel-core = { path = "../../carrel-core", default-features = false }
 leptos = { workspace = true }
 leptos_router = { workspace = true }
-lucide-leptos = { version = "3.53.0", default-features = false, features = ["account", "arrows", "devices", "layout", "notifications", "shapes", "text", "time"] }
+lucide-leptos = { version = "3.53.0", default-features = false, features = ["account", "arrows", "devices", "files", "layout", "notifications", "shapes", "text", "time"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 time = { workspace = true, features = ["parsing"] }

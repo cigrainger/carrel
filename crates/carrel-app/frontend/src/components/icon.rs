@@ -30,6 +30,7 @@ pub(crate) enum IconName {
     More,
     Share,
     People,
+    NewFolder,
 }
 
 /// Decorative icon; the containing control supplies its accessible name.
@@ -61,6 +62,7 @@ pub(crate) fn Icon(name: IconName) -> impl IntoView {
         IconName::More => view! { <lucide::Ellipsis size=18/> }.into_any(),
         IconName::Share => view! { <lucide::Share2 size=18/> }.into_any(),
         IconName::People => view! { <lucide::Users size=16/> }.into_any(),
+        IconName::NewFolder => view! { <lucide::FolderPlus size=16/> }.into_any(),
     };
     view! { <span class="icon" aria-hidden="true">{icon}</span> }
 }
