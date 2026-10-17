@@ -393,16 +393,25 @@ fn existing_journals_remain_readable_and_cancellation_cannot_overlap_activation(
     )
     .unwrap();
     assert!(!read_record(dir.path()).unwrap().cancelling);
-    encoded["cancelling"] = true.into();
-    for (activating, installed) in [(true, false), (true, true), (false, true)] {
+    for (activating, installed, cancelling, valid) in [
+        (false, false, false, true), // Prepared.
+        (true, false, false, true),  // Activating.
+        (true, true, false, true),   // Installed; cleanup may resume.
+        (false, false, true, true),  // Cancelling; cleanup may resume.
+        (false, true, false, false),
+        (false, true, true, false),
+        (true, false, true, false),
+        (true, true, true, false),
+    ] {
         encoded["activating"] = activating.into();
         encoded["installed"] = installed.into();
+        encoded["cancelling"] = cancelling.into();
         fs::write(
             dir.path().join(RECORD),
             serde_json::to_vec(&encoded).unwrap(),
         )
         .unwrap();
-        assert!(read_record(dir.path()).is_err());
+        assert_eq!(read_record(dir.path()).is_ok(), valid);
     }
 }
 

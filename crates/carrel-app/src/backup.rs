@@ -295,7 +295,7 @@ fn read_record(root: &Path) -> Result<Activation> {
     if record.version != 1
         || record.stage == record.previous
         || (record.installed && !record.activating)
-        || (record.cancelling && (record.activating || record.installed))
+        || (record.cancelling && record.activating)
     {
         return Err(BackupError::Format.into());
     }
