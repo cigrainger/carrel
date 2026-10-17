@@ -50,6 +50,26 @@ Review the conflict explicitly and choose or combine them. It does not silently
 discard an independently edited note. An archived passage remains available
 when the publisher's page changes or disappears, provided its cache is present.
 
+## Link back to your archive
+
+Use **Copy Carrel link** in reader Info, a highlight row, or the app menu.
+`Cmd+Shift+C` copies the current article or the selected article/highlight in a
+list. Markdown annotation exports include these links alongside publisher URLs.
+
+Article links use `carrel://item/…`; highlight links use `carrel://highlight/…`
+and return to the saved passage. The installed desktop app opens them whether
+it is already running or starting up. If a dialog is open, the link waits until
+you close it so your draft stays intact. Only the latest waiting link is kept.
+
+These are private archive references. They work on desktops that already have
+the content, including your synced desktops. They do not share an article,
+grant access or download missing content. Use the sharing flow to send an
+article to a trusted person. A removed highlight or missing article leaves
+your current reading view in place and explains what is unavailable.
+
+If clipboard access is unavailable, Carrel selects the complete link in a
+dialog for ordinary copying. There is no clipboard monitoring.
+
 **Open original** uses your system browser. Archived reading uses local cached
 resources; an image that could not be cached is shown as unavailable rather
 than fetched remotely by the reader.

@@ -59,6 +59,10 @@ pub enum AppError {
     #[error(transparent)]
     OpenLink(#[from] tauri_plugin_opener::Error),
 
+    /// The native app-link integration failed to initialize.
+    #[error(transparent)]
+    AppLink(#[from] tauri_plugin_deep_link::Error),
+
     /// A Tauri command received or produced malformed data.
     #[error("invalid app data for {context}: {value}")]
     InvalidData {
@@ -96,6 +100,7 @@ impl Serialize for AppError {
             Self::AnnotationFile(_) => "annotation_file",
             Self::Tauri(_) => "tauri",
             Self::OpenLink(_) => "open_link",
+            Self::AppLink(_) => "app_link",
             Self::InvalidData { .. } => "invalid_data",
         };
 

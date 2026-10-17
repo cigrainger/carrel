@@ -572,6 +572,22 @@ External article links go through a native command using Tauri's official
 opener plugin. The command accepts web URLs and opens the system browser; it
 never navigates the reading webview or grants arbitrary filesystem opening.
 
+Carrel's own `carrel://` addresses use a separate strict pure-core parser and
+the official Tauri deep-link/single-instance plugins. The single-instance guard
+runs before opening Cozo, so a second launch can forward its URL without taking
+the database lock. The native shell retains only the latest pending typed link,
+resolves living targets through typed store reads on a worker, and wakes the
+webview with a constant event. An initial query after installing the listener
+covers cold-start delivery. No URI can issue mutations, fetch a page, open a file
+or grant peer access. The frontend defers navigation through dialogs and keeps
+clipboard fallback and focus as presentation state. Highlight addresses resolve
+to the existing reader selector path; an explicit activation generation supports
+repeated links within the same article. Before leaving a list, the route's
+scoped action captures its loaded pages, query, cursor and scroll, using the
+same snapshot as an ordinary row open. A link detour retains the original list
+selection until the reader explicitly browses previous/next. No schema or
+signed-record changes are introduced.
+
 Feed parsing unwraps the feed format once and preserves HTML entities in article
 and summary bodies. The HTML sanitizer interprets those entities, so escaped
 code remains text while executable tags are still removed.

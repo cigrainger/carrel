@@ -78,6 +78,31 @@ pub fn Highlights() -> impl IntoView {
     #[cfg(target_arch = "wasm32")]
     let writes = StoredValue::new(crate::writes::use_pending_writes());
 
+    let app_links = crate::app_links::use_app_links();
+    use_action_handler("copy-carrel-link", move || {
+        if let Some(row) = displayed.get_untracked().get(cursor.get_untracked())
+            && let Ok(link) = carrel_core::app_link::AppLink::highlight(&row.highlight.id)
+        {
+            app_links.copy(link);
+        }
+    });
+    use_action_handler("remember-list-context", move || {
+        let current = displayed.get_untracked();
+        let index = cursor.get_untracked();
+        list_navigation.remember(
+            RETURN_PATH.into(),
+            ListSnapshot {
+                selected_id: current.get(index).map(|row| row.highlight.id.clone()),
+                selected_index: index,
+                scroll_y: list_scroll_y(),
+                annotation_cursor: next_cursor.get_untracked(),
+                annotations_complete: complete.get_untracked(),
+                expanded_highlights: expanded.get_untracked(),
+                highlights: current,
+                ..Default::default()
+            },
+        );
+    });
     use_keymap_layer(default::list_layer());
 
     let restore = RwSignal::new(snapshot);
@@ -613,6 +638,7 @@ fn HighlightRow(
                 </Show>
                 <div class="highlight-row-footer">
                     <div class="highlight-row-actions">
+                    <crate::app_links::CopyLinkButton link=Signal::derive(move || carrel_core::app_link::AppLink::highlight(&row.get().highlight.id).ok())/>
                     <Show when=move || !expanded.get() && row.get().notes.iter().any(|note| !note.conflicts.is_empty())>
                         <button type="button" on:click=move |event: ev::MouseEvent| {
                             event.stop_propagation();

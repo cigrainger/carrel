@@ -239,6 +239,14 @@ pub(crate) fn list_route_view(
             })
             .collect::<Vec<_>>()
     });
+    let app_links = crate::app_links::use_app_links();
+    use_action_handler("copy-carrel-link", move || {
+        if let Some(item) = visible.get_untracked().get(cursor.get_untracked())
+            && let Ok(link) = carrel_core::app_link::AppLink::item(&item.id)
+        {
+            app_links.copy(link);
+        }
+    });
     let restore = RwSignal::new(Some(snapshot.unwrap_or_default()));
     let previous_ids = RwSignal::new(Vec::<String>::new());
     Effect::new(move |_| {
@@ -250,10 +258,14 @@ pub(crate) fn list_route_view(
             let context = list_navigation
                 .get()
                 .filter(|context| context.return_path == spec.get_untracked().return_path);
-            let selected = context
-                .as_ref()
-                .map(|context| context.current_id.as_str())
-                .or(snapshot.selected_id.as_deref());
+            let selected = if list_navigation.preserve_return_selection() {
+                snapshot.selected_id.as_deref()
+            } else {
+                context
+                    .as_ref()
+                    .map(|context| context.current_id.as_str())
+                    .or(snapshot.selected_id.as_deref())
+            };
             let original_ids = context
                 .as_ref()
                 .map(|context| context.item_ids.clone())
@@ -331,17 +343,17 @@ pub(crate) fn list_route_view(
         ensure_list_cursor_visible(spec.get_untracked().return_path);
     });
     let navigate = use_navigate();
-    let open = UnsyncCallback::new(move |index: usize| {
+    // Both row opens and incoming app links capture the live, paged list before
+    // the router changes its query/owner. Cleanup would be too late for that.
+    let remember = UnsyncCallback::new(move |index: usize| {
         let rows = visible.get_untracked();
-        let Some(item) = rows.get(index) else {
-            return;
-        };
         let current = spec.get_untracked();
+        let selected = rows.get(index).map(|item| item.id.clone());
         list_navigation.remember(
             current.return_path.clone(),
             ListSnapshot {
                 items: items.get_untracked(),
-                selected_id: Some(item.id.clone()),
+                selected_id: selected.clone(),
                 selected_index: index,
                 scroll_y: list_scroll_y(),
                 item_cursor: next_cursor.get_untracked(),
@@ -351,12 +363,22 @@ pub(crate) fn list_route_view(
         );
         list_navigation.set(ListNavigation {
             item_ids: rows.iter().map(|item| item.id.clone()).collect(),
-            current_id: item.id.clone(),
+            current_id: selected.unwrap_or_default(),
             return_path: current.return_path,
             return_label: current.title,
         });
         cursor.set(index);
-        navigate(&format!("/item/{}", item.id), NavigateOptions::default());
+    });
+    use_action_handler("remember-list-context", move || {
+        remember.run(cursor.get_untracked())
+    });
+    let open = UnsyncCallback::new(move |index: usize| {
+        let Some(id) = visible.with_untracked(|rows| rows.get(index).map(|item| item.id.clone()))
+        else {
+            return;
+        };
+        remember.run(index);
+        navigate(&format!("/item/{id}"), NavigateOptions::default());
     });
     use_action_handler("open-item", move || open.run(cursor.get_untracked()));
     for (name, action) in [

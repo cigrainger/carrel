@@ -6,6 +6,25 @@ use serde::{Deserialize, Serialize};
 pub use carrel_core::annotation::{AnnotationCursor, AnnotationPage};
 pub use carrel_core::library::{ItemCursor, ItemFilter, ItemPage, ItemView};
 
+/// Native resolution never exposes an arbitrary route or performs an action.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[cfg(target_arch = "wasm32")]
+pub(crate) enum AppLinkResolution {
+    Open { path: String },
+    MissingItem,
+    MissingHighlight,
+    Invalid,
+}
+
+#[cfg(target_arch = "wasm32")]
+pub(crate) async fn take_app_link() -> Result<Option<AppLinkResolution>, ApiError> {
+    let value = tauri_invoke("take_app_link", wasm_bindgen::JsValue::UNDEFINED)
+        .await
+        .map_err(api_error_from_js)?;
+    serde_wasm_bindgen::from_value(value).map_err(|error| ApiError::new(error.to_string()))
+}
+
 /// First-run help is eligible only for an empty whole archive and no sources.
 #[cfg(target_arch = "wasm32")]
 pub(crate) async fn welcome_is_needed() -> Result<bool, ApiError> {

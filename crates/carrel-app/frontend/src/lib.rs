@@ -5,6 +5,8 @@
 
 mod annotation_actions;
 pub mod api;
+mod app_links;
+mod clipboard;
 mod components;
 mod desktop;
 mod feeds;
@@ -45,6 +47,7 @@ pub fn App() -> impl IntoView {
     components::devices::provide_device_status();
     components::provide_context_bar();
     status::provide_status_controller();
+    app_links::provide_app_links();
     welcome::provide_welcome();
     item_actions::provide_item_actions();
     annotation_actions::provide_annotation_actions();
@@ -57,6 +60,7 @@ pub fn App() -> impl IntoView {
         <Router>
             <KeymapProvider>
                 <GlobalKeymapActions/>
+                <app_links::AppLinks/>
                 <welcome::Welcome/>
                 <components::save_article::ArticleCapture/>
                 <sharing::ShareDialog/>

@@ -709,6 +709,26 @@ own history, so delayed scrolling cannot undo completion or mark-unread. A
 causally later position can move backwards when rereading. Reading and Starred
 ordering uses consistent display timestamps from the current history heads.
 
+### Carrel links
+
+Saved items have stable `carrel://item/<id>` addresses; highlights have
+`carrel://highlight/<id>` addresses that open their exact passage. These use the
+existing saved IDs, independent of titles, list positions or note revisions.
+Copy Carrel link is available from the app menu, reader Info and highlight rows;
+Cmd+Shift+C copies the current reader item or selected list item/highlight through
+the keymap stack. Copying changes no reading or sharing state. Clipboard failure
+offers the complete selectable link in a native dialog. Markdown annotation
+exports retain publisher URLs and add Carrel links for returning to the archive.
+
+An app link opens content already present on that desktop, including content
+received through ordinary private sync. It carries no content or access grant.
+Missing or removed targets leave the current view in place with a quiet
+explanation. Incoming links wait while any dialog is open so note, URL, pairing
+and palette drafts survive. The latest requested target opens after the dialog
+closes. Opening the same highlight again refocuses its passage, including within
+an already open article. The compact toolbar and ordinary reader-return behavior
+remain intact.
+
 ### Annotation review
 
 Highlights uses the same editorial grid and explicit **Load older** interaction

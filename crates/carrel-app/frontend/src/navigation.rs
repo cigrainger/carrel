@@ -77,11 +77,25 @@ pub struct ListNavigation {
 pub struct ListNavigationContext {
     current: RwSignal<Option<ListNavigation>>,
     snapshots: RwSignal<BTreeMap<String, ListSnapshot>>,
+    selection_before_link: RwSignal<bool>,
 }
 
 impl ListNavigationContext {
+    /// Keep a useful return destination without inventing a stale next/previous queue.
+    #[cfg(any(test, target_arch = "wasm32"))]
+    pub(crate) fn enter_link(&self, id: &str, origin: &str) {
+        let preserve = self.selection_before_link.get_untracked() || !origin.starts_with("/item/");
+        self.set(navigation_for_link(self.get(), id, origin));
+        self.selection_before_link.set(preserve);
+    }
     pub fn set(&self, navigation: ListNavigation) {
         self.current.set(Some(navigation));
+        self.selection_before_link.set(false);
+    }
+
+    /// An external detour keeps the list cursor until explicit reader browsing.
+    pub(crate) fn preserve_return_selection(&self) -> bool {
+        self.selection_before_link.get_untracked()
     }
 
     pub fn get(&self) -> Option<ListNavigation> {
@@ -100,6 +114,36 @@ impl ListNavigationContext {
     }
 }
 
+#[cfg(any(test, target_arch = "wasm32"))]
+fn navigation_for_link(previous: Option<ListNavigation>, id: &str, origin: &str) -> ListNavigation {
+    if let Some(mut previous) = previous
+        && (origin.starts_with("/item/") || previous.return_path == origin)
+    {
+        if !previous.item_ids.iter().any(|item| item == id) {
+            previous.item_ids = vec![id.into()];
+        }
+        previous.current_id = id.into();
+        return previous;
+    }
+    let path = origin.split('?').next().unwrap_or(origin);
+    let (return_path, return_label) = match path {
+        "/" | "/today" => (origin, "Today"),
+        "/reading" => (origin, "Reading"),
+        "/library" | "/unread" | "/starred" => (origin, "Library"),
+        "/highlights" => (origin, "Highlights"),
+        "/friends" => (origin, "Shared with you"),
+        path if path.starts_with("/feeds/") => (origin, "Source"),
+        path if path.starts_with("/folders/") => (origin, "Folder"),
+        _ => ("/library", "Library"),
+    };
+    ListNavigation {
+        item_ids: vec![id.into()],
+        current_id: id.into(),
+        return_path: return_path.into(),
+        return_label: return_label.into(),
+    }
+}
+
 /// Provide list navigation context for route children.
 pub fn provide_list_navigation_context() -> ListNavigationContext {
     #[cfg(target_arch = "wasm32")]
@@ -110,6 +154,7 @@ pub fn provide_list_navigation_context() -> ListNavigationContext {
     let context = ListNavigationContext {
         current: RwSignal::new(None),
         snapshots: RwSignal::new(BTreeMap::new()),
+        selection_before_link: RwSignal::new(false),
     };
     provide_context(context);
     context
@@ -226,6 +271,46 @@ pub fn use_list_navigation_context() -> ListNavigationContext {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_external_detour_retains_list_selection_until_explicit_browsing() {
+        Owner::new().with(|| {
+            let context = provide_list_navigation_context();
+            let original = navigation_for_link(None, "a", "/library?q=essay");
+            context.set(original.clone());
+            context.enter_link("b", "/library?q=essay");
+            assert!(context.preserve_return_selection());
+            assert_eq!(context.get().unwrap().current_id, "b");
+            context.enter_link("c", "/item/b");
+            assert!(context.preserve_return_selection());
+            context.set(original);
+            assert!(!context.preserve_return_selection());
+            context.enter_link("b", "/item/a");
+            assert!(!context.preserve_return_selection());
+        });
+    }
+
+    #[test]
+    fn incoming_links_preserve_reader_origin_or_the_current_filtered_list() {
+        let first = navigation_for_link(None, "a", "/library?q=essay");
+        assert_eq!(first.return_path, "/library?q=essay");
+        let old = ListNavigation {
+            item_ids: vec!["a".into(), "b".into()],
+            ..first
+        };
+        let same_queue = navigation_for_link(Some(old.clone()), "b", "/item/a");
+        assert_eq!(same_queue.current_id, "b");
+        assert_eq!(same_queue.item_ids, old.item_ids);
+        let outside_queue = navigation_for_link(Some(old.clone()), "c", "/item/a");
+        assert_eq!(outside_queue.item_ids, vec!["c"]);
+        assert_eq!(outside_queue.return_path, old.return_path);
+        let new_list = navigation_for_link(Some(old), "d", "/highlights");
+        assert_eq!(new_list.return_path, "/highlights");
+        assert_eq!(
+            navigation_for_link(None, "a", "/item/b").return_path,
+            "/library"
+        );
+    }
 
     #[test]
     fn restoration_finds_the_selected_item_after_reordering() {

@@ -33,6 +33,9 @@
       }
     ]
   },
+  "plugins": {
+    "deep-link": { "desktop": { "schemes": ["carrel"] } }
+  },
   "bundle": {
     "active": true,
     "targets": "all",

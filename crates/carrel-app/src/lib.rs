@@ -2,6 +2,7 @@
 
 #![deny(unsafe_code)]
 
+mod app_links;
 mod background;
 mod chrome;
 mod close;
@@ -15,6 +16,7 @@ mod sync;
 use std::str::FromStr;
 
 use carrel_store::blobs::{BlobId, BlobStore};
+use tauri::Manager;
 use tauri::http::{Response, StatusCode, header};
 
 pub use crate::error::{AppError, Result};
@@ -25,16 +27,13 @@ const BLOB_URI_SCHEME: &str = "carrel-blob";
 pub fn run() -> Result<()> {
     init_tracing();
 
-    let paths = config::InstallPaths::resolve()?;
-    let store = carrel_store::Store::open(&paths.store)?;
-    let blobs = BlobStore::open(&paths.blobs);
-    let protocol_blobs = blobs.clone();
-    store.migrate()?;
-    let app_state = state::AppState::new(store, blobs, paths);
-    let background_state = app_state.clone();
-
     tauri::Builder::default()
         .append_invoke_initialization_script(chrome::initialization_script())
+        // Forward URL launches before a second process tries to lock Cozo.
+        .plugin(tauri_plugin_single_instance::init(|app, _, _| {
+            app_links::focus_main(app)
+        }))
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(
             tauri_plugin_opener::Builder::new()
@@ -42,21 +41,36 @@ pub fn run() -> Result<()> {
                 .build(),
         )
         .manage(close::CloseState::default())
+        .manage(app_links::AppLinkInbox::default())
         .on_window_event(|window, event| {
             close::on_window_event(window, event);
             chrome::on_window_event(window, event);
         })
-        .register_uri_scheme_protocol(BLOB_URI_SCHEME, move |_ctx, request| {
-            blob_protocol_response(&protocol_blobs, request.uri())
+        .register_uri_scheme_protocol(BLOB_URI_SCHEME, move |ctx, request| {
+            match ctx.app_handle().try_state::<state::AppState>() {
+                Some(state) => blob_protocol_response(&state.blobs, request.uri()),
+                None => response(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "text/plain",
+                    b"archive is starting".to_vec(),
+                ),
+            }
         })
-        .setup(move |_| {
+        .setup(move |app| {
+            let paths = config::InstallPaths::resolve()?;
+            let store = carrel_store::Store::open(&paths.store)?;
+            let blobs = BlobStore::open(&paths.blobs);
+            store.migrate()?;
+            let background_state = state::AppState::new(store, blobs, paths);
+            app.manage(background_state.clone());
+            app_links::install(app.handle())?;
             background::spawn_feed_loop(background_state.clone());
             background::spawn_search_rebuild(background_state.clone());
             sync::spawn(background_state.clone());
             Ok(())
         })
-        .manage(app_state)
         .invoke_handler(tauri::generate_handler![
+            app_links::take_app_link,
             chrome::set_window_appearance,
             close::frontend_ready,
             close::finish_app_close,

@@ -334,14 +334,6 @@ pub(crate) fn render_highlights(
     failed
 }
 
-#[cfg(target_arch = "wasm32")]
-pub(crate) fn current_hash_highlight_id() -> Option<String> {
-    let hash = web_sys::window()?.location().hash().ok()?;
-    hash.strip_prefix("#highlight-")
-        .filter(|id| !id.is_empty())
-        .map(ToString::to_string)
-}
-
 /// A deep link cannot be declared missing while its annotations are still loading.
 #[cfg(any(test, target_arch = "wasm32"))]
 pub(crate) fn focus_target_after_load(loaded: bool, hash_id: Option<&str>) -> Option<&str> {

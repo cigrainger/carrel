@@ -106,6 +106,7 @@ pub(crate) fn FieldNavigation() -> impl IntoView {
 
 #[component]
 fn ContextMenu() -> impl IntoView {
+    let (can_copy, copy_link) = crate::keymap::action("copy-carrel-link");
     let menu = NodeRef::<html::Details>::new();
     let trigger = NodeRef::<html::Summary>::new();
     let open = RwSignal::new(false);
@@ -133,6 +134,7 @@ fn ContextMenu() -> impl IntoView {
                     close.run(true); spawn_feed_task(async move { if let Err(message) = feeds::fetch_all(feeds).await { feeds.error().try_set(Some(message)); } });
                 }>"Refresh feeds"<kbd>"⌘R"</kbd></button>
                 <hr/>
+                <Show when=move || can_copy.get()><button type="button" on:click=move |_| { close.run(true); copy_link.run(()); }>"Copy Carrel link"</button></Show>
                 <button type="button" on:click=move |_| { close.run(true); crate::keymap::open_palette(); }><span><Icon name=IconName::Search/>"Commands"</span><kbd>"⌘K"</kbd></button>
                 <button type="button" on:click=move |_| { close.run(true); crate::keymap::open_help(); }>"Keyboard reference"<kbd>"?"</kbd></button>
                 <button type="button" on:click=move |_| { close.run(true); welcome.show(); }>"Getting started"</button>

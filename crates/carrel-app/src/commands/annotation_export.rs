@@ -2,6 +2,7 @@
 
 use std::{collections::BTreeMap, fmt::Write as _, io::Write as _, path::Path};
 
+use carrel_core::app_link::AppLink;
 use carrel_store::{Store, highlights::AnnotationReview};
 use tauri::{State, Window};
 use tauri_plugin_dialog::DialogExt;
@@ -68,6 +69,9 @@ fn markdown(rows: &[AnnotationReview]) -> String {
         if let Some(url) = article.item_primary_url.as_deref().and_then(safe_url) {
             let _ = writeln!(output, "[Open article](<{url}>)\n");
         }
+        if let Ok(link) = AppLink::item(&article.highlight.item_id) {
+            let _ = writeln!(output, "[Open in Carrel](<{link}>)\n");
+        }
         for row in highlights {
             let highlight = &row.source.highlight;
             let _ = writeln!(
@@ -79,6 +83,9 @@ fn markdown(rows: &[AnnotationReview]) -> String {
                 let _ = writeln!(output, "> {}", literal(line));
             }
             let _ = writeln!(output, "\nReference: `{}`\n", highlight.id);
+            if let Ok(link) = AppLink::highlight(&highlight.id) {
+                let _ = writeln!(output, "[Open highlight in Carrel](<{link}>)\n");
+            }
             for note in &row.notes {
                 if let Some(versions) = row.conflicts.get(&note.id) {
                     let _ = writeln!(
@@ -159,13 +166,13 @@ mod tests {
         let store = Store::open_in_memory().unwrap();
         store.migrate().unwrap();
         store.query(r#"?[id, kind, title, creators, primary_url, published_at, language, summary, discovered_at] <-
-            [['item', 'article', 'A [quiet] <web>', [], 'https://example.com/page?q=<test>', null, null, null, validity(1)]]
+            [['1212121212121212121212121212121212121212121212121212121212121212', 'article', 'A [quiet] <web>', [], 'https://example.com/page?q=<test>', null, null, null, validity(1)]]
             :put item {id => kind, title, creators, primary_url, published_at, language, summary, discovered_at}"#).unwrap();
         let key = Keypair::generate();
         let highlight = store
             .put_highlight(
                 PutHighlightInput {
-                    item_id: "item".into(),
+                    item_id: "12".repeat(32),
                     location: HighlightLocation::HtmlText(HtmlTextSelector {
                         content_blob_id: None,
                         exact: "*quoted* 日本語\n<script>".into(),
@@ -213,6 +220,14 @@ mod tests {
         assert!(!document.contains("old note"));
         assert!(document.contains("\\*quoted\\* 日本語\n> &lt;script\\>"));
         assert!(document.contains(&highlight.id) && document.contains(&note.id));
+        assert!(document.contains(&format!(
+            "[Open in Carrel](<carrel://item/{}>)",
+            "12".repeat(32)
+        )));
+        assert!(document.contains(&format!(
+            "[Open highlight in Carrel](<carrel://highlight/{}>)",
+            highlight.id
+        )));
         assert!(document.contains("A \\[quiet\\] &lt;web\\>"));
         assert!(document.contains("[Open article](<https://example.com/page?q=%3Ctest%3E>)"));
         assert!(export_to_path(&store, &dir.path().join("missing/file.md")).is_err());

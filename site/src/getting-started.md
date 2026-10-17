@@ -5,6 +5,10 @@ Choose the package for your computer from
 are Apple Silicon Mac, Intel Mac and Linux x86-64. Draft releases are maintainer
 review builds; published prereleases remain early software.
 
+This guide follows the current source. Sidebar folder organization, the welcome
+sheet and Carrel links are newer than alpha.2; see each release's notes for the
+features included in its packages.
+
 ## macOS
 
 Open the `.dmg`, drag **Carrel** into **Applications**, eject the disk image and

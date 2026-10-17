@@ -27,6 +27,8 @@ serde_json = { workspace = true }
 tauri = { workspace = true }
 tauri-plugin-dialog = "2.8.1"
 tauri-plugin-opener = "2.7.0"
+tauri-plugin-deep-link = "2.6.2"
+tauri-plugin-single-instance = { version = "2.5.4", features = ["deep-link"] }
 thiserror = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true }

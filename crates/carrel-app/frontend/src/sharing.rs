@@ -1,4 +1,5 @@
 //! Explicit social commands; drafts remain local until the user shares.
+use crate::clipboard::{finish_copy, start_copy};
 use crate::{api, components::Modal, requests::Requests};
 use leptos::{html, prelude::*};
 use serde_json::json;
@@ -270,28 +271,6 @@ fn ContactCopy(
         }>{button}</button>{move ||message.get().map(|text|view!{<p role="status" class="copy-status">{text}</p>})}
     </div> }
 }
-#[cfg(target_arch = "wasm32")]
-fn start_copy(text: &str) -> Option<web_sys::js_sys::Promise> {
-    let clipboard = web_sys::window()?.navigator().clipboard();
-    let value: &wasm_bindgen::JsValue = clipboard.as_ref();
-    value.is_object().then(|| clipboard.write_text(text))
-}
-#[cfg(target_arch = "wasm32")]
-async fn finish_copy(copy: Option<web_sys::js_sys::Promise>) -> bool {
-    match copy {
-        Some(copy) => wasm_bindgen_futures::JsFuture::from(copy).await.is_ok(),
-        None => false,
-    }
-}
-#[cfg(not(target_arch = "wasm32"))]
-fn start_copy(_text: &str) -> Option<()> {
-    None
-}
-#[cfg(not(target_arch = "wasm32"))]
-async fn finish_copy(_copy: Option<()>) -> bool {
-    false
-}
-
 #[component]
 fn SentHistory(busy: RwSignal<bool>, on_retract: UnsyncCallback<String>) -> impl IntoView {
     let sharing = use_sharing();

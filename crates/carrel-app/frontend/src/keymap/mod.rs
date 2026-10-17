@@ -1,6 +1,6 @@
 //! Stack-based keymap integration for the webview.
 
-use leptos::prelude::Set;
+use leptos::prelude::*;
 
 mod event;
 mod help;
@@ -17,4 +17,16 @@ pub(crate) fn open_palette() {
 }
 pub(crate) fn open_help() {
     provider::use_keymap_context().help_open.set(true);
+}
+
+/// Menus use the same route-owned action as shortcuts and the command palette.
+pub(crate) fn action(name: &'static str) -> (Signal<bool, LocalStorage>, UnsyncCallback<()>) {
+    let context = provider::use_keymap_context();
+    (
+        Signal::derive_local(move || context.has_action(name)),
+        UnsyncCallback::new(move |()| {
+            #[cfg(target_arch = "wasm32")]
+            provider::dispatch_action(context, carrel_core::keymap::Action::named(name));
+        }),
+    )
 }

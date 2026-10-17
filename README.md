@@ -22,7 +22,8 @@ and from the habit of keeping a commonplace book. Reading comes first.
   website addresses; arbitrary article URLs; cached text and images; offline
   title/body search; optional source folders; OPML import and export.
 - **Keep what you notice.** Durable highlights and notes, full annotation review,
-  deliberate conflict resolution, and Markdown export.
+  deliberate conflict resolution, Markdown export, and stable Carrel links back
+  to articles and passages.
 - **Share by choice.** Follow a person by public key and share one archived
   article with an optional note. Personal notes, highlights and reading state
   stay private. Your own devices can synchronize through a separate pairing flow.
@@ -39,6 +40,9 @@ engine and first private-sharing flow are implemented. Automated tests cover
 isolated stores and real in-process peers, including audience separation,
 revocation and conflicting offline edits. The frontend has separate native and
 CSR/WASM checks.
+
+Current source also includes sidebar folder creation and drag/drop, a skippable
+welcome sheet, and private `carrel://` links. These are not in alpha.2 packages.
 
 Physical two-computer sharing, live native file-picker selection and broader
 platform usability remain manual release checks. This is an early tool for

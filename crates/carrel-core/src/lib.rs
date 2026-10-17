@@ -9,6 +9,9 @@
 /// Highlight and annotation selector primitives.
 pub mod annotation;
 
+/// Canonical private app addresses and strict external-input validation.
+pub mod app_link;
+
 /// Cached open-web article ingestion contracts.
 pub mod article;
 

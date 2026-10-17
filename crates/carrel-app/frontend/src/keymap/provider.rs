@@ -52,6 +52,10 @@ pub(crate) struct KeymapContext {
 }
 
 impl KeymapContext {
+    pub(crate) fn has_action(self, name: &str) -> bool {
+        self.handlers
+            .with(|handlers| handlers.iter().any(|handler| handler.action == name))
+    }
     pub(crate) fn new() -> Self {
         Self {
             stack: RwSignal::new_local(KeymapStack::new()),

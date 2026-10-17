@@ -17,6 +17,22 @@ draft packages; the maintainer signs and notarizes them locally before publishin
 Platform installation guidance is in [Getting started](getting-started.md).
 Windows and Linux arm64 are not in the initial release matrix.
 
+## Native app-link check
+
+For a release containing Carrel links, test the installed package with the
+development app closed. On Mac, install in Applications; a browser-served CSR
+fixture does not test LaunchServices registration. On Linux, check the `.deb`
+desktop handler and AppImage desktop integration separately.
+
+Copy an article link and a highlight link from a populated archive. Open each
+from another application with Carrel closed, then repeat with it running.
+Repeat the same highlight and switch between two highlights in one article.
+Verify the correct passage receives focus and that opening changes no explicit
+read/star state. With an unsaved note or pairing form open, request another
+link: the draft must remain until you close the dialog, then the latest link
+must open. A missing article or removed highlight must leave the current view
+in place. Record the package, OS and result with the release evidence.
+
 ## Make a release
 
 1. Choose a reviewed commit, run local checks and review the release limitations.

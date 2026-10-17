@@ -55,6 +55,15 @@ pub struct ItemShapeRecord {
 }
 
 impl Store {
+    /// Whether a saved item exists and has not been permanently tombstoned.
+    pub fn contains_item(&self, id: &str) -> Result<bool> {
+        let rows = self.query_with_params(
+            "?[id] := *item{id}, id = $id, not *entity_tombstone{id}\n:limit 1",
+            BTreeMap::from([("id".into(), DataValue::from(id))]),
+        )?;
+        Ok(!rows.rows.is_empty())
+    }
+
     /// Return item metadata and readable content reference by id.
     pub fn get_item_detail(&self, id: &str) -> Result<Option<ItemDetail>> {
         let rows = self.query_with_params(

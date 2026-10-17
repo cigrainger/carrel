@@ -8,7 +8,7 @@ use leptos::ev;
 use leptos::html;
 use leptos::prelude::*;
 use leptos_router::NavigateOptions;
-use leptos_router::hooks::{use_navigate, use_params_map};
+use leptos_router::hooks::{use_location, use_navigate, use_params_map};
 
 #[cfg(target_arch = "wasm32")]
 use crate::api::{self, CreateHighlightNoteRequest, ReadProgressUpdate};
@@ -50,6 +50,16 @@ impl PendingNoteDraft {
 #[component]
 pub fn ReadingView() -> impl IntoView {
     let params = use_params_map();
+    let location = use_location();
+    let app_links = crate::app_links::use_app_links();
+    let focus_highlight = Signal::derive(move || {
+        location
+            .hash
+            .get()
+            .strip_prefix("#highlight-")
+            .filter(|id| !id.is_empty())
+            .map(str::to_owned)
+    });
     #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))]
     let item_id = Memo::new(move |_| params.read().get("id").unwrap_or_default());
     let item = RwSignal::new(None::<ItemDetail>);
@@ -94,6 +104,11 @@ pub fn ReadingView() -> impl IntoView {
         })
     });
     use_action_handler("toggle-reading-sidebar", move || sidebar.toggle());
+    use_action_handler("copy-carrel-link", move || {
+        if let Ok(link) = carrel_core::app_link::AppLink::item(&item_id.get_untracked()) {
+            app_links.copy(link);
+        }
+    });
 
     use_keymap_layer(default::reading_layer());
     use_keymap_layer(default::item_action_layer());
@@ -505,6 +520,8 @@ pub fn ReadingView() -> impl IntoView {
                                         item=detail
                                          highlights=visible_highlights
                                          highlights_ready=highlights_ready
+                                         focus_highlight=focus_highlight
+                                         link_activation=app_links.activation
                                          body_ref=body_ref
                                          status=status
                                          can_next=Signal::derive(move || can_navigate_adjacent(item.get(), list_navigation.get(), Direction::Next))
@@ -587,6 +604,7 @@ pub fn ReaderActions(
 /// User-initiated item metadata surface.
 #[component]
 pub fn ItemInfo(item: ItemDetail, on_close: UnsyncCallback<()>) -> impl IntoView {
+    let app_link = carrel_core::app_link::AppLink::item(&item.id).ok();
     let url = item
         .primary_url
         .clone()
@@ -619,6 +637,7 @@ pub fn ItemInfo(item: ItemDetail, on_close: UnsyncCallback<()>) -> impl IntoView
                     <Icon name=IconName::Close/>
                 </button>
             </header>
+            <crate::app_links::CopyLinkButton link=Signal::stored(app_link)/>
             <dl>
                 <div>
                     <dt>"Source"</dt>
@@ -740,6 +759,8 @@ pub fn ArticleContent(
     item: ItemDetail,
     #[prop(into)] highlights: Signal<Vec<HighlightDetail>>,
     #[prop(default = Signal::stored(true), into)] highlights_ready: Signal<bool>,
+    #[prop(default = Signal::stored(None), into)] focus_highlight: Signal<Option<String>>,
+    #[prop(default = Signal::stored(0), into)] link_activation: Signal<u64>,
     body_ref: NodeRef<html::Div>,
     status: StatusController,
     #[prop(into)] can_next: Signal<bool>,
@@ -770,7 +791,13 @@ pub fn ArticleContent(
     let link_original = StoredValue::new(item.primary_url.clone());
 
     #[cfg(not(target_arch = "wasm32"))]
-    let _ = (&highlights, highlights_ready, status);
+    let _ = (
+        &highlights,
+        highlights_ready,
+        focus_highlight,
+        link_activation,
+        status,
+    );
 
     #[cfg(target_arch = "wasm32")]
     {
@@ -784,7 +811,8 @@ pub fn ArticleContent(
             let Some(body) = body_ref.get() else {
                 return;
             };
-            let hash_id = highlights::current_hash_highlight_id();
+            link_activation.track();
+            let hash_id = focus_highlight.get();
             let focus_id =
                 highlights::focus_target_after_load(highlights_ready.get(), hash_id.as_deref());
             let failed =
