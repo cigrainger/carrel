@@ -18,13 +18,14 @@ Windows and Linux arm64 are not in the initial release matrix.
 
 ## Make a release
 
-1. Confirm CI passes on the intended commit and review the release limitations.
+1. Choose a reviewed commit, run local checks and review the release limitations.
    Check the app's Cargo version and `tauri.conf.json` version agree.
 2. Create and push an annotated version tag, for example `v0.1.0-alpha.1`, on
    the reviewed commit. Tagging starts native builds; the tag must match the
    app version. Do not move an existing published tag.
 3. Inspect the workflow's draft prerelease and its packages, source archive,
-   release notes and `SHA256SUMS`.
+   release notes and `SHA256SUMS`. Require branch CI to pass on the release commit
+   before publishing; artifact preparation can run alongside those checks.
 4. Test installation/launch with the development server stopped. Complete the
    applicable native/file-picker and physical peer checks, recording actual
    evidence and remaining limitations. Publish the draft when ready.

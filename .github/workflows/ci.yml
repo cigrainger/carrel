@@ -2,6 +2,7 @@ name: CI
 
 on:
   push:
+    branches: ['**']
   pull_request:
 
 permissions:
@@ -9,10 +10,10 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  CARGO_BUILD_JOBS: 2
+  CARGO_BUILD_JOBS: 4
   CARGO_TERM_COLOR: always
 
 jobs:
@@ -20,10 +21,19 @@ jobs:
     name: Rust / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
+    env:
+      CARGO_BUILD_JOBS: ${{ matrix.cargo_jobs }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, macos-15, macos-15-intel]
+        include:
+          - os: ubuntu-24.04
+            cargo_jobs: 4
+          # The standard Apple Silicon runner has 7 GB of RAM.
+          - os: macos-15
+            cargo_jobs: 2
+          - os: macos-15-intel
+            cargo_jobs: 4
 
     steps:
       - name: Checkout
@@ -48,6 +58,10 @@ jobs:
         env:
           RUSTDOCFLAGS: -D rustdoc::broken_intra_doc_links -D rustdoc::invalid_html_tags
         run: cargo doc --workspace --no-deps --locked
+
+      - name: Pedantic review (advisory)
+        if: runner.os == 'Linux'
+        run: cargo clippy --workspace --all-targets --locked -- -W clippy::pedantic
 
   webview:
     name: Actual CSR build

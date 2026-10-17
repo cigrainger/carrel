@@ -59,6 +59,8 @@ evidence but uses mocked native commands.
 The publication changes passed all 406 Rust tests, formatting, native and
 CSR/WASM Clippy with warnings denied, and Rustdoc link/HTML checks locally.
 Native all-target Clippy also passed on the declared minimum Rust 1.95 toolchain.
+CI treats standard Clippy warnings as failures and records pedantic findings as
+an advisory pass, for focused follow-up batches rather than mechanical rewrites.
 Five release-tool tests cover version and artifact boundaries. The static guide
 builds with local links checked; temporary WebKit review covers its chapters at
 desktop and phone widths in light/dark themes, plus local search and asset use.

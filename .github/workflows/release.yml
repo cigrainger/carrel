@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  CARGO_BUILD_JOBS: 2
+  CARGO_BUILD_JOBS: 4
   CARGO_TERM_COLOR: always
   NO_COLOR: 'true'
 
@@ -48,18 +48,23 @@ jobs:
     name: Package / ${{ matrix.platform }}
     needs: source
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 120
+    timeout-minutes: 180
+    env:
+      CARGO_BUILD_JOBS: ${{ matrix.cargo_jobs }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: macos-15
+            cargo_jobs: 2
             platform: macos-arm64
             bundles: dmg
           - os: macos-15-intel
+            cargo_jobs: 4
             platform: macos-x86_64
             bundles: dmg
           - os: ubuntu-24.04
+            cargo_jobs: 4
             platform: linux-x86_64
             bundles: deb,appimage
     steps:
