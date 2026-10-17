@@ -159,7 +159,40 @@ html .page-wrapper, html .sidebar { transition: none; }
 .sidebar .chapter .section { padding-left: 0; }
 #mdbook-menu-bar { margin: 0 40px; border-bottom: 1px solid var(--carrel-rule); }
 .menu-title { font-size: 13px; letter-spacing: .015em; }
-.nav-chapters { border-radius: 0; font-size: 26px; }
+/* mdBook's full-height chapter links cover the masthead. Bound the hit area
+   and hover surface to the arrow itself, including the narrow footer links. */
+.nav-chapters, .mobile-nav-chapters {
+  box-sizing: border-box;
+  width: 44px;
+  min-width: 44px;
+  max-width: 44px;
+  height: 44px;
+  border: 1px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--carrel-muted);
+  font-size: 26px;
+  line-height: 1;
+  justify-content: center;
+  align-items: center;
+  transition: none;
+}
+.nav-chapters { top: calc(50% - 22px); bottom: auto; }
+.nav-chapters.previous { inset-inline-start: 12px; margin-inline-start: 0; }
+#mdbook-sidebar-toggle-anchor:checked ~ .page-wrapper .nav-chapters.previous {
+  inset-inline-start: calc(var(--sidebar-width) + var(--sidebar-resize-indicator-width) + 12px);
+}
+.nav-chapters.next { inset-inline-end: 12px; }
+.mobile-nav-chapters { display: inline-flex; border-color: var(--carrel-rule); }
+.nav-chapters:hover, .nav-chapters:focus-visible,
+.mobile-nav-chapters:hover, .mobile-nav-chapters:focus-visible {
+  background: var(--carrel-moss);
+  border-color: var(--carrel-rule);
+  color: var(--fg);
+  text-decoration: none;
+  transition: none;
+}
+.nav-wrapper { min-height: 44px; }
 #mdbook-searchbar { border: 1px solid var(--carrel-rule); border-radius: 0; background: var(--carrel-raised); color: var(--fg); padding: 14px; }
 .eyebrow { font: 11px/1.5 var(--carrel-sans); text-transform: uppercase; letter-spacing: .11em; font-weight: 550; }
 .content .eyebrow { font: 11px/1.5 var(--carrel-sans); }
@@ -206,6 +239,32 @@ body:has(.carrel-home) .content main { max-width: 1216px; }
 .content .text-link { font: 13px/1.5 var(--carrel-sans); text-decoration: underline; text-underline-offset: 6px; }
 .text-link span { display: inline-block; margin-left: 10px; }
 .release-note { flex-basis: 100%; color: var(--carrel-muted); font: 11px/1.5 var(--carrel-sans); }
+
+/* The relationship is the network: two deliberately connected readers,
+   with a selected article travelling between their independent archives. */
+.peer-network {
+  display: grid;
+  grid-template-columns: .9fr 1.1fr;
+  gap: 80px;
+  padding: 44px 0 48px;
+  margin-bottom: 56px;
+  border-block: 1px solid var(--carrel-rule);
+}
+.peer-story h2 { margin-bottom: 24px; font-size: 46px; line-height: 1.07; letter-spacing: -.05em; }
+.peer-story > p:not(.eyebrow) { margin-bottom: 24px; font-size: 18px; line-height: 1.6; }
+.peer-diagram { display: grid; grid-template-columns: minmax(0, 1fr) 130px minmax(0, 1fr); align-items: center; }
+.peer-node { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 20px 10px; border: 1px solid var(--carrel-rule); background: var(--carrel-raised); text-align: center; }
+.peer-node svg { width: 44px; height: 39px; margin: 2px 0 8px; }
+.peer-node strong { font: 22px/1.2 var(--carrel-sans); letter-spacing: -.03em; }
+.peer-node > span { font: 10px/1.5 var(--carrel-sans); color: var(--carrel-muted); }
+.peer-node .peer-private { margin-top: 7px; padding-top: 12px; border-top: 1px solid var(--carrel-rule); }
+.peer-connection { display: flex; flex-direction: column; gap: 12px; text-align: center; font: 10px/1.5 var(--carrel-sans); }
+.peer-connection > span:last-child { color: var(--carrel-muted); }
+.peer-connection-rule { position: relative; display: block; height: 1px; background: var(--fg); }
+.peer-connection-rule::after { content: ""; position: absolute; right: 1px; top: -3px; width: 6px; height: 6px; border-right: 1px solid var(--fg); border-bottom: 1px solid var(--fg); transform: rotate(-45deg); }
+.peer-model figcaption { margin-top: 24px; font-size: 18px; line-height: 1.6; }
+.peer-model .peer-availability { margin-top: 16px; font: 13px/1.65 var(--carrel-sans); color: var(--carrel-muted); }
+.peer-model .peer-self-sync { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--carrel-rule); font: 13px/1.65 var(--carrel-sans); color: var(--carrel-muted); }
 
 /* A typeset specimen, not a screenshot. All apparent app controls are text. */
 .reading-room { padding-bottom: 12px; }
@@ -295,6 +354,10 @@ body:has(.carrel-home) .content main { max-width: 1216px; }
   .opening-deck > p { font-size: 23px; }
   .opening-actions { gap: 18px; }
   .opening-actions .site-button { gap: 20px; padding-inline: 15px; }
+  .peer-network { grid-template-columns: 1fr; gap: 32px; }
+  .peer-story h2 { font-size: 43px; }
+  .peer-story > p:not(.eyebrow) { max-width: 620px; }
+  .peer-model { max-width: 640px; }
   .specimen-layout { grid-template-columns: 150px 1fr; }
   .specimen-window-dots { width: 105px; }
   .specimen-page { display: block; padding: 35px; }
@@ -338,6 +401,15 @@ body:has(.carrel-home) .content main { max-width: 1216px; }
   .opening-actions { margin-top: 26px; gap: 18px 24px; }
   .opening-actions .site-button { padding-inline: 18px; gap: 35px; }
   .release-note { font-size: 10px; }
+  .peer-network { padding: 30px 0 32px; margin-bottom: 36px; gap: 26px; }
+  .peer-story h2 { font-size: 34px; }
+  .peer-diagram { grid-template-columns: minmax(0, 1fr) 90px minmax(0, 1fr); }
+  .peer-node { padding: 16px 8px; }
+  .peer-node strong { font-size: 19px; }
+  .peer-node > span { font-size: 9px; }
+  .peer-node svg { width: 34px; height: 30px; }
+  .peer-connection { font-size: 9px; padding-block: 12px; }
+  .peer-model .peer-availability, .peer-model .peer-self-sync { font-size: 12px; }
   .specimen-layout { display: block; }
   .specimen-sidebar { display: none; }
   .specimen-window-dots { width: auto; gap: 4px; }
@@ -372,6 +444,7 @@ body:has(.carrel-home) .content main { max-width: 1216px; }
 }
 
 @media print {
+  .nav-chapters, .mobile-nav-chapters, .nav-wrapper, .nav-wide-wrapper { display: none !important; }
   :root, .light, .rust, .navy, .coal, .ayu {
     --bg: #fff; --fg: #173d32; --carrel-muted: #536359;
     --carrel-rule: #c5cdbb; --carrel-raised: #fff; --carrel-moss: #e3e7d6;
@@ -384,7 +457,7 @@ body:has(.carrel-home) .content main { max-width: 1216px; }
   .carrel-definition { display: none; }
   .opening-deck { display: block; margin-top: 24px; }
   .opening-deck > p { font-size: 23px; }
-  .reading-room, .reading-acts, .why-carrel, .commitments, .start-reading { break-inside: avoid; }
+  .peer-network, .reading-room, .reading-acts, .why-carrel, .commitments, .start-reading { break-inside: avoid; }
   .reading-acts, .commitments, .start-reading { padding: 35px 0; gap: 30px; }
   .why-carrel { background: #fff; color: #173d32; border-block: 1px solid #c5cdbb; padding: 35px 0; }
   .why-carrel a, .why-heading .eyebrow { color: #173d32; }

@@ -49,14 +49,25 @@ not a screenshot or a claim about delivered features.
 Inter and Source Serif 4 (regular and italic) are copied from the app's bundled
 OFL assets, with their licenses, into `site/src/assets/`. No font build step or
 remote font service is introduced. A small header partial supplies ordinary
-home, guide, philosophy and source links. An optional script connects its Paper /
-Dark control to mdBook's existing theme preferences; all reading and navigation
-remain available without that script. The default mdBook template, search,
-chapter controls and theme machinery remain upstream-maintained.
+home, guide, peer-to-peer explanation and source links. An optional script
+connects its Light / Dark control to mdBook's existing theme preferences; all
+reading and navigation remain available without that script. The default mdBook
+template, search, chapter controls and theme machinery remain upstream-maintained.
 
-The introduction explains reading, keeping and deliberate one-person sharing,
-then distinguishes the current pre-alpha from the wider vision. Installation
-and recovery details belong to the guide rather than the opening paragraph.
+Desktop chapter arrows are bounded 44px square controls in the reading gutters;
+their hover and focus treatments stay within those controls and never cover the
+masthead or article. Narrow screens retain mdBook's footer chapter navigation
+with the same square controls. Their ordinary links and keyboard shortcuts remain.
+
+The opening identifies Carrel as a peer-to-peer reader. A section immediately
+below it illustrates two readers connected by explicit, verified contact details:
+the selected article, cached images and share note travel to the friend, while
+personal annotations and reading state stay private. It explains waiting while
+offline, relay connectivity when needed, and separate private own-device sync.
+This is the implemented one-person model, not a public network or group feed.
+The introduction then covers reading and keeping passages and distinguishes
+the current pre-alpha from the wider vision. Installation and recovery details
+belong to the guide rather than the opening paragraph.
 Focus uses the same rust/pale-coral roles as the app. There are no analytics,
 signup forms, remote assets or animated promotional surfaces. Generated output
 stays out of the repository. Markdown, the header partial, one stylesheet and

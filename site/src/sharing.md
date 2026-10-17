@@ -3,6 +3,22 @@
 Carrel has two different connections: **Devices** pairs your own installations;
 **People** connects distinct readers. A friend should create their own identity.
 
+## What travels between readers
+
+Each person keeps their own archive and identity. You exchange contact codes,
+compare public keys and explicitly follow each other. Carrel then exchanges
+chosen articles peer to peer, with relay connectivity where needed. There is no
+Carrel account or central service we operate.
+
+A share carries the chosen article, its cached images and your share note. Your
+friend receives a copy they can read offline and annotate independently. Your
+personal highlights, notes, subscriptions and reading state stay private. Pairing
+your own desktops is a separate connection that can sync that private state;
+following a friend does not grant the same access.
+
+Shares wait locally while a desktop is offline. Exchange retries while both
+apps are open; a locally saved share is not a delivery receipt.
+
 ## Set up your identity
 
 Open Settings → Devices → **Set up sync**, and choose your own recovery

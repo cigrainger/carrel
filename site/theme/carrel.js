@@ -9,7 +9,7 @@
         theme => document.documentElement.classList.contains(theme)
     );
     const update = () => {
-        const next = isDark() ? 'Paper' : 'Dark';
+        const next = isDark() ? 'Light' : 'Dark';
         control.querySelector('.appearance-label').textContent = next;
         control.setAttribute('aria-label', `Switch to ${next.toLowerCase()} appearance`);
     };

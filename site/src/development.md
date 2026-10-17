@@ -82,7 +82,7 @@ website repository or application service.
 
 After a site edit, build with `just docs` and run `python3 scripts/check_docs.py`
 to check local links and anchors. Preview both the introduction and a guide
-chapter at desktop and narrow widths, in Paper and Dark. Check local search,
+chapter at desktop and narrow widths, in Light and Dark. Check local search,
 contents, keyboard focus, no-JavaScript reading and print layout before opening
 a pull request. Generated `site/book` output stays untracked.
 
