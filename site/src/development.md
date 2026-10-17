@@ -70,9 +70,21 @@ retains full dependency debugging when you need it.
 
 Install `mdbook` 0.5.4 with `cargo install mdbook --version 0.5.4 --locked`.
 `just docs` builds this guide into ignored `site/book`; `just docs-serve`
-previews it. Guide sources are ordinary Markdown under `site/src`, with one
-small stylesheet. GitHub Pages deploys that output; there is no separate
+previews it. Sources live under `site/src`: the introduction uses semantic HTML
+inside Markdown, and the guide uses ordinary Markdown. `site/theme` contains
+the shared header, stylesheet, favicons and a small optional appearance-control
+script. The default mdBook template still owns search, contents, themes and
+chapter navigation. Bundled Inter and Source Serif 4 assets (and their OFL
+licenses) are copied from the desktop app into `site/src/assets`; keep those
+copies in step when updating the app's fonts. No remote assets or additional
+build tools are needed. GitHub Pages deploys that output; there is no separate
 website repository or application service.
+
+After a site edit, build with `just docs` and run `python3 scripts/check_docs.py`
+to check local links and anchors. Preview both the introduction and a guide
+chapter at desktop and narrow widths, in Paper and Dark. Check local search,
+contents, keyboard focus, no-JavaScript reading and print layout before opening
+a pull request. Generated `site/book` output stays untracked.
 
 The engineering documents under `docs/` remain the source of truth for product,
 architecture, schema and interaction decisions. Keep implemented guarantees

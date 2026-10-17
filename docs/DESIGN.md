@@ -36,14 +36,31 @@ These commitments are non-negotiable for the v1 product. Subsequent sections ope
 
 ### Public guide
 
-The small guide under `site/` shares the app's Paper and Dark color roles below.
-It is a static mdBook with a contents sidebar, local search and ordinary links
-to source and releases. System sans-serif headings and Georgia prose avoid a
-second font asset pipeline. A 760px content column, 18px body text and 40px
-heading carry the reading hierarchy; narrow screens use 17px and 34px.
-Focus uses the same rust/pale-coral roles as the app. There are no remote assets,
-analytics, signup forms or animated promotional surfaces. Generated output stays
-out of the repository; Markdown and one stylesheet are the maintained sources.
+The public site under `site/` is a static mdBook with two reading scales: an
+editorial introduction and a practical reader's guide. Both share the app's
+Paper, forest, moss and Dark roles below, its Ribbon mark, square controls and
+restrained rules. The introduction uses a broad, asymmetrical composition and
+large grotesk typography; the guide retains a 760px reading column, 18px serif
+prose, a contents sidebar and local search. Narrow screens stack the introduction
+and use the guide's existing collapsible contents. Print keeps the content and
+omits navigation. The home page's reader specimen is explicitly illustrative,
+not a screenshot or a claim about delivered features.
+
+Inter and Source Serif 4 (regular and italic) are copied from the app's bundled
+OFL assets, with their licenses, into `site/src/assets/`. No font build step or
+remote font service is introduced. A small header partial supplies ordinary
+home, guide, philosophy and source links. An optional script connects its Paper /
+Dark control to mdBook's existing theme preferences; all reading and navigation
+remain available without that script. The default mdBook template, search,
+chapter controls and theme machinery remain upstream-maintained.
+
+The introduction explains reading, keeping and deliberate one-person sharing,
+then distinguishes the current pre-alpha from the wider vision. Installation
+and recovery details belong to the guide rather than the opening paragraph.
+Focus uses the same rust/pale-coral roles as the app. There are no analytics,
+signup forms, remote assets or animated promotional surfaces. Generated output
+stays out of the repository. Markdown, the header partial, one stylesheet and
+the small theme-control script are the maintained site sources.
 
 ### Reading Room revision of Field
 
