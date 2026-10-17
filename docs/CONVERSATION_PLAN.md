@@ -121,8 +121,8 @@ Schema migration 11 adds projections/staging and journals original legacy sharin
 bytes without re-signing, rewriting archives or following people. Migration 12
 adds the local atomic-send manifest, preserving the existing social wire protocol.
 Both readers
-need this source version for profiles, group vouches and conversations. These
-features are newer than the published alpha.2 packages.
+need alpha.3 or later for profiles, group vouches and conversations. Alpha.2
+packages do not support these records.
 
 ## Verification and first trial
 
@@ -155,4 +155,4 @@ For a first trial, use the same current build on each desktop and complete the
    Check that the draft/passage survives, and other participants receive no code.
 
 Physical desktops, native file selection and manual release packaging remain
-separate checks. This feature does not publish a new release or alter alpha.2.
+separate checks; alpha.3 release notes distinguish them from automated evidence.

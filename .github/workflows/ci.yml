@@ -15,6 +15,8 @@ concurrency:
 env:
   CARGO_BUILD_JOBS: 4
   CARGO_TERM_COLOR: always
+  # Each peer fixture opens several databases and endpoints, independently of Cargo jobs.
+  RUST_TEST_THREADS: '2'
 
 jobs:
   rust:

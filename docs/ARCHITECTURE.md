@@ -743,6 +743,11 @@ We do not have UI integration tests in v1. This is a deliberate choice: UI tests
 
 Property-based tests (via `proptest`) are used heavily in `carrel-core` to verify monotonicity invariants of the fact model.
 
+CI and release jobs limit concurrent test fixtures to two, separately from Cargo's
+build jobs. Peer fixtures each open several databases and endpoints; unbounded
+test parallelism competes for resources on shared runners. The same real-peer
+assertions and deadlines apply on every platform.
+
 ### Build and deployment
 
 `cargo tauri build` invokes the production CSR frontend build and native bundler.

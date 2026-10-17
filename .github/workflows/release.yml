@@ -21,6 +21,7 @@ env:
   CARGO_BUILD_JOBS: 4
   CARGO_TERM_COLOR: always
   NO_COLOR: 'true'
+  RUST_TEST_THREADS: '2'
 
 jobs:
   source:

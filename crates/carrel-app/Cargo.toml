@@ -1,6 +1,6 @@
 [package]
 name = "carrel-app"
-version = "0.1.0-alpha.2"
+version = "0.1.0-alpha.3"
 edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
@@ -40,6 +40,11 @@ tracing-subscriber = { workspace = true }
 tempfile = { workspace = true }
 url = { workspace = true }
 zeroize = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# deep-link 2.6.2 constructs ParseOption without defaults; 0.21.3 added fields.
+# Remove this compatibility bound after a release containing upstream fix #3711.
+rust-ini = "=0.21.1"
 
 [build-dependencies]
 tauri-build = { workspace = true }
