@@ -1,0 +1,24 @@
+name: Set up Carrel desktop
+description: Install the recorded Rust toolchain, native prerequisites and Cargo cache
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      with:
+        python-version: '3.12'
+    - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable action
+      with:
+        toolchain: 1.95.0
+        targets: wasm32-unknown-unknown
+        components: rustfmt, clippy
+    - name: Install Linux native prerequisites
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential pkg-config libclang-dev \
+          libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
+          libayatana-appindicator3-dev librsvg2-dev patchelf
+    - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      with:
+        save-if: ${{ github.event_name != 'pull_request' }}

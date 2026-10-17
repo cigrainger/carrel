@@ -1,120 +1,124 @@
 # Carrel
 
-A reading and curation tool for the open web — and for books, papers, podcasts, and everything else worth reading. Local-first, peer-to-peer, no servers we run, no engagement metrics, no growth loops.
+**A reading life of your own.**
 
-In spirit: a successor to Google Reader's social layer. In practice: a desktop app that owns your reading life under your own keys.
+Carrel is a desktop reader for the open web. Subscribe to feeds, save articles,
+read offline, keep passages and notes, and send something worth reading to a
+person you trust. Your archive lives on your computer, under your own keys.
+
+It takes inspiration from Google Reader's small circle of trusted curators,
+and from the habit of keeping a commonplace book. Reading comes first.
+
+[Guide](https://cigrainger.github.io/carrel/) ·
+[Releases](https://github.com/cigrainger/carrel/releases) ·
+[Vision](docs/VISION.md) · [Contributing](CONTRIBUTING.md)
+
+## What you can do
+
+- **Read comfortably.** A compact context bar, stable source sidebar, four
+  reading fonts, Paper/Sepia/Dark/Black themes, and Editorial or Dense lists.
+  Keyboard navigation and return-to-list restoration keep your place.
+- **Build an archive.** RSS, Atom and JSON Feed subscriptions; discovery from
+  website addresses; arbitrary article URLs; cached text and images; offline
+  title/body search; optional source folders; OPML import and export.
+- **Keep what you notice.** Durable highlights and notes, full annotation review,
+  deliberate conflict resolution, and Markdown export.
+- **Share by choice.** Follow a person by public key and share one archived
+  article with an optional note. Personal notes, highlights and reading state
+  stay private. Your own devices can synchronize through a separate pairing flow.
+
+Completion is explicit. Opening an article, scrolling to the end or going to the
+next one does not mark it read. Lists are chronological, with explicit **Load
+older**. There are no engagement metrics, recommendations, notifications or
+telemetry, and no Carrel account or service we operate.
 
 ## Status
 
-Early. Pre-alpha. The local reading loop, archive, offline search, annotation
-review and article URL capture work. Two-device peer-to-peer self-sync is
-implemented and integration tested; a physical two-machine check remains.
-Private article sharing with a trusted person is implemented and tested with
-isolated local peers. Physical two-machine networking remains a manual check.
+**Pre-alpha: `0.1.0-alpha.1`.** The local reader, archive, annotations, self-sync
+engine and first private-sharing flow are implemented. Automated tests cover
+isolated stores and real in-process peers, including audience separation,
+revocation and conflicting offline edits. The frontend has separate native and
+CSR/WASM checks.
 
-This repository is the home of the project's design documents, code, and (eventually) releases. The design documents are stable enough to guide implementation, and the foundation crates are now taking shape: the Cargo workspace, Cozo schema, identity primitives, keystore, CLI, feed ingestion, readable article extraction, content-shape detection, and the first Tauri + Leptos desktop reader surfaces are implemented. The CLI remains a development surface rather than end-user software.
+Physical two-computer sharing, live native file-picker selection and broader
+platform usability remain manual release checks. This is an early tool for
+careful trials, with no independent security audit. See [security](SECURITY.md)
+and the [first-friend checklist](docs/PRIVATE_SHARING_PLAN.md#first-friend-trial).
 
-## Documents
+Release automation builds native Apple Silicon and Intel Mac packages, plus
+Linux x86-64 packages, with SHA-256 checksums. A version tag creates a **draft
+prerelease** for review. Mac trial builds are ad-hoc signed and not notarized;
+see the [installation guide](site/src/getting-started.md). Published builds, when
+available, are on [GitHub Releases](https://github.com/cigrainger/carrel/releases).
 
-- [`docs/VISION.md`](docs/VISION.md) — what Carrel is, why it exists, what it will never do
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — how the system is put together
-- [`docs/SCHEMA.md`](docs/SCHEMA.md) — the data model
-- [`docs/DESIGN.md`](docs/DESIGN.md) — visual and interaction design
+Books/papers metadata, Pocket import, send-to-ereader, mobile and public sharing
+are future work. The [vision](docs/VISION.md) describes the destination; this
+README describes what exists.
 
-If you're trying to understand the project, read VISION first.
+## Run from source
 
-## Development
+You need Rust **1.95 or newer**, a C/C++ toolchain, and the
+[Tauri platform prerequisites](https://v2.tauri.app/start/prerequisites/).
+On macOS, install Xcode Command Line Tools. Linux needs the WebKitGTK 4.1 and
+other development packages listed in the [development guide](site/src/development.md).
 
-Carrel is a Rust workspace requiring Rust 1.95 or later. The desktop frontend uses Leptos 0.8 and Tauri 2, with stable dependency versions recorded in `Cargo.lock`. Install `just`, `trunk`, and `cargo-tauri` for the development commands, and add the WASM standard library to your Rust toolchain:
-
-```bash
+```sh
+git clone https://github.com/cigrainger/carrel.git
+cd carrel
 rustup target add wasm32-unknown-unknown
+cargo install trunk --version 0.21.14 --locked
+cargo install tauri-cli --version 2.10.0 --locked
 ```
 
-The common development commands are:
+With [just](https://just.systems/) installed:
 
-```bash
-just check   # format check, native + WASM clippy, tests
-just test    # run all tests
-just dev     # run the Tauri desktop app in dev mode
-just build   # build the desktop app bundle
-just cli     # run CLI commands
+```sh
+just dev          # desktop app with hot reload
+just check        # formatting, native + WASM lint, workspace tests
+just build        # release app and platform packages
 ```
 
-The native frontend tests use Leptos's SSR feature. `just frontend-check` separately compiles and lints the CSR/WASM code used by the real desktop webview, and is included in `just check` and CI.
+Without just, run `cargo tauri dev` from `crates/carrel-app`. The Tauri build
+hook builds the Leptos CSR frontend with Trunk; you do not need Node or npm.
+The first build compiles native dependencies and can take a while.
 
-Normal development and test builds retain line-level debugging for Carrel's
-code, omit dependency debug symbols, and disable incremental caches to keep
-disk use manageable. For full debugger inspection, use `cargo build --profile
-debugging` or `cargo test --profile debugging`. Release builds are unaffected.
+Close the development app before opening an installed copy: they use the same
+local archive by default. On macOS it lives in
+`~/Library/Application Support/Carrel`; on Linux, `~/.local/share/carrel`
+(or under XDG_DATA_HOME). `CARREL_DATA_DIR` selects an isolated archive for
+development. Keymap configuration uses the platform's configuration directory,
+or `CARREL_CONFIG_DIR`. See [data and recovery](site/src/data-and-recovery.md)
+before moving an archive.
 
-The desktop app adopts the Reading Room revision of Field: neutral Paper and
-forest Dark surfaces, quieter date gutters, grotesk titles, serif excerpts and
-a reading column for Highlights. Sepia and Black remain available; existing
-Light preferences use Paper. It has bundled fonts, a collapsible
-navigation and source sidebar (Cmd+B), explicit reading completion, saved position restoration,
-highlights and notes, and local lists for Today, Reading, Library, Unread,
-Starred, individual feeds and source folders. **Load older** extends lists through the archive.
-**Import OPML** and **Export OPML** in Settings → Sources use native file dialogs;
-importing keeps existing subscription settings. Nested OPML folders become readable folder
-paths, exported as named groups. Assign an optional folder to each source in
-Settings → Sources; blank leaves it unfiled. Sidebar folder names open combined
-article lists, and their disclosure buttons collapse the source rows.
-Source and folder lists show the newest publication first, using arrival time
-only for undated posts. Each article list can search titles and cached
-text offline; `/` focuses search and `\` clears it. Every word matches a word
-beginning, within the current filter. The query and loaded results survive
-opening an article and returning. Highlights supports full note review, note
-editing, deliberate removal, and a complete Markdown export through a native
-save dialog. **Save article** in the context bar or its app menu (Cmd+N) archives an article
-URL and its images without subscribing to the site. Saving preserves the current
-view and offers **Read article** or **View in Library** afterward. Existing
-articles retain their identity, archive, highlights and reading state. A failed
-capture keeps the URL available for retry; partial image caching is stated.
-**Add source** is available in the sidebar, Settings → Sources and the app menu.
-Two-device self-sync is described in
-[`docs/SELF_SYNC_PLAN.md`](docs/SELF_SYNC_PLAN.md).
+## Find your way around
 
-For private sharing, set up your identity in **Settings → Devices**, then use
-**Settings → People**. Exchange contact codes directly, review the full public
-key, and explicitly follow each other. A bare public key can be saved before
-connection information arrives. In the reader, **Share article** (`c` or `C`)
-opens a person picker with an optional note; saved shares wait locally until
-the desktops can connect. Only the chosen article, its cached images and that
-note are shared. Private highlights, notes and reading state stay private.
-**Library → Shared with you** shows received articles, with their vouches also
-available in reader Info. Settings → People lets you retry a connection, remove
-a person or withdraw a sent vouch. Withdrawal preserves an article already
-received. This initial flow connects one desktop per person; contact pins and
-sent history belong to that desktop.
-People offers Copy public key / Copy contact code, with a complete-text fallback
-if clipboard access is unavailable. Sent articles extend with Load older; retry
-and withdrawal keep the loaded history. The first two-desktop friend trial is
-described in [`docs/PRIVATE_SHARING_PLAN.md`](docs/PRIVATE_SHARING_PLAN.md#first-friend-trial).
+The engine is all Rust: Tauri and Leptos at the desktop boundary, Cozo as the
+source of truth, and Iroh for peer transport and verified replication.
 
-One context bar holds list or reader controls. **Aa** in the reader offers theme,
-four bundled reading fonts, text size, line width and spacing. **Settings** (Cmd+,)
-contains Reading, Sources, People, Devices and Keyboard sections, including Editorial/Dense
-article lists. Preferences are remembered on this installation and changing
-layout preserves the visible passage or row. Closing Settings resumes the same
-article or list. The context bar's app menu keeps commands reachable with the
-sidebar hidden. Cmd+K finds working commands, sources and articles in the local
-archive; `?` shows the effective shortcuts with native modal focus behavior.
-**Settings → Sources** and **Source activity**, opened through a failure's **Details**
-control or the command palette, explain incomplete updates and retry individual
-sources without interrupting the reader. Cmd+R refreshes feeds and Cmd+Shift+R
-opens Source activity.
+| Crate | Responsibility |
+| --- | --- |
+| `carrel-core` | Fact model, signatures, causal state, keymaps and reading rules |
+| `carrel-store` | Cozo transactions, local archive, search and key persistence |
+| `carrel-feeds` | Polite HTTP, feed discovery/parsing and sanitized extraction |
+| `carrel-sync` | Identity authorization, Iroh mirror, private device and friend protocols |
+| `carrel-app` | Native commands/workers and Leptos webview |
+| `carrel-cli` | Headless development and diagnostics |
 
-The CLI can initialize a local data directory, print install info, run schema
-migrations, execute raw Cozo queries, subscribe to feeds, fetch RSS/Atom/JSON
-Feed subscriptions, cache readable article HTML and images, inspect and
-recompute content-shape facts, and show a text preview of cached items. It
-remains a development surface.
+Read [VISION](docs/VISION.md) first, then [ARCHITECTURE](docs/ARCHITECTURE.md).
+[CODE_MAP](docs/CODE_MAP.md) connects behaviors to source and tests.
+[SCHEMA](docs/SCHEMA.md) defines stored facts and trust rules; [DESIGN](docs/DESIGN.md)
+defines the reading interface. [AGENTS.md](AGENTS.md) records project practice for
+human and AI contributors. The [engineering review](docs/ENGINEERING_REVIEW.md)
+records the publication audit and its limits.
 
 ## License
 
-Carrel is licensed under the GNU Affero General Public License v3.0 or later. See [`LICENSE`](LICENSE).
+Carrel is free software under **AGPL-3.0-or-later**. Distributed derivatives stay
+under strong copyleft; modified versions made available for network interaction
+must also offer their corresponding source as the license requires. This fits a
+reader whose users should be able to inspect, modify and keep their tools.
+See [COPYRIGHT](COPYRIGHT), the full [license](LICENSE), and the
+[GNU explanation](https://www.gnu.org/licenses/why-affero-gpl.html).
 
-## Contributing
-
-The project is currently being built by a small group for a small group. Once there's something to use, we'll think about contribution. In the meantime, the design documents are the artifact; reading them and disagreeing with them is the most useful contribution.
+Bundled fonts and icons retain their own licenses; see [THIRD_PARTY](THIRD_PARTY.md).
+Contributions are welcome within the project's small, deliberate scope.

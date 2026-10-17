@@ -1,0 +1,48 @@
+/* The guide shares the app's Paper/forest roles. It has no remote assets. */
+.light {
+  --bg: #f3f4ea;
+  --fg: #173d32;
+  --sidebar-bg: #e3e7d6;
+  --sidebar-fg: #536359;
+  --sidebar-active: #173d32;
+  --links: #173d32;
+  --inline-code-color: #173d32;
+  --quote-bg: #e1e8d4;
+  --quote-border: #819180;
+  --table-border-color: #c5cdbb;
+  --table-header-bg: #e3e7d6;
+  --table-alternate-bg: #fafbf5;
+}
+.navy, .coal, .ayu {
+  --bg: #18251f;
+  --fg: #eff2e4;
+  --sidebar-bg: #21362b;
+  --sidebar-fg: #b0bdab;
+  --sidebar-active: #eff2e4;
+  --links: #d5dfb9;
+  --inline-code-color: #d5dfb9;
+  --quote-bg: #314a36;
+  --quote-border: #6d816c;
+  --table-border-color: #405344;
+  --table-header-bg: #21362b;
+  --table-alternate-bg: #203128;
+}
+.content { max-width: 760px; }
+.content main { font: 18px/1.65 Georgia, serif; }
+.content :is(h1, h2, h3, h4), .menu-title, .sidebar, .menu-bar {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+.content h1 { font-size: 40px; font-weight: 500; line-height: 1.1; letter-spacing: -.04em; }
+.content h2 { font-size: 26px; font-weight: 500; letter-spacing: -.025em; }
+.content h3 { font-size: 20px; font-weight: 550; }
+.content a { text-decoration: underline; text-underline-offset: 3px; }
+.content :is(code, pre) { font-size: 14px; }
+.content table { font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+.content :is(td, th) { padding: 10px 12px; }
+.content hr { border-color: var(--table-border-color); }
+:focus-visible { outline: 2px solid #a23423; outline-offset: 3px; }
+:is(.navy, .coal, .ayu) :focus-visible { outline-color: #e7ad83; }
+@media (max-width: 600px) {
+  .content main { font-size: 17px; }
+  .content h1 { font-size: 34px; }
+}

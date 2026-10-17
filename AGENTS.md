@@ -74,11 +74,13 @@ Maintainers may also keep a private workboard adjacent to this repo for in-fligh
 ```bash
 just dev               # run carrel-app in dev mode with hot reload
 just test              # run all tests across the workspace
-just check             # cargo clippy + cargo fmt --check
+just check             # formatting, native + WASM Clippy, workspace tests
 just cli ...           # run carrel-cli with arguments
 ```
 
-(These commands are aspirational at the time of writing; if `just` isn't set up yet, the first task that establishes it will document the equivalents.)
+`justfile` is authoritative. Use `cargo fmt --all` from the workspace root;
+frontend source is a separate workspace member. `just docs` builds the static
+guide and `just docs-serve` previews it with mdBook 0.5.4.
 
 ### Inner loop
 

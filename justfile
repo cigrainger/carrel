@@ -17,11 +17,11 @@ frontend-check:
 
 # Format check
 fmt-check:
-    cargo fmt --check
+    cargo fmt --all --check
 
 # Apply formatting
 fmt:
-    cargo fmt
+    cargo fmt --all
 
 # Run the desktop app in dev mode
 dev:
@@ -34,3 +34,10 @@ build:
 # Run the CLI
 cli *ARGS:
     cargo run -p carrel-cli -- {{ARGS}}
+
+# Build or preview the static guide (mdBook 0.5.4)
+docs:
+    mdbook build site
+
+docs-serve:
+    mdbook serve site --open

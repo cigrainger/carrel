@@ -1,4 +1,4 @@
-//! Typed item read APIs used by CLI and future application commands.
+//! Typed item metadata and readable-cache references used by the CLI and app.
 
 use std::collections::BTreeMap;
 

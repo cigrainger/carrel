@@ -40,9 +40,10 @@ pub const CURRENT_SCHEMA_VERSION: u32 = migrations::CURRENT_SCHEMA_VERSION;
 
 /// Handle to the local Carrel store.
 ///
-/// `Store` is intentionally thin in this brief. Feature briefs will add typed
-/// accessors as they need them; for now the CLI and tests can use raw CozoScript
-/// through `query`.
+/// Clones share the database and mutation locks. Typed methods commit facts,
+/// derived projections and durable sync work together; a clone is not a snapshot.
+/// Raw queries are reserved for migrations, diagnostics and existing application
+/// projections. Incoming peer data must use the verified typed import methods.
 #[derive(Clone)]
 pub struct Store {
     db: DbInstance,

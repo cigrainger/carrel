@@ -1,0 +1,14 @@
+name: Set up Carrel documentation
+description: Install the verified mdBook 0.5.4 Linux x86-64 binary
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        curl --fail --location --retry 3 \
+          https://github.com/rust-lang/mdBook/releases/download/v0.5.4/mdbook-v0.5.4-x86_64-unknown-linux-gnu.tar.gz \
+          --output "$RUNNER_TEMP/mdbook.tar.gz"
+        echo "3f28de05dafca9d0f2eab99c662116b0e37b89b1d96a08f8f430b9eeae958cd7  $RUNNER_TEMP/mdbook.tar.gz" | sha256sum --check
+        mkdir -p "$RUNNER_TEMP/mdbook-bin"
+        tar -xzf "$RUNNER_TEMP/mdbook.tar.gz" -C "$RUNNER_TEMP/mdbook-bin" mdbook
+        echo "$RUNNER_TEMP/mdbook-bin" >> "$GITHUB_PATH"

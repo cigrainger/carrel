@@ -8,6 +8,12 @@ It is *not* the place for the data model itself (see `SCHEMA.md`), the visual an
 
 This is also a living document. When an architectural decision changes, this document changes — ideally in the same change as the code. If you find drift between this document and the code, treat it as a bug and fix the document.
 
+The current implementation is pre-alpha. The local reader, archive/search,
+annotations, private self-sync and one-person sharing flow exist. Public
+syndication, group audiences, OPDS, mobile and identity-recovery UI are future
+designs. They are marked below; a design sketch does not establish an implemented
+API. [CODE_MAP.md](CODE_MAP.md) locates source and tests.
+
 ## The shape of the system
 
 Carrel is a desktop application that runs on the user's own computer, holds all of the user's reading data locally, and synchronizes a subset of that data peer-to-peer with people the user has chosen to follow. There is no server we run, no centralized service, no account system. The user's identity is a cryptographic keypair held on their own machine.
@@ -68,14 +74,16 @@ carrel/
 │   ├── carrel-feeds/           # RSS/Atom/JSON, readability extraction
 │   ├── carrel-sync/            # Iroh bridge, peer management
 │   ├── carrel-app/             # Tauri shell + Leptos frontend
-│   └── carrel-cli/             # headless CLI for development and power users
-├── docs/                       # this and other docs
-└── design/                     # design tokens, fonts, sample data
+│   └── carrel-cli/             # headless development and diagnostic CLI
+├── docs/                       # engineering and product decisions
+└── site/                       # Markdown guide, built with mdBook for Pages
 ```
 
 Layering rules, strictly enforced:
 
-- `carrel-core` depends on nothing in the workspace. It is pure logic: fact types, identity, signing, validation. It has no I/O. It can be tested in microseconds.
+- `carrel-core` depends on nothing in the workspace. It owns fact types, signing,
+  validation and deterministic resolution. It has no filesystem/network I/O;
+  its key-generation convenience explicitly uses operating-system randomness.
 - `carrel-store` depends only on `carrel-core`. It owns Cozo. It exposes a typed API for reading and writing facts. It does not know about networks, files outside the database, or UI.
 - `carrel-feeds` depends only on `carrel-core`. It does HTTP, parsing, and content extraction. It exposes pure functions: given input, produce items. It does not know about Cozo or Iroh.
 - `carrel-sync` depends on `carrel-core` and `carrel-store`. It owns Iroh. It bridges between Iroh-doc fact streams and the local Cozo store.
@@ -91,22 +99,21 @@ These are the load-bearing flows. Understanding them is the fastest way to under
 ### 1. Writing a local fact (e.g., starring an item)
 
 ```
-[Webview] user presses 's'
-   ↓ tauri::invoke("star_item", {id})
-[carrel-app::commands] star_item(id) handler
+[Webview item actions] capture explicit star intent and update optimistically
+   ↓ invoke("set_item_star", {itemId, starred})
+[native item command] load the installation's operational key
    ↓
-[carrel-app::core] core.star_item(id, true)
-   ↓
-[carrel-store] writes fact: [item_id, :starred, true, validity, sig?]
-   ↓
-[carrel-sync] bridge observes the write, mirrors to appropriate iroh-doc
-   ↓ (for self-only facts: doc:self; for shared facts: doc:public or audience doc)
-[carrel-app::events] emit("fact-changed", {kind: "star", entity: id})
-   ↓
-[Webview] subscribed components refetch or update local signals
+[carrel-store] transaction: signed causal action + projection + durable outbox
+   ↓ return confirmed state; UI reconciles or rolls back on failure
+[carrel-sync worker] publish the durable outbox to the private mirror
+   ↓ verified incoming changes increment the observed revision
+[app-owned observer] refresh mounted lists/reader, preserving their context
 ```
 
-The principle: a fact is written exactly once at the source of truth (Cozo), and all other consumers learn about it via emitted events. The bridge to Iroh is asynchronous and observational; the user's action does not block on sync.
+Cozo is authoritative. Wake-ups can accelerate work, but the transaction and
+outbox retain it across restart. The current frontend uses command results and
+observed revisions, not a generic fact-changed event/use_query layer. Local
+actions do not wait for peer delivery.
 
 The private Iroh endpoint uses the installation's certified operational key as
 its TLS endpoint identity. Endpoint hooks check the locally bound master and
@@ -217,13 +224,13 @@ subscription. Discovery adds no persistent relations or infrastructure.
    ↓ for each new entry:
 [carrel-feeds] extract readable content (Rust readability, fallback to trafilatura)
    ↓ sanitize HTML, rewrite image URLs to local blobs
-[carrel-sync::blobs] cache article HTML and images as iroh-blobs
+[carrel-store::blobs] verify/store content-addressed HTML and images locally
    ↓
 [carrel-store] write item facts + identifier facts + content reference
    ↓
-[carrel-app::events] emit("fact-changed", {kind: "item", entity: id})
+[native feed status] retain source-specific results and update revision
    ↓
-[Webview] "Today" view updates
+[frontend feed controller] refresh current lists while preserving their context
 ```
 
 Feed writes are idempotent through stable identifiers (feed GUID, URL, content
@@ -231,6 +238,11 @@ hash) at the Cozo layer. Scheduled polling uses conditional requests. An article
 extraction failure does not prevent saving the entry's metadata; an explicit
 desktop **Fetch** downloads the feed body again and retries content caching,
 including when the feed's validators have not changed.
+HTTP bodies are bounded while reading decoded chunks, including responses
+without Content-Length: 16 MiB for documents/assets and 512 KiB for robots.txt.
+Oversized policies fail closed before fetching the target. A freshly fetched
+robots policy is applied directly; an expired or disabled cache cannot discard
+that policy or panic the worker.
 An existing item's first `discovered_at` timestamp is retained during refresh;
 metadata and cached content can update without changing its arrival order in
 the archive. Today uses publication time, with first arrival as the fallback
@@ -266,21 +278,16 @@ partial image caching returns a quiet warning with the saved article.
 ### 3. Sync with a peer
 
 ```
-[carrel-app::background::sync_loop] for each followed peer:
-   ↓
-[carrel-sync] open or reuse iroh-net connection to peer's NodeId
-   ↓
-[carrel-sync] subscribe to peer's relevant docs (public, granted-audience docs)
-   ↓ iroh-doc range reconciliation runs in the background
-[carrel-sync::bridge] new entries arrive from peer
-   ↓ for each:
-[carrel-sync::bridge] verify signature against peer's known pubkey
-   ↓ check fact type is acceptable from peers (e.g., shares yes, read-state no)
-[carrel-store] write fact to local Cozo
-   ↓ if fact references blobs we don't have:
-[carrel-sync::blobs] fetch missing blobs from peer
-   ↓
-[carrel-app::events] emit("fact-changed", {...})
+[certified own desktop] reconcile private docs through the bound-device gate
+   ↓ bridge verifies typed fact, original signature, author and scope
+[carrel-store] transactionally retain history, dependencies and projections
+   ↓ fetch only verified referenced hashes/lengths and verify received bytes
+[native revision] refresh mounted views
+
+[manually followed person] use the separate carrel/share/1 protocol
+   ↓ verify contact certificate against TLS identity and pinned master
+   ↓ select only records and cached resources signed for this recipient
+[carrel-store] install received archive/vouch, preserving personal state
 ```
 
 The sync layer is unconditionally trust-minimizing. Every fact arriving from a peer is signature-verified against that peer's pubkey before being written. Any fact type not on the "acceptable from peers" allow-list is dropped. Even from someone we follow, we only accept the facts we asked for.
@@ -288,23 +295,25 @@ The sync layer is unconditionally trust-minimizing. Every fact arriving from a p
 ### 4. Rendering an article in the reading view
 
 ```
-[Webview] user navigates to /items/{id}
-[Leptos] route component mounts, calls use_query("get_item_detail", {id})
-   ↓ tauri::invoke
-[carrel-app::commands] get_item_detail(id)
+[Webview] user navigates to /item/{id}
+[Leptos reading route] invoke("get_item", {id})
+   ↓ async native command dispatches a blocking worker
+[native item projection] query metadata, personal state and cache references
    ↓
-[carrel-store] Cozo query: item + identifiers + content reference + tags + highlights
+[carrel-store] typed archive/annotation reads and native read projections
    ↓
-[carrel-app::commands] for content reference, fetch blob bytes from iroh-blobs
-   ↓ return ItemDetail struct (item metadata + readable HTML + highlights)
-[Webview] renders ItemHeader + ItemBody + ItemFooter
-   ↓ ItemBody applies highlights inline by walking the DOM and matching position selectors
-   ↓ subscribes to "fact-changed" events filtered to this item, refetches on relevant changes
+[native worker] read/verify local blobs, sanitize HTML, restrict image grants
+   ↓ return ItemDetail; query annotations separately
+[Webview] render article and apply text-selector highlights
+   ↓ preserve route ownership, progress, selection and visible passage on refresh
 ```
 
-The latency budget for this flow is sub-frame for warm content and "as fast as the disk read" for cold content. There should never be a spinner.
+Warm reads should feel immediate. Database/cache reads and HTML preparation run
+off the UI thread; there is no measured sub-frame latency claim in this pass.
 
 ### 5. Publishing a public share
+
+**Future design; not implemented.** Current sharing is private and person-scoped.
 
 ```
 [Webview] user shares an item with audience set including "public"
@@ -344,14 +353,12 @@ needed to issue authorizations or revocations, not for ordinary reading.
 
 The master key is persisted as a passphrase-encrypted key file: Argon2id derives a local encryption key and XChaCha20-Poly1305 encrypts the Ed25519 seed. Key-file format v1 fixes Argon2id version 0x13 with 19,456 KiB of memory, two iterations, one lane, and a 32-byte output; these were the argon2 0.5.3 defaults and must remain stable across dependency updates. Compatibility fixtures check that older encrypted keys and canonical Ed25519 signatures still work. Device keys are persisted in plain local JSON in v1 because they are used continuously and the device filesystem is the trust boundary. The master key is the recovery secret; the device key is an operational sub-key.
 
-When user A follows user B:
-1. A obtains B's "card": a signed JSON object containing B's pubkey, NodeId(s), display name, the doc IDs they publish to, and B's signature over the contents.
-2. A verifies the signature.
-3. A stores B as a known peer in the local Cozo store.
-4. A's sync layer connects to B's NodeId and subscribes to B's `doc:public` (and any audience docs B has granted A access to via capability tokens).
-5. Facts begin flowing one-way from B to A.
-
-Cards are exchanged out of band: pasted as URLs, scanned as QR codes, or imported from a canonical directory site (which is just a static aggregation of self-hosted card files). The directory has no authority; it's a phone book, not a phone company.
+Following currently uses an explicitly reviewed public key and optional signed
+contact card, exchanged as copy/paste text. The card binds a certified device
+and connection information to that master key. Each reader pins the other;
+the typed sharing protocol checks the contact certificate and recipient before
+selecting facts. Friends receive no private document capability. Directory/QR
+discovery, public docs and group audience grants are future scope.
 
 Trust is never inferred. There is no "friend of friend," no automatic trust propagation, no global graph. If user A wants to follow user C because B follows C, A must explicitly do so.
 
@@ -594,20 +601,25 @@ The discipline to maintain right now, while building v1, is the layering rule: *
 
 ## Background workers
 
-The Tauri app launches several long-running async tasks at startup:
+The Tauri app currently launches these background tasks at startup:
 
 - **Feed fetcher**: every 60 seconds, queries Cozo for feeds due for fetch, fetches them politely (per-host concurrency limits, conditional headers, backoff on failures), and ingests new items.
-- **Sync orchestrator**: maintains iroh-net connections to followed peers, runs sync loops for each subscribed doc, handles reconnection on network changes.
-- **Blob fetcher**: services queued blob requests (incoming references that we don't have local content for).
-- **OPDS server**: a tiny HTTP server bound to a configurable address (default localhost) serving the user's reading queue as an OPDS catalog for ereader devices.
-- **Public publisher**: watches for facts marked as belonging to the special `public` audience and emits them as a JSON Feed (and Atom feed) to a user-configured output path. See "Public syndication" below.
-- **Compactor** (future): periodic schema-aware compaction of Cozo and iroh-doc storage.
+- **Search rebuild**: repairs the local cached-text index when needed.
+- **Sync runtime**: starts the authorized private-device and friend endpoints,
+  drains durable outboxes and exchanges permitted facts/content with peers.
+  It owns its endpoint lifecycle and shutdown; reconnecting does not bypass
+  authorization or turn a person's contact into a self-device capability.
 
-Each worker is a `tokio::task` that owns its own state and communicates with the rest of the system via the shared `carrel-store`. They do not share mutable state directly; they share the database.
+Workers use Tokio tasks and shared store handles, with explicit runtime locks
+where endpoint or fetch lifecycle requires them. OPDS serving, a public publisher
+and periodic compaction are future work, not startup tasks in the current app.
 
-## Public syndication
+## Public syndication (planned)
 
-Carrel has two distinct output channels for shared facts: peer-to-peer sync (via iroh-docs to followers) and public syndication (via standard feed formats to a published file).
+The intended second output channel is public syndication through standard feed
+formats to a published file. The current app implements deliberate private
+sharing; it has no public publisher or public-audience interface. The following
+describes the planned boundary, not a current delivery guarantee.
 
 The trust model treats `public` as a special audience that any Carrel node can compute against without authorization. Facts shared to the `public` audience flow through a different path: rather than being signed and published to an iroh-doc, they are emitted as entries in a JSON Feed (and Atom feed, for compatibility) that the user publishes via their own infrastructure.
 
@@ -628,7 +640,10 @@ Anti-pattern: routing public shares through any infrastructure Carrel runs. The 
 
 We use `thiserror` for typed errors at crate boundaries and `anyhow` only at the application's outermost layer (Tauri command handlers). A typed error includes enough context to be actionable; the outer layer translates into user-visible messages.
 
-The UI never shows raw error chains. The "system status" panel surfaces structured error information for users who want to look. Errors from background workers are logged but never modal.
+The UI translates failures into operation-specific recovery text. Source details
+can expose technical diagnostics on request. Background failures do not force a
+modal over an article; source activity, Settings and the quiet status strip keep
+recovery reachable.
 
 Anti-pattern: using `anyhow` inside library crates. The cost of the typed-error discipline is real (more enum variants), but the benefit is that consumers can pattern-match on failure modes and decide.
 
@@ -642,13 +657,18 @@ We use `tracing` throughout. Spans are used for operations that span async bound
 - `debug`: enough detail to reconstruct what happened in a session
 - `trace`: too much for normal operation
 
-In development, all levels go to stderr. In production, logs go to a per-session file with rotation; users can find them via the "system status" panel.
+Current tracing writes to stderr with an environment filter. Rotating log files
+and a system-status export UI are not implemented. Source/person recovery is
+shown through existing structured status and Settings surfaces.
 
 We never log fact contents. We log fact metadata (kind, id, length) but not bodies, because logs may be shared during debugging and we treat user data as confidential by default.
 
 ### Async runtime
 
-Tokio is the runtime. The Tauri app launches it explicitly. All I/O goes through async APIs. Synchronous work that takes more than a few milliseconds runs on `tokio::task::spawn_blocking` to avoid blocking the runtime threads.
+Tauri manages the Tokio runtime. Network work uses async APIs; store and HTML
+operations are synchronous. Heavy command/worker pipelines and item-list/detail
+reads dispatch blocking work away from the UI thread. Short mutation commands
+still use synchronous typed store operations; not all I/O is asynchronous.
 
 ### Configuration
 
@@ -673,13 +693,14 @@ Property-based tests (via `proptest`) are used heavily in `carrel-core` to verif
 
 ### Build and deployment
 
-`cargo build --release` produces a Tauri binary. We sign and distribute via:
-
-- **macOS**: notarized .dmg via Apple Developer credentials.
-- **Linux**: AppImage and Flatpak.
-- **Windows**: signed .msi via Authenticode (later).
-
-Continuous builds run on every push; releases are tagged and built reproducibly. We do not auto-update silently; updates are user-initiated.
+`cargo tauri build` invokes the production CSR frontend build and native bundler.
+The release workflow uses recorded tools and Cargo.lock on native Apple Silicon,
+Intel Mac and Linux x86-64 runners. Tags produce draft prereleases with DMGs,
+Debian/AppImage packages, matching source, a manifest and SHA-256 checksums.
+Mac trial builds are ad-hoc signed, not Developer ID signed/notarized. Flatpak,
+Windows, authenticated signing and bit-for-bit reproducibility are future work.
+Updates are manual; no silent updater is implemented. See the
+[release guide](../site/src/releases.md).
 
 ## Anti-patterns
 
@@ -717,14 +738,22 @@ Honest accounting of what's hard about this architecture, so future-us doesn't g
 
 **Garbage collection deferred.** Facts grow unbounded. We accept this for v1 because at our scale (one user, hundreds of feeds, thousands of items per year) it doesn't matter for years.
 
-**Identity recovery is unforgiving.** Lose your private key, lose your identity. We accept this and mitigate via passphrase-encrypted backups, optional Shamir splitting, and cross-device sync. We do not add a recovery server.
+**Identity recovery is unforgiving.** Losing the master key or its passphrase can
+lose the ability to authorize/revoke devices. The encrypted originating key and
+manual private backups matter. Recovery UI and Shamir splitting are not
+implemented; there is no recovery server.
 
 ## What we don't know yet
 
 Documenting our uncertainty so we can revisit:
 
-- Whether iroh-docs' performance characteristics will hold at the scale we eventually want (tens of thousands of facts, dozens of peers). We have benchmarks for "small" cases. The first time we hit a wall, we'll know.
-- Whether the two-store bridge will become a bottleneck or a source of bugs. So far the bridge is small (low hundreds of lines) and idempotent. If it grows to thousands of lines, that's a sign we've made it do too much.
+- Whether Iroh's performance characteristics hold at the scale we eventually
+  want: tens of thousands of facts and dozens of peers. In-process correctness
+  tests are not a scale benchmark or physical-network trial.
+- Whether the two-store bridge becomes a bottleneck or a source of bugs. Its
+  mappings remain explicit and idempotent; the surrounding private transport and
+  authorization code is substantial. Review responsibilities and test boundaries
+  as it grows instead of relying on an obsolete line-count estimate.
 - Whether the "facts only" model handles every product case we care about. So far it handles all cases we've designed for, but reality has a way of surfacing exceptions. If we find a case that doesn't fit, we revisit before papering over.
 - Whether iroh-willow (the partial-sync evolution) will be ready when we need it. If yes, we migrate. If no, we segment iroh-docs by time window manually.
 

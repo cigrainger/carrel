@@ -34,6 +34,17 @@ These commitments are non-negotiable for the v1 product. Subsequent sections ope
 
 ## Typography
 
+### Public guide
+
+The small guide under `site/` shares the app's Paper and Dark color roles below.
+It is a static mdBook with a contents sidebar, local search and ordinary links
+to source and releases. System sans-serif headings and Georgia prose avoid a
+second font asset pipeline. A 760px content column, 18px body text and 40px
+heading carry the reading hierarchy; narrow screens use 17px and 34px.
+Focus uses the same rust/pale-coral roles as the app. There are no remote assets,
+analytics, signup forms or animated promotional surfaces. Generated output stays
+out of the repository; Markdown and one stylesheet are the maintained sources.
+
 ### Reading Room revision of Field
 
 The adopted 12 October 2026 study is `carrel-site/dist/system.html` and

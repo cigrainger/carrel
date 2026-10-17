@@ -4,6 +4,9 @@ version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Verified peer transport and private fact mirroring for Carrel"
 
 [dependencies]
 carrel-core = { workspace = true }

@@ -1,0 +1,16 @@
+Carrel
+Copyright (C) 2026 Carrel contributors
+
+Unless a file states otherwise, Carrel's original code and documentation are
+licensed under the GNU Affero General Public License, version 3 or, at your
+option, any later version (SPDX: AGPL-3.0-or-later).
+
+Carrel is free software: you can redistribute it and/or modify it under the
+terms of that license as published by the Free Software Foundation.
+
+Carrel is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+A PARTICULAR PURPOSE. See LICENSE for the full terms.
+
+Bundled fonts and icons retain their upstream licenses and notices. See
+THIRD_PARTY.md. Rust dependencies retain the licenses declared by their authors.

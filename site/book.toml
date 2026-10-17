@@ -1,0 +1,18 @@
+[book]
+title = "Carrel"
+description = "A reading life of your own."
+authors = ["Carrel contributors"]
+language = "en"
+src = "src"
+
+[build]
+build-dir = "book"
+
+[output.html]
+site-url = "/carrel/"
+git-repository-url = "https://github.com/cigrainger/carrel"
+edit-url-template = "https://github.com/cigrainger/carrel/edit/main/site/{path}"
+default-theme = "light"
+preferred-dark-theme = "navy"
+no-section-label = true
+additional-css = ["theme/carrel.css"]

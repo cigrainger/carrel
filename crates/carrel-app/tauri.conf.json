@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Carrel",
-  "version": "0.1.0",
+  "version": "0.1.0-alpha.1",
   "identifier": "net.carrel.reader",
   "build": {
     "beforeDevCommand": {
@@ -9,7 +9,7 @@
       "cwd": "."
     },
     "beforeBuildCommand": {
-      "script": "trunk build --release --config Trunk.toml --no-default-features --features csr",
+      "script": "trunk build --release --locked --config Trunk.toml --no-default-features --features csr",
       "cwd": "."
     },
     "devUrl": "http://127.0.0.1:1420",
@@ -36,6 +36,14 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "license": "AGPL-3.0-or-later",
+    "licenseFile": "../../LICENSE",
+    "resources": {
+      "../../LICENSE": "LICENSE",
+      "../../COPYRIGHT": "COPYRIGHT",
+      "../../THIRD_PARTY.md": "THIRD_PARTY.md",
+      "frontend/public/licenses/": "licenses/"
+    },
     "icon": ["icons/icon.png", "icons/icon.icns", "icons/icon.ico"]
   }
 }

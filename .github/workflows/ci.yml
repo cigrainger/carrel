@@ -4,49 +4,84 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_BUILD_JOBS: 2
+  CARGO_TERM_COLOR: always
+
 jobs:
   rust:
     name: Rust / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    permissions:
-      contents: read
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-24.04, macos-15, macos-15-intel]
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          targets: wasm32-unknown-unknown
-
-      - name: Install Tauri Linux dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            build-essential \
-            curl \
-            wget \
-            file \
-            libxdo-dev \
-            libssl-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev
+          persist-credentials: false
+      - uses: ./.github/actions/setup-desktop
 
       - name: Check formatting
-        run: cargo fmt --check
+        run: cargo fmt --all --check
 
       - name: Lint
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
       - name: Compile and lint webview
-        run: cargo clippy -p carrel-app-frontend --target wasm32-unknown-unknown --no-default-features --features csr -- -D warnings
+        run: cargo clippy -p carrel-app-frontend --target wasm32-unknown-unknown --no-default-features --features csr --locked -- -D warnings
 
       - name: Test
-        run: cargo test --workspace
+        run: cargo test --workspace --locked
+
+      - name: Check Rustdoc
+        env:
+          RUSTDOCFLAGS: -D rustdoc::broken_intra_doc_links -D rustdoc::invalid_html_tags
+        run: cargo doc --workspace --no-deps --locked
+
+  webview:
+    name: Actual CSR build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-desktop
+      - name: Install recorded Trunk
+        run: |
+          if ! trunk --version 2>/dev/null | grep -q '0.21.14'; then
+            cargo install trunk --version 0.21.14 --locked
+          fi
+      - name: Build actual client-side webview
+        working-directory: crates/carrel-app
+        env:
+          NO_COLOR: 'true'
+        run: trunk build --locked --config Trunk.toml --no-default-features --features csr
+
+  documentation:
+    name: Docs and release tooling
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-docs
+      - run: mdbook build site
+      - run: python3 scripts/check_docs.py
+      - run: python3 -m unittest discover -s scripts/tests -v
+      - name: Validate workflow syntax
+        run: |
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          "$(go env GOPATH)/bin/actionlint"

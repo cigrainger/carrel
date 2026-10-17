@@ -30,6 +30,12 @@ Thumbs.db
 # Test artifacts
 coverage/
 *.profraw
+__pycache__/
+*.pyc
 
 # Internal workboard — separate private git repo
 /internal/
+
+# Private handovers and local review evidence; historical tracked prototypes stay tracked.
+/work/
+/site/book/
