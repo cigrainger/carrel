@@ -39,3 +39,4 @@ __pycache__/
 # Private handovers and local review evidence; historical tracked prototypes stay tracked.
 /work/
 /site/book/
+/crates/carrel-app/frontend/public/licenses/rust-dependencies.html

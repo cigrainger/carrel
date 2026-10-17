@@ -9,7 +9,7 @@
       "cwd": "."
     },
     "beforeBuildCommand": {
-      "script": "trunk build --release --locked --config Trunk.toml --no-default-features --features csr",
+      "script": "python3 ../../scripts/build_frontend.py",
       "cwd": "."
     },
     "devUrl": "http://127.0.0.1:1420",

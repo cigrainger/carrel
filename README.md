@@ -59,6 +59,7 @@ README describes what exists.
 
 You need Rust **1.95 or newer**, a C/C++ toolchain, and the
 [Tauri platform prerequisites](https://v2.tauri.app/start/prerequisites/).
+Packaging/release scripts use Python 3.11 or newer.
 On macOS, install Xcode Command Line Tools. Linux needs the WebKitGTK 4.1 and
 other development packages listed in the [development guide](site/src/development.md).
 
@@ -68,6 +69,12 @@ cd carrel
 rustup target add wasm32-unknown-unknown
 cargo install trunk --version 0.21.14 --locked
 cargo install tauri-cli --version 2.10.0 --locked
+```
+
+To build installers, also install the recorded license-notice tool:
+
+```sh
+cargo install cargo-about --version 0.9.2 --locked --features cli
 ```
 
 With [just](https://just.systems/) installed:
@@ -121,4 +128,5 @@ See [COPYRIGHT](COPYRIGHT), the full [license](LICENSE), and the
 [GNU explanation](https://www.gnu.org/licenses/why-affero-gpl.html).
 
 Bundled fonts and icons retain their own licenses; see [THIRD_PARTY](THIRD_PARTY.md).
+Production builds generate and bundle the locked Rust dependency notices too.
 Contributions are welcome within the project's small, deliberate scope.

@@ -11,7 +11,8 @@ connects behavior to source and regression tests.
 ## Toolchain
 
 Use Rust 1.95 or newer and a C/C++ compiler. On macOS, install Xcode Command Line
-Tools. On Ubuntu 24.04, the CI/release environment installs:
+Tools. Packaging and release scripts use Python 3.11 or newer. On Ubuntu 24.04,
+the CI/release environment installs:
 
 ```sh
 sudo apt-get update
@@ -27,6 +28,11 @@ rustup target add wasm32-unknown-unknown
 cargo install trunk --version 0.21.14 --locked
 cargo install tauri-cli --version 2.10.0 --locked
 ```
+
+Installer builds also need `cargo install cargo-about --version 0.9.2 --locked
+--features cli`. The production hook generates dependency license notices before
+building the webview. Unresolved licenses fail packaging; the generated HTML is
+ignored locally and included in the native license resources.
 
 These versions are recorded build tools, not a claim about the latest upstream
 release. There is no Node/npm build step. The Tauri hooks invoke Trunk with the

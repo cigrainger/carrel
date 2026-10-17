@@ -1,5 +1,13 @@
 # Third-party notices
 
+Production builds run Cargo About 0.9.2 against the locked workspace, including
+native and WASM targets, and bundle `licenses/rust-dependencies.html` with the
+full selected Rust dependency terms and copyright notices. `about.toml` records
+the accepted license alternatives; unresolved licenses fail CI and packaging.
+MPL-covered sources retain MPL terms and can be obtained through the exact crate
+versions in Cargo.lock. This inventory covers Rust dependencies; native platform
+libraries and distribution packages retain their own upstream terms.
+
 Carrel's original code and documentation are AGPL-3.0-or-later. That grant does
 not relicense third-party fonts, icons or dependencies.
 

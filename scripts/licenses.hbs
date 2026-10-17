@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Carrel — Rust dependency notices</title>
+<style>
+body { margin: 2rem auto; padding: 0 1rem; max-width: 70ch; font: 16px/1.5 system-ui, sans-serif; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 14px/1.5 monospace; }
+section { margin-block: 3rem; border-top: 1px solid; }
+</style>
+</head>
+<body>
+<h1>Rust dependency notices</h1>
+<p>This inventory covers the locked native and webview graph for Carrel's release
+targets, including build dependencies. Some listed crates are used by another
+target or only during the build. Fonts and icons have separate bundled notices.</p>
+{{#each licenses}}
+<section>
+<h2>{{name}}</h2>
+<ul>
+{{#each used_by}}
+<li>{{crate.name}} {{crate.version}}{{#if crate.repository}} — {{crate.repository}}{{/if}}</li>
+{{/each}}
+</ul>
+<pre>{{text}}</pre>
+</section>
+{{/each}}
+</body>
+</html>

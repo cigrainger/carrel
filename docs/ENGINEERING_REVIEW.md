@@ -15,7 +15,9 @@ automation. This is an engineering review, not an independent security audit.
 | Archive queries and cached HTML preparation ran in synchronous native commands | Move item-list/detail reads to async commands with blocking workers, retaining their existing serialized responses. Worker failures do not serialize a panic payload; native projection tests retain behavior coverage. |
 | Package metadata did not declare the existing copyleft grant | Record AGPL-3.0-or-later throughout the workspace, retain the full license and add an explicit copyright/grant notice. |
 | Bundled JetBrains Mono lacked its notice | Include the upstream OFL notice and inventory all bundled fonts/icons. Native packages carry license resources. |
+| Native distribution needed dependency terms as well as Carrel's license | Generate the locked Rust graph's full notices with Cargo About 0.9.2, fail unresolved licensing in CI/packaging, and bundle the generated report without committing it. |
 | Working notes and stale briefing language obscured current guarantees | Ignore local work, correct store API comments, add the code map, refresh contributor practice and distinguish implemented behavior from future plans. |
+| The original desktop skeleton left an unused Library component and an unfinished Lists route | Remove both; unknown addresses offer a route back to the real Library. |
 | README mixed development history with product use | Write a concise product entry point and a separate static guide for installation, reading, sharing, data/recovery, development and releases. |
 | CI checked WASM types but did not build the actual frontend or packages | Add an actual CSR build, native platform checks, Rustdoc/workflow/docs checks, and native draft-release builds. Pin actions by commit and tooling by version. |
 | Distribution lacked a source/artifact contract | Validate versions/tags, require the complete native matrix, archive the fixed source commit, generate a release manifest and SHA-256 checksums, and refuse published-release replacement. Boundary tests cover the tooling. |
@@ -56,6 +58,7 @@ evidence but uses mocked native commands.
 
 The publication changes passed all 406 Rust tests, formatting, native and
 CSR/WASM Clippy with warnings denied, and Rustdoc link/HTML checks locally.
+Native all-target Clippy also passed on the declared minimum Rust 1.95 toolchain.
 Five release-tool tests cover version and artifact boundaries. The static guide
 builds with local links checked; temporary WebKit review covers its chapters at
 desktop and phone widths in light/dark themes, plus local search and asset use.

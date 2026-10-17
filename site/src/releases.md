@@ -35,6 +35,11 @@ The source commit is fixed before matrix builds start. Each build uses
 `Cargo.lock` and pinned desktop tooling. This is repeatable release automation,
 not a claim of byte-for-byte reproducible binaries.
 
+Production builds generate Rust dependency notices using Cargo About 0.9.2 and
+the checked-in `about.toml` policy/template. The native package includes those
+notices, Carrel's license/grant, and the separate font/icon notices. Generated
+notices and build output are not committed.
+
 ## Verify a download
 
 Download `SHA256SUMS` and the packages you intend to install from the same
