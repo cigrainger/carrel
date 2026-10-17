@@ -47,6 +47,15 @@ pub enum FetchError {
         source: reqwest::Error,
     },
 
+    /// A decoded HTTP body exceeded the ingestion budget.
+    #[error("response body for {url} exceeds {limit} bytes")]
+    BodyTooLarge {
+        /// URL whose response exceeded the budget.
+        url: String,
+        /// Maximum decoded body size in bytes.
+        limit: usize,
+    },
+
     /// robots.txt disallows fetching the target URL.
     #[error("robots.txt disallows {url}")]
     RobotsDisallowed {

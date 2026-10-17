@@ -25,14 +25,32 @@ const WEBVIEW_BLOB_URI_PREFIX: &str = "carrel-blob://";
 
 /// List items from the local store.
 #[tauri::command]
-pub fn list_items(state: State<'_, AppState>, filter: ItemFilter) -> Result<ItemPage<ItemSummary>> {
-    list_item_page_from_store(&state.store, filter)
+pub async fn list_items(
+    state: State<'_, AppState>,
+    filter: ItemFilter,
+) -> Result<ItemPage<ItemSummary>> {
+    let store = state.store.clone();
+    // Tauri's synchronous commands run on the UI thread. Keep archive queries
+    // and cached HTML preparation wholly inside a blocking worker instead.
+    tauri::async_runtime::spawn_blocking(move || list_item_page_from_store(&store, filter))
+        .await
+        .map_err(|source| AppError::BackgroundTask {
+            operation: "list archive",
+            source,
+        })?
 }
 
 /// Return one item by id, if it exists.
 #[tauri::command]
-pub fn get_item(state: State<'_, AppState>, id: String) -> Result<Option<ItemDetail>> {
-    get_item_from_parts(&state.store, &state.blobs, &id)
+pub async fn get_item(state: State<'_, AppState>, id: String) -> Result<Option<ItemDetail>> {
+    let store = state.store.clone();
+    let blobs = state.blobs.clone();
+    tauri::async_runtime::spawn_blocking(move || get_item_from_parts(&store, &blobs, &id))
+        .await
+        .map_err(|source| AppError::BackgroundTask {
+            operation: "load article",
+            source,
+        })?
 }
 
 /// Persist reading progress for one item.

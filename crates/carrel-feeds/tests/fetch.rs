@@ -287,3 +287,74 @@ fn test_fetcher() -> Fetcher {
     )
     .unwrap()
 }
+
+#[tokio::test]
+async fn expired_robots_policy_is_applied_without_reading_it_back_from_cache() {
+    for allowed in [true, false] {
+        let server = MockServer::start().await;
+        let policy = if allowed {
+            "User-agent: *\nAllow: /\n"
+        } else {
+            "User-agent: *\nDisallow: /\n"
+        };
+        Mock::given(path("/robots.txt"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(policy))
+            .expect(2)
+            .mount(&server)
+            .await;
+        Mock::given(path("/feed.xml"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("feed"))
+            .expect(if allowed { 2 } else { 0 })
+            .mount(&server)
+            .await;
+        let fetcher = Fetcher::with_config(
+            DEFAULT_USER_AGENT,
+            FetcherConfig {
+                robots_cache_ttl: Duration::ZERO,
+                min_interval_per_host: Duration::ZERO,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        for _ in 0..2 {
+            let result = fetcher
+                .fetch(&format!("{}/feed.xml", server.uri()), None, None)
+                .await;
+            if allowed {
+                assert!(matches!(result, Ok(FetchResult::Updated { .. })));
+            } else {
+                assert!(matches!(result, Err(FetchError::RobotsDisallowed { .. })));
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn oversized_document_and_robots_bodies_are_rejected_before_parsing() {
+    for robots in [false, true] {
+        let server = MockServer::start().await;
+        let limit = if robots { 512 * 1024 } else { 16 * 1024 * 1024 };
+        if !robots {
+            allow_robots(&server).await;
+        }
+        Mock::given(path(if robots { "/robots.txt" } else { "/feed.xml" }))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![b'x'; limit + 1]))
+            .mount(&server)
+            .await;
+        let error = test_fetcher()
+            .fetch(&format!("{}/feed.xml", server.uri()), None, None)
+            .await
+            .unwrap_err();
+        assert!(matches!(error, FetchError::BodyTooLarge { limit: actual, .. } if actual == limit));
+        if robots {
+            assert!(
+                server
+                    .received_requests()
+                    .await
+                    .unwrap()
+                    .iter()
+                    .all(|r| r.url.path() != "/feed.xml")
+            );
+        }
+    }
+}
