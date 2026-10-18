@@ -20,6 +20,17 @@ Use Conventional Commits (`fix:`, `feat:`, `docs:`, `refactor:`, `test:`, `chore
 Keep generated assets, databases, keys, caches and local handovers out of commits.
 `cargo fmt --all` formats every workspace member.
 
+## Debugging and test builds
+
+Normal development and test builds retain line-level backtraces for workspace
+code, omit dependency debug symbols and disable incremental caches. Only the
+Ed25519 and Curve25519 dependencies are optimized, keeping signature-heavy
+replay and convergence checks practical without changing their verification.
+
+Use `cargo test --profile debugging -p carrel-core` when stepping through code or
+inspecting dependency variables. This opt-in profile restores full debug symbols,
+unoptimized cryptography and incremental compilation.
+
 ## Readable code
 
 Use domain names and small functions with a single purpose. Comments explain

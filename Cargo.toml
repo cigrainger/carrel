@@ -80,6 +80,14 @@ incremental = false
 [profile.dev.package."*"]
 debug = false
 
+# Keep signature-heavy replay/convergence checks practical without optimizing
+# workspace code or removing any verification. Applies to normal test builds too.
+[profile.dev.package.ed25519-dalek]
+opt-level = 2
+
+[profile.dev.package.curve25519-dalek]
+opt-level = 2
+
 # Opt in when inspecting variables or stepping through dependencies.
 [profile.debugging]
 inherits = "dev"
@@ -87,4 +95,12 @@ debug = true
 incremental = true
 
 [profile.debugging.package."*"]
+debug = true
+
+[profile.debugging.package.ed25519-dalek]
+opt-level = 0
+debug = true
+
+[profile.debugging.package.curve25519-dalek]
+opt-level = 0
 debug = true
