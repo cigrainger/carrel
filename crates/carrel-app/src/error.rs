@@ -97,6 +97,10 @@ impl Serialize for AppError {
             Self::Store(carrel_store::StoreError::AnnotationConflict { .. }) => {
                 "annotation_conflict"
             }
+            Self::Store(carrel_store::StoreError::ReplyDraftConflict { .. }) => "draft_conflict",
+            Self::Store(carrel_store::StoreError::ReplyDraftRevisionExhausted { .. }) => {
+                "draft_revision_exhausted"
+            }
             Self::Store(carrel_store::StoreError::ConversationUnavailable(participation)) => {
                 use carrel_core::conversation::ConversationParticipation;
                 match participation {
@@ -122,6 +126,10 @@ impl Serialize for AppError {
         };
 
         let message = match self {
+            Self::Store(carrel_store::StoreError::ReplyDraftConflict { .. }) =>
+                "The saved draft changed. Your text is still here. Reload the saved draft and review it before trying again.".into(),
+            Self::Store(carrel_store::StoreError::ReplyDraftRevisionExhausted { .. }) =>
+                "Could not save this draft. Your text is still here; copy it before closing Carrel.".into(),
             Self::Store(carrel_store::StoreError::ConversationUnavailable(participation)) => {
                 use carrel_core::conversation::ConversationParticipation;
                 match participation {
@@ -140,6 +148,36 @@ impl Serialize for AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn draft_errors_keep_their_recovery_kind_without_serializing_store_metadata() {
+        for (source, kind) in [
+            (
+                carrel_store::StoreError::ReplyDraftConflict {
+                    share_id: "private-root".into(),
+                    expected_revision: 9,
+                    current_revision: 10,
+                },
+                "draft_conflict",
+            ),
+            (
+                carrel_store::StoreError::ReplyDraftRevisionExhausted {
+                    share_id: "private-root".into(),
+                },
+                "draft_revision_exhausted",
+            ),
+        ] {
+            let value = serde_json::to_value(AppError::Store(source)).unwrap();
+            assert_eq!(value["kind"], kind);
+            assert!(
+                value["message"]
+                    .as_str()
+                    .unwrap()
+                    .contains("text is still here")
+            );
+            assert!(!value.to_string().contains("private-root"));
+        }
+    }
 
     #[test]
     fn conversation_refusals_keep_typed_reasons_at_the_ui_boundary() {

@@ -54,7 +54,9 @@ Current source also adds encrypted backups and previewed restore into an empty
 installation, with a fresh device key and explicit identity recovery. It adds
 private opt-outs from new group conversations with unfamiliar people and a
 per-conversation Leave action that retains the article and history. These are
-not in the published alpha.3 installers. See [backup and recovery](site/src/backups.md)
+joined by durable local reply drafts, included in encrypted backups and sent
+only by an explicit action. These additions are not in the published alpha.3
+installers. See [backup and recovery](site/src/backups.md)
 and [private conversations](site/src/sharing.md).
 
 Physical two-computer sharing, installed app-link handoff and passage focus,

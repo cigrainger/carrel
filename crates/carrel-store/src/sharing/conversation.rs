@@ -46,6 +46,18 @@ pub struct ReceivedConversation {
     pub closed: bool,
 }
 
+/// A received or own sent conversation on a local article, including withdrawn roots.
+pub struct ItemConversation {
+    /// Original root identity.
+    pub id: String,
+    /// Locally preferred root author name.
+    pub from: String,
+    /// Original signed creation time.
+    pub at_micros: i64,
+    /// Permanent author withdrawal.
+    pub closed: bool,
+}
+
 impl Store {
     /// Verify a person-card target against the original immutable conversation.
     /// Reading an introduction grants no follow or connection authorization.
@@ -70,18 +82,29 @@ impl Store {
     }
     /// All received threads on one local article, including withdrawn vouches.
     pub fn received_item_conversations(&self, item_id: &str) -> Result<Vec<ReceivedConversation>> {
-        let Some(binding) = self.self_identity()? else {
+        let Some(master) = self.local_conversation_history_master()? else {
             return Ok(Vec::new());
         };
-        let rows=self.query_with_params("?[key,created_at] := *social_receipt{share_id,item_id:$item}, *social_record{key,share_id,kind:'share',created_at} :sort -created_at,key",BTreeMap::from([("item".into(),DataValue::from(item_id))]))?;
+        self.received_item_conversations_for_master(item_id, &master)
+    }
+
+    fn received_item_conversations_for_master(
+        &self,
+        item_id: &str,
+        master: &PublicKey,
+    ) -> Result<Vec<ReceivedConversation>> {
+        let rows=self.query_with_params("?[key,created_at] := *social_receipt{share_id,item_id:$item}, *social_record{key,share_id,kind:'share',author,created_at}, author != $master :sort -created_at,key",BTreeMap::from([("item".into(),DataValue::from(item_id)),("master".into(),key_value(*master))]))?;
         rows.rows
             .iter()
             .map(|row| {
                 let Some(ShareFact::Share(root)) = self.social_record(&string(&row[0])?)? else {
                     return Err(invalid("missing received conversation"));
                 };
-                if !root.recipients().contains(&binding.master_pubkey) {
-                    return Err(invalid("conversation is outside the bound identity"));
+                let scope = ThreadScope::from_share(&root)?;
+                if !scope.recipients.contains(master) {
+                    return Err(invalid(
+                        "conversation is outside the local reading identity",
+                    ));
                 }
                 Ok(ReceivedConversation {
                     id: root.id.clone(),
@@ -95,6 +118,82 @@ impl Store {
                 })
             })
             .collect()
+    }
+
+    /// Retained received and own sent threads on a local article, newest first.
+    /// A restored source master permits history reads, never sharing operations.
+    pub fn item_conversations(&self, item_id: &str) -> Result<Vec<ItemConversation>> {
+        let Some(master) = self.local_conversation_history_master()? else {
+            return Ok(Vec::new());
+        };
+        let mut conversations = self
+            .received_item_conversations_for_master(item_id, &master)?
+            .into_iter()
+            .map(|received| ItemConversation {
+                id: received.id,
+                from: received.from,
+                at_micros: received.at_micros,
+                closed: received.closed,
+            })
+            .collect::<Vec<_>>();
+        // Match the signed address to the local archive, not a sender's item ID.
+        // Restrict candidates first so an unrelated removed article cannot fail this read.
+        let rows = self.query_with_params(
+            "address[url] := *item{id:$item,kind:'article',primary_url:url}, url != null\naddress[url] := *item_identifier{item_id:$item,scheme:'url',value:url}\n?[url] := address[url], *item{id:$item,kind:'article'}, not *entity_tombstone{id:$item}",
+            BTreeMap::from([("item".into(), DataValue::from(item_id))]),
+        )?;
+        let addresses = rows
+            .rows
+            .iter()
+            .map(|row| {
+                Ok(crate::ids::canonicalize_external_identifier(&string(
+                    &row[0],
+                )?))
+            })
+            .collect::<Result<std::collections::BTreeSet<_>>>()?;
+        if addresses.is_empty() {
+            return Ok(conversations);
+        }
+        let roots = self.query_with_params(
+            "?[key] := *social_record{key,kind:'share',author:$master} :sort key",
+            BTreeMap::from([("master".into(), key_value(master))]),
+        )?;
+        for row in roots.rows {
+            let Some(ShareFact::Share(root)) = self.social_record(&string(&row[0])?)? else {
+                return Err(invalid("missing own conversation"));
+            };
+            let scope = ThreadScope::from_share(&root)?;
+            if scope.sharer != master {
+                return Err(invalid(
+                    "conversation is outside the local reading identity",
+                ));
+            }
+            let url = root
+                .article
+                .primary_url
+                .as_ref()
+                .ok_or_else(|| invalid("conversation article has no address"))?;
+            if !addresses.contains(&crate::ids::canonicalize_external_identifier(url)) {
+                continue;
+            }
+            if self
+                .article_by_urls_unlocked(std::slice::from_ref(url))?
+                .as_deref()
+                != Some(item_id)
+            {
+                return Err(invalid(
+                    "conversation address differs from the local article",
+                ));
+            }
+            conversations.push(ItemConversation {
+                id: root.id.clone(),
+                from: self.social_name(&scope.sharer)?,
+                at_micros: root.created_at_micros,
+                closed: self.social_share_retracted(&root.id, &scope.sharer, &root.recipient)?,
+            });
+        }
+        conversations.sort_by(|a, b| b.at_micros.cmp(&a.at_micros).then_with(|| a.id.cmp(&b.id)));
+        Ok(conversations)
     }
     /// Read named groups; members remain exact public keys.
     pub fn social_groups(&self) -> Result<Vec<SocialGroup>> {
@@ -324,8 +423,10 @@ impl Store {
     pub fn social_conversation(&self, id: &str) -> Result<Conversation> {
         let share = self.conversation_root(id)?;
         let scope = ThreadScope::from_share(&share)?;
-        let local = self.self_identity()?.ok_or(StoreError::IdentityUnbound)?;
-        if !scope.contains(&local.master_pubkey) {
+        let master = self
+            .local_conversation_history_master()?
+            .ok_or(StoreError::IdentityUnbound)?;
+        if !scope.contains(&master) {
             return Err(invalid("conversation is private to its participants"));
         }
         let rows=self.query_with_params("?[key,created_at,id,parent] := *social_reply{id,key,share_id:$share,parent}, *social_record{key,created_at} :sort created_at,id",BTreeMap::from([("share".into(),DataValue::from(id))]))?;
@@ -353,7 +454,7 @@ impl Store {
             });
         }
         let closed = self.social_share_retracted(id, &scope.sharer, &share.recipient)?;
-        let item_id = self
+        let received_item_id = self
             .query_with_params(
                 "?[item_id] := *social_receipt{share_id:$id,item_id}",
                 BTreeMap::from([("id".into(), DataValue::from(id))]),
@@ -361,8 +462,20 @@ impl Store {
             .rows
             .first()
             .map(|row| string(&row[0]))
-            .transpose()?
-            .unwrap_or_else(|| share.article.id.clone());
+            .transpose()?;
+        // An own root can retain another desktop's item ID without a local receipt.
+        let item_id = if scope.sharer == master {
+            let url = share
+                .article
+                .primary_url
+                .as_ref()
+                .ok_or_else(|| invalid("conversation article has no address"))?;
+            self.article_by_urls_unlocked(std::slice::from_ref(url))?
+                .or(received_item_id)
+                .unwrap_or_else(|| share.article.id.clone())
+        } else {
+            received_item_id.unwrap_or_else(|| share.article.id.clone())
+        };
         Ok(Conversation {
             share,
             item_id,
@@ -550,24 +663,7 @@ impl Store {
             self.discard_staged_social(&fact, from_self)?;
             return Ok(SocialReceive::Existing);
         }
-        let mut params = record_params(&fact)?;
-        let mut script = PUT_RECORD.to_owned();
-        if let Content::Reply {
-            scope, id, parent, ..
-        } = &record.content
-        {
-            params.extend([
-                ("reply".into(), DataValue::from(id.as_str())),
-                ("parent".into(), optional(parent.as_deref())),
-                ("thread".into(), DataValue::from(scope.share_id.as_str())),
-            ]);
-            script.push_str("{ ?[id,key,share_id,parent] <- [[$reply,$key,$thread,$parent]] :put social_reply {id=>key,share_id,parent} }");
-        }
-        if from_self {
-            script.push_str("{ ?[key] <- [[$pf_key]] :rm self_library_incoming {key} }");
-        } else {
-            script.push_str("{ ?[key] <- [[$key]] :rm social_pending {key} }");
-        }
+        let (script, params) = accepted_conversation_transaction(record, from_self)?;
         self.query_with_params(&script, params)?;
         self.social_changed();
         Ok(SocialReceive::Applied)
@@ -883,6 +979,35 @@ impl Store {
             .fetch_add(1, std::sync::atomic::Ordering::Release);
     }
 }
+
+// Call only after verifying audience, consent and accepted dependencies. Keeping
+// assembly separate lets a local Send clear its exact draft in the same commit.
+pub(super) fn accepted_conversation_transaction(
+    record: &Record,
+    from_self: bool,
+) -> Result<(String, BTreeMap<String, DataValue>)> {
+    let fact = ShareFact::Conversation(Box::new(record.clone()));
+    let mut params = record_params(&fact)?;
+    let mut script = PUT_RECORD.to_owned();
+    if let Content::Reply {
+        scope, id, parent, ..
+    } = &record.content
+    {
+        params.extend([
+            ("reply".into(), DataValue::from(id.as_str())),
+            ("parent".into(), optional(parent.as_deref())),
+            ("thread".into(), DataValue::from(scope.share_id.as_str())),
+        ]);
+        script.push_str("{ ?[id,key,share_id,parent] <- [[$reply,$key,$thread,$parent]] :put social_reply {id=>key,share_id,parent} }");
+    }
+    if from_self {
+        script.push_str("{ ?[key] <- [[$pf_key]] :rm self_library_incoming {key} }");
+    } else {
+        script.push_str("{ ?[key] <- [[$key]] :rm social_pending {key} }");
+    }
+    Ok((script, params))
+}
+
 fn numbered_record(
     fact: &ShareFact,
     index: usize,

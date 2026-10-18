@@ -10,7 +10,7 @@ pub(crate) struct ShareTarget {
     pub title: String,
 }
 
-/// Session presentation state, never a sent or synchronized message.
+/// Working composition; the native store owns its durable snapshot.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ConversationDraft {
     pub body: String,
@@ -18,7 +18,11 @@ pub(crate) struct ConversationDraft {
     pub request_id: String,
 }
 impl ConversationDraft {
-    fn acknowledge(&mut self, submitted: &Self, next_request_id: impl FnOnce() -> String) {
+    pub(crate) fn acknowledge(
+        &mut self,
+        submitted: &Self,
+        next_request_id: impl FnOnce() -> String,
+    ) {
         if self.request_id != submitted.request_id {
             return;
         }
@@ -43,7 +47,7 @@ pub(crate) struct Sharing {
     pub error: RwSignal<Option<String>>,
     pub target: RwSignal<Option<ShareTarget>>,
     pub conversation: RwSignal<Option<String>>,
-    pub conversation_drafts: RwSignal<std::collections::BTreeMap<String, ConversationDraft>>,
+    pub drafts: StoredValue<crate::drafts::DraftController>,
     pub pending_conversation_leaves: RwSignal<std::collections::BTreeMap<String, PendingLeave>>,
     pub(crate) loading: RwSignal<bool>,
     pub(crate) loaded: RwSignal<bool>,
@@ -53,14 +57,6 @@ pub(crate) struct Sharing {
     requests: StoredValue<Requests>,
 }
 impl Sharing {
-    /// A late save acknowledges only its own draft, preserving newer composition.
-    pub(crate) fn reply_saved(self, id: &str, submitted: &ConversationDraft) {
-        self.conversation_drafts.try_update(|drafts| {
-            if let Some(current) = drafts.get_mut(id) {
-                current.acknowledge(submitted, request_token);
-            }
-        });
-    }
     /// Leaving the article supersedes a composer that has not opened yet.
     pub(crate) fn cancel_pending(self) {
         self.requests.get_value().invalidate();
@@ -115,16 +111,17 @@ impl Sharing {
     }
 }
 pub(crate) fn provide_sharing() {
+    let history_revision = RwSignal::new(0);
     let sharing = Sharing {
         people: RwSignal::new(api::PeopleSnapshot::default()),
         error: RwSignal::new(None),
         target: RwSignal::new(None),
         conversation: RwSignal::new(None),
-        conversation_drafts: RwSignal::new(std::collections::BTreeMap::new()),
+        drafts: StoredValue::new(crate::drafts::DraftController::new(history_revision)),
         pending_conversation_leaves: RwSignal::new(std::collections::BTreeMap::new()),
         loading: RwSignal::new(false),
         loaded: RwSignal::new(false),
-        history_revision: RwSignal::new(0),
+        history_revision,
         status: crate::status::use_status_controller(),
         preferences: crate::preferences::use_preferences(),
         requests: StoredValue::new(Requests::default()),

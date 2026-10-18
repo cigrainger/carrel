@@ -145,7 +145,10 @@ mod tests {
             other.query("::show_triggers self_state").unwrap().rows,
             old_guard
         );
-        assert!(super::super::migrate_through(&other.db, 13, 15).is_err());
+        assert!(
+            super::super::migrate_through(&other.db, 13, crate::CURRENT_SCHEMA_VERSION + 1)
+                .is_err()
+        );
     }
 
     #[test]

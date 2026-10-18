@@ -258,6 +258,29 @@ pub const CONVERSATION_LEGACY_GUARD: &str = r#"::set_triggers social_conversatio
     }
     on rm { ?[id] := _old[id,scope] :assert none }"#;
 
+/// Installation-local draft slots, deliberately absent from every wire allow-list.
+pub const REPLY_DRAFT_RELATION: &str = ":create social_reply_draft {share_id:String=>revision:Int,body:String?,parent:String?,request_id:String?,retry_device:Bytes?}";
+
+/// Retained counters prevent deletion, rollback and equal-revision replacement.
+pub const REPLY_DRAFT_GUARD: &str = r#"::set_triggers social_reply_draft
+    on put {
+        invalid[id] := _new[id,rev,body,parent,request,device], rev <= 0
+        invalid[id] := _new[id,rev,body,parent,request,device],
+            _old[id,old_rev,old_body,old_parent,old_request,old_device], rev < old_rev
+        invalid[id] := _new[id,rev,body,parent,request,device],
+            _old[id,rev,old_body,old_parent,old_request,old_device],
+            [body,parent,request,device] != [old_body,old_parent,old_request,old_device]
+        invalid[id] := _new[id,rev,null,parent,request,device], [parent,request,device] != [null,null,null]
+        invalid[id] := _new[id,rev,body,parent,null,device], body != null
+        invalid[id] := _new[id,rev,body,parent,request,null], body != null
+        invalid[id] := _new[id,rev,body,parent,request,device],
+            not *social_record{share_id:id,kind:'share'}
+        invalid[id] := _new[id,rev,body,parent,request,device], parent != null,
+            not *social_reply{id:parent,share_id:id}
+        ?[id] := invalid[id] :assert none
+    }
+    on rm { ?[id] := _old[id,rev,body,parent,request,device] :assert none }"#;
+
 /// Staging table renamed to `note` after preserving every old signed revision.
 pub const CREATE_CAUSAL_NOTES: &str = r#"
     :create note_v5 {

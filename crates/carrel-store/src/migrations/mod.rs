@@ -18,9 +18,10 @@ mod v011_conversations;
 mod v012_send_batches;
 mod v013_restore_origin;
 mod v014_conversation_consent;
+mod v015_reply_drafts;
 
 /// The latest schema version known to this crate.
-pub const CURRENT_SCHEMA_VERSION: u32 = 14;
+pub const CURRENT_SCHEMA_VERSION: u32 = 15;
 
 /// Apply all migrations newer than `current_version`.
 pub fn migrate(db: &DbInstance, current_version: u32) -> Result<()> {
@@ -80,6 +81,9 @@ pub(crate) fn migrate_through(
     }
     if current_version < 14 && target_version >= 14 {
         v014_conversation_consent::up(db)?;
+    }
+    if current_version < 15 && target_version >= 15 {
+        v015_reply_drafts::up(db)?;
     }
 
     Ok(())

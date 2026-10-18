@@ -17,8 +17,11 @@ history remains in Git.
   and existing conversations remain available.
 - Leave a conversation without losing its saved article, retained history or
   unsent draft text. Consent and Leave decisions converge across your own desktops.
+- Reply drafts save privately on this desktop, survive restart, and are included
+  in encrypted backups. Send clears its exact draft atomically; deliberate discard
+  and stale-save protection prevent lost or resurrected composition.
 
-Current source upgrades to schema 14 and is not in the alpha.3 installers. Use
+Current source upgrades to schema 15 and is not in the alpha.3 installers. Use
 the same current build on every own desktop to enforce conversation decisions.
 Do not open a migrated archive with an older app. Physical file-picker/recovery
 trials remain manual checks.

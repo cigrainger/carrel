@@ -37,6 +37,7 @@ pub(crate) fn BackupPanel() -> impl IntoView {
     let loads = StoredValue::new(Requests::default());
     let writes = StoredValue::new(crate::writes::use_pending_writes());
     let progress = StoredValue::new(crate::progress::use_progress_writer());
+    let drafts = crate::sharing::use_sharing().drafts;
     let preferences = crate::preferences::use_preferences();
     let preview_heading = NodeRef::<html::H5>::new();
     let restore_input = NodeRef::<html::Input>::new();
@@ -125,10 +126,17 @@ pub(crate) fn BackupPanel() -> impl IntoView {
         let request = guard.begin();
         let tracker = writes.get_value();
         let writer = progress.get_value();
+        let draft_writer = drafts.get_value();
         spawn(async move {
-            writer.flush();
+            writer.flush_for_close();
+            draft_writer.flush_for_close();
             tracker.wait_until_idle().await;
-            let result = if writer.has_unsaved_positions() {
+            if !guard.accepts(request) {
+                return;
+            }
+            let result = if draft_writer.has_unsaved_drafts() {
+                Err("Save or explicitly discard your unsaved reply draft before creating a backup. Reopen its conversation to resolve it.".to_string())
+            } else if writer.has_unsaved_positions() {
                 Err("Save your reading position before creating a backup. Close Settings and try again.".to_string())
             } else {
                 api::local_call::<bool>("create_backup", json!({"passphrase":secret}))
@@ -222,9 +230,20 @@ pub(crate) fn BackupPanel() -> impl IntoView {
         let request = guard.begin();
         let tracker = writes.get_value();
         let writer = progress.get_value();
+        let draft_writer = drafts.get_value();
         spawn(async move {
-            writer.flush();
+            writer.flush_for_close();
+            draft_writer.flush_for_close();
             tracker.wait_until_idle().await;
+            if !guard.accepts(request) {
+                return;
+            }
+            if draft_writer.has_unsaved_drafts() {
+                busy.try_set(false);
+                notice.try_set(None);
+                error.try_set(Some("Save or explicitly discard your unsaved reply draft before restoring. Reopen its conversation to resolve it.".into()));
+                return;
+            }
             if writer.has_unsaved_positions() {
                 if guard.accepts(request) {
                     busy.try_set(false);

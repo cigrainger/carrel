@@ -11,6 +11,7 @@ mod clipboard;
 mod components;
 mod conversations;
 mod desktop;
+mod drafts;
 mod feeds;
 mod highlights;
 mod item_actions;

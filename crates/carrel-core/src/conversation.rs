@@ -6,10 +6,12 @@ use crate::sharing::{Share, ShareError};
 use serde::{Deserialize, Serialize};
 
 mod consent;
+mod draft;
 pub use consent::{
     AdmissionBasis, ConversationControl, ConversationControls, ConversationDecision,
     ConversationParticipation, conversation_control_key, resolve_conversation_controls,
 };
+pub use draft::{ReplyDraft, ReplyDraftInput, ReplyDraftSnapshot};
 
 /// Maximum recipients of one deliberate share (in addition to its author).
 pub const MAX_RECIPIENTS: usize = 16;

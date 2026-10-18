@@ -160,7 +160,8 @@ fn GroupRow(
 #[component]
 pub(crate) fn ConversationDialog() -> impl IntoView {
     let sharing = use_sharing();
-    view! {<Show when=move ||sharing.conversation.get().is_some()><ConversationForm id=sharing.conversation.get_untracked().expect("conversation target")/></Show>}
+    let conversations = move || sharing.conversation.get().into_iter().collect::<Vec<_>>();
+    view! {<For each=conversations key=|id|id.clone() let:id><ConversationForm id=id/></For>}
 }
 
 fn conversation_names(data: RwSignal<Option<api::Conversation>>) -> String {
@@ -305,7 +306,7 @@ pub(crate) fn ArticleConversations(item_id: String) -> impl IntoView {
     view! {
         <Show when=move ||!links.get().is_empty()>
             <section class="article-conversations">
-                <h3>"Received conversations"</h3>
+                <h3>"Conversations"</h3>
                 <ul><For each=move ||links.get() key=|thread|thread.id.clone() let:thread>
                     {let id=StoredValue::new(thread.id.clone());let fallback=StoredValue::new(thread);let thread=Signal::derive(move ||links.with(|links|links.iter().find(|thread|thread.id==id.get_value()).cloned()).unwrap_or_else(||fallback.get_value()));view! {
                     <li><button type="button" disabled=sharing.is_none() on:click=move |event|{
@@ -327,31 +328,28 @@ fn ConversationForm(id: String) -> impl IntoView {
     let sharing = use_sharing();
     let open_article = crate::navigation::use_article_opener();
     let preferences = crate::preferences::use_preferences();
-    sharing.conversation_drafts.update(|drafts| {
-        drafts
-            .entry(id.clone())
-            .or_insert_with(|| crate::sharing::ConversationDraft {
-                body: String::new(),
-                parent: None,
-                request_id: request_token(),
-            });
-    });
+    sharing.drafts.get_value().load(&id);
     let id = StoredValue::new(id);
     let data = RwSignal::new(None::<api::Conversation>);
     provide_context(data);
     let error = RwSignal::new(None::<String>);
-    let busy = RwSignal::new(false);
+    let local_busy = RwSignal::new(false);
     let confirm_leave = RwSignal::new(false);
-    let draft = Memo::new(move |_| {
-        sharing.conversation_drafts.with(|drafts| {
-            drafts
-                .get(&id.get_value())
-                .cloned()
-                .expect("conversation draft")
+    let draft_state = Memo::new(move |_| sharing.drafts.get_value().view(&id.get_value()));
+    let busy = Signal::derive(move || local_busy.get() || draft_state.with(|state| state.busy));
+    let ready = Memo::new(move |_| draft_state.with(|state| state.draft.is_some()));
+    let body = Memo::new(move |_| {
+        draft_state.with(|state| {
+            state
+                .draft
+                .as_ref()
+                .map(|draft| draft.body.clone())
+                .unwrap_or_default()
         })
     });
-    let body = Memo::new(move |_| draft.with(|draft| draft.body.clone()));
-    let parent = Memo::new(move |_| draft.with(|draft| draft.parent.clone()));
+    let parent = Memo::new(move |_| {
+        draft_state.with(|state| state.draft.as_ref().and_then(|draft| draft.parent.clone()))
+    });
     let notice = RwSignal::new(None::<String>);
     let input = NodeRef::<html::Textarea>::new();
     let submit = NodeRef::<html::Button>::new();
@@ -392,9 +390,15 @@ fn ConversationForm(id: String) -> impl IntoView {
     });
     #[cfg(target_arch = "wasm32")]
     {
-        let previous = StoredValue::new((false, false));
+        let previous = StoredValue::new((false, false, false, false, false));
         Effect::new(move |_| {
-            let current = (can_reply.get(), can_leave.get());
+            let current = (
+                can_reply.get(),
+                can_leave.get(),
+                ready.get(),
+                draft_state.with(|state| state.busy),
+                draft_state.with(|state| state.error.is_some()),
+            );
             let before = previous.get_value();
             previous.set_value(current);
             if before != current
@@ -444,7 +448,7 @@ fn ConversationForm(id: String) -> impl IntoView {
     on_cleanup(move || cleanup.invalidate());
     let writes = StoredValue::new(crate::writes::use_pending_writes());
     let load = UnsyncCallback::new(move |()| {
-        if busy.get_untracked() {
+        if local_busy.get_untracked() {
             return;
         }
         let guard = requests.get_value();
@@ -483,14 +487,13 @@ fn ConversationForm(id: String) -> impl IntoView {
         on_cleanup(move || interval.clear());
     }
     let reply = UnsyncCallback::new(move |reply_id: String| {
-        if !can_reply.get_untracked() || busy.get_untracked() {
+        if !can_reply.get_untracked() || busy.get_untracked() || !ready.get_untracked() {
             return;
         }
-        sharing.conversation_drafts.update(|drafts| {
-            if let Some(draft) = drafts.get_mut(&id.get_value()) {
-                draft.parent = Some(reply_id);
-            }
-        });
+        sharing
+            .drafts
+            .get_value()
+            .edit(&id.get_value(), |draft| draft.parent = Some(reply_id));
         if let Some(input) = input.get_untracked() {
             let _ = input.focus();
         }
@@ -499,7 +502,7 @@ fn ConversationForm(id: String) -> impl IntoView {
         if busy.get_untracked() {
             return;
         }
-        busy.set(true);
+        local_busy.set(true);
         requests.get_value().invalidate();
         error.set(None);
         let guard = mutations.get_value();
@@ -526,7 +529,7 @@ fn ConversationForm(id: String) -> impl IntoView {
                         let _ = input.focus_with_options(&options);
                     }
                 }
-                busy.try_set(false);
+                local_busy.try_set(false);
                 load.run(());
             }
         });
@@ -535,7 +538,7 @@ fn ConversationForm(id: String) -> impl IntoView {
         if busy.get_untracked() || !can_leave.get_untracked() {
             return;
         }
-        busy.set(true);
+        local_busy.set(true);
         sharing.pending_conversation_leaves.update(|pending| {
             pending.insert(id.get_value(), PendingLeave::Saving);
         });
@@ -568,16 +571,41 @@ fn ConversationForm(id: String) -> impl IntoView {
             }
             // No earlier read can reopen the composer while confirming this choice.
             requests.get_value().invalidate();
-            busy.try_set(false);
+            local_busy.try_set(false);
             load.run(());
         });
     });
     let leave_button = NodeRef::<html::Button>::new();
     let keep_button = NodeRef::<html::Button>::new();
+    let discard_button = NodeRef::<html::Button>::new();
+    let cancel_discard_button = NodeRef::<html::Button>::new();
+    let confirm_discard = RwSignal::new(None::<crate::sharing::ConversationDraft>);
     let close = UnsyncCallback::new(move |()| sharing.conversation.set(None));
     view! {<Modal label="Private conversation" class="feed-dialog conversation-dialog" on_cancel=close>
         <header><h3>"Conversation"</h3><button node_ref=done type="button" on:click=move |_|close.run(())>"Done"</button></header>
         {move ||error.get().map(|e|view!{<p class="feed-error" role="alert">{e}</p><button type="button" on:click=move |_|{error.set(None);load.run(());}>"Refresh conversation"</button>})}
+        <Show when=move ||draft_state.with(|state|state.loading)><p role="status">"Loading your saved reply…"</p></Show>
+        {move ||draft_state.with(|state|state.error.clone()).map(|message|view! {
+            <p class="feed-error" role="alert">{message}</p>
+            <Show when=move ||!ready.get()><button type="button" disabled=move ||busy.get() on:click=move |_|sharing.drafts.get_value().load(&id.get_value())>"Retry loading draft"</button></Show>
+            <Show when=move ||ready.get() && draft_state.with(|state|!state.conflict && !state.failed_send)><button type="button" disabled=move ||busy.get() on:click=move |_|sharing.drafts.get_value().retry_save(&id.get_value())>"Retry saving draft"</button></Show>
+            <Show when=move ||draft_state.with(|state|state.failed_send)>
+                <p>"Retry send checks the exact reply you submitted. It may already have been saved. Newer text stays here."</p>
+                <button type="button" disabled=move ||busy.get() on:click=move |_|sharing.drafts.get_value().send(&id.get_value())>"Retry send"</button>
+                <crate::components::copy_text::CopyTextField id="failed-send-draft" label="Reply awaiting confirmation" button="Copy submitted reply" text=Signal::derive(move ||draft_state.with(|state|state.submitted.as_ref().map(|draft|draft.body.clone()).unwrap_or_default()))/>
+                <Show when=move ||draft_state.with(|state|state.draft!=state.submitted)><crate::components::copy_text::CopyTextField id="buffered-reply-draft" label="Your newer composition" button="Copy unsent reply" text=Signal::derive(move ||body.get())/></Show>
+            </Show>
+            <Show when=move ||draft_state.with(|state|state.conflict && !state.reviewed)><button type="button" disabled=move ||busy.get() on:click=move |_|sharing.drafts.get_value().review(&id.get_value())>"Review saved draft"</button></Show>
+        })}
+        <Show when=move ||draft_state.with(|state|state.conflict && state.reviewed)>
+            <Show when=move ||draft_state.with(|state|state.saved.is_some()) fallback=||view!{<p>"The saved draft was cleared."</p>}>
+                <crate::components::copy_text::CopyTextField id="saved-reply-draft" label="Draft saved on this desktop" button="Copy saved draft" text=Signal::derive(move ||draft_state.with(|state|state.saved.as_ref().map(|draft|draft.body.clone()).unwrap_or_default()))/>
+                <Show when=move ||draft_state.with(|state|state.saved.as_ref().is_some_and(|draft|draft.parent.is_some()))>
+                    <p>"Saved reply context"</p><blockquote>{move ||draft_state.with(|state|state.saved.as_ref().and_then(|draft|draft.parent.clone())).and_then(|parent|conversation_reply(data,&parent)).and_then(|reply|reply.body).unwrap_or_else(||"Message removed or unavailable".into())}</blockquote>
+                </Show>
+            </Show>
+            <Show when=move ||!draft_state.with(|state|state.failed_send)><button type="button" disabled=move ||busy.get() on:click=move |_|sharing.drafts.get_value().retry_save(&id.get_value())>"Keep my draft"</button></Show>
+        </Show>
         <Show when=move ||data.with(|data|data.is_some())><ConversationOpening data=data on_read=UnsyncCallback::new(move |()|{if let Some(conversation)=data.get_untracked(){open_article.run(conversation.item_id);}sharing.conversation.set(None);preferences.settings_open.set(false);})/>
             <Show when=move ||can_leave.get()>
                 <Show when=move ||confirm_leave.get() fallback=move ||view! {
@@ -596,21 +624,41 @@ fn ConversationForm(id: String) -> impl IntoView {
                     <button type="button" disabled=move ||busy.get() on:click=move |_|leave.run(())>"Leave conversation"</button>
                 </Show>
             </Show>
-            <ol class="conversation-replies"><For each=move ||data.with(|data|data.as_ref().map(|thread|thread.replies.clone()).unwrap_or_default()) key=|reply|reply.id.clone() let:message>{let reply_id=StoredValue::new(message.id.clone());let fallback=StoredValue::new(message);view!{<ReplyRow share_id=id.get_value() message=Signal::derive(move ||conversation_reply(data,&reply_id.get_value()).unwrap_or_else(||fallback.get_value())) context=Signal::derive(move ||parent_context(data,&reply_id.get_value())) can_reply=Signal::derive(move ||can_reply.get()) on_reply=reply on_remove=removed busy=busy/>}}</For></ol>
-            <Show when=move ||can_reply.get() fallback=move ||view!{<p>{move ||unavailable_reason.get()}</p>}>
+            <ol class="conversation-replies"><For each=move ||data.with(|data|data.as_ref().map(|thread|thread.replies.clone()).unwrap_or_default()) key=|reply|reply.id.clone() let:message>{let reply_id=StoredValue::new(message.id.clone());let fallback=StoredValue::new(message);view!{<ReplyRow share_id=id.get_value() message=Signal::derive(move ||conversation_reply(data,&reply_id.get_value()).unwrap_or_else(||fallback.get_value())) context=Signal::derive(move ||parent_context(data,&reply_id.get_value())) can_reply=Signal::derive(move ||can_reply.get() && ready.get()) on_reply=reply on_remove=removed busy=busy/>}}</For></ol>
+            <Show when=move ||parent.get().is_some()><div class="reply-context"><p>"Replying to "{move ||parent.get().and_then(|id|conversation_reply(data,&id)).map(|r|r.author.name).unwrap_or_default()}</p><blockquote>{move ||parent.get().and_then(|id|conversation_reply(data,&id)).and_then(|r|r.body).unwrap_or_else(||"Message removed or unavailable".into())}</blockquote><Show when=move ||can_reply.get()><button type="button" disabled=move ||busy.get() on:click=move |_|sharing.drafts.get_value().edit(&id.get_value(),|draft|draft.parent=None)>"Reply to conversation instead"</button></Show></div></Show>
+            <Show when=move ||can_reply.get() && ready.get() fallback=move ||view!{<Show when=move ||!can_reply.get()><p>{move ||unavailable_reason.get()}</p></Show>}>
                 <form on:keydown=move |event|{if (event.meta_key() ||event.ctrl_key()) &&event.key()=="Enter"{event.prevent_default();event.stop_propagation();if let Some(button)=submit.get_untracked(){button.click();}}} on:submit=move |event|{
-                    event.prevent_default();if !can_reply.get_untracked()||busy.get_untracked()||body.get_untracked().trim().is_empty(){return;}busy.set(true);error.set(None);notice.set(None);requests.get_value().invalidate();let guard=mutations.get_value();let request=guard.begin();let write=writes.get_value().begin();
-                    let target=id.get_value();let submitted=draft.get_untracked();
-                    let args=json!({"request":{"shareId":target,"requestId":submitted.request_id,"parent":submitted.parent,"body":submitted.body}});
-                    spawn(async move{let result=api::sharing_call::<()>("reply_to_share",args).await;drop(write);if result.is_ok(){sharing.reply_saved(&target,&submitted);}sharing.history_changed();if guard.accepts(request){match result{Ok(())=>{notice.try_set(Some("Reply saved here. Delivery may wait while desktops are offline.".into()));},Err(e)=>{error.try_set(Some(e.message().into()));}}busy.try_set(false);load.run(());}});
+                    event.prevent_default();if !can_reply.get_untracked()||!ready.get_untracked()||busy.get_untracked()||body.get_untracked().trim().is_empty()||draft_state.with_untracked(|state|state.conflict||state.failed_send){return;}
+                    error.set(None);notice.set(None);requests.get_value().invalidate();sharing.drafts.get_value().send(&id.get_value());
                 }>
                     <p class="capture-notice">"Your reply is addressed to "{move ||conversation_names(data)}". Each person chooses whether to take part. Delivery may wait while desktops are offline."</p>
-                    <Show when=move ||parent.get().is_some()><div class="reply-context"><p>"Replying to "{move ||parent.get().and_then(|id|conversation_reply(data,&id)).map(|r|r.author.name).unwrap_or_default()}</p><blockquote>{move ||parent.get().and_then(|id|conversation_reply(data,&id)).and_then(|r|r.body).unwrap_or_else(||"Message removed".into())}</blockquote><button type="button" disabled=move ||busy.get() on:click=move |_|sharing.conversation_drafts.update(|drafts|{if let Some(draft)=drafts.get_mut(&id.get_value()){draft.parent=None;}})>"Reply to conversation instead"</button></div></Show>
-                    <label for="conversation-reply">"Your reply"</label><textarea node_ref=input id="conversation-reply" dir="auto" rows="4" maxlength="65536" readonly=move ||busy.get() prop:value=move ||body.get() on:input=move |event|sharing.conversation_drafts.update(|drafts|{if let Some(draft)=drafts.get_mut(&id.get_value()){draft.body=event_target_value(&event);}})/><button node_ref=submit type="submit" disabled=move ||!can_reply.get()||busy.get()||body.get().trim().is_empty()>"Send reply"</button>
+                    <label for="conversation-reply">"Your reply"</label><textarea node_ref=input id="conversation-reply" dir="auto" rows="4" maxlength="65536" readonly=move ||local_busy.get()||draft_state.with(|state|state.discarding) prop:value=move ||body.get() on:input=move |event|sharing.drafts.get_value().edit(&id.get_value(),|draft|draft.body=event_target_value(&event))/><button node_ref=submit type="submit" disabled=move ||!can_reply.get()||busy.get()||body.get().trim().is_empty()||draft_state.with(|state|state.conflict||state.failed_send)>"Send reply"</button>
                 </form>
             </Show>
-            <Show when=move ||!can_reply.get() && !body.get().is_empty()><crate::components::copy_text::CopyTextField id="closed-reply-draft" label="Your unsent draft" button="Copy unsent reply" text=Signal::derive(move ||body.get())/></Show>
-            {move ||notice.get().map(|text|view!{<p role="status">{text}</p>})}
+            {move ||notice.get().or_else(||draft_state.with(|state|state.notice.clone())).map(|text|view!{<p role="status">{text}</p>})}
+        </Show>
+        <Show when=move ||ready.get() && !can_reply.get() && !body.get().is_empty()><crate::components::copy_text::CopyTextField id="closed-reply-draft" label="Your unsent draft" button="Copy unsent reply" text=Signal::derive(move ||body.get())/></Show>
+        <Show when=move ||ready.get() && (!body.get().is_empty() || parent.get().is_some() || draft_state.with(|state|state.unsaved||state.failed_send||state.saved.is_some()))>
+            <p class="capture-notice">"Drafts stay on this desktop and are included in its encrypted backup."</p>
+            <Show when=move ||confirm_discard.get().is_some() fallback=move ||view! {
+                <button node_ref=discard_button type="button" disabled=move ||busy.get()||draft_state.with(|state|state.conflict&&!state.reviewed) on:click=move |event|{
+                    crate::components::focus_dialog_trigger(&event);
+                    confirm_discard.set(draft_state.with_untracked(|state|state.draft.clone()));
+                    #[cfg(target_arch = "wasm32")]
+                    set_timeout(move ||{if let Some(button)=cancel_discard_button.get_untracked(){let options=web_sys::FocusOptions::new();options.set_prevent_scroll(true);let _=button.focus_with_options(&options);}},std::time::Duration::ZERO);
+                }>"Discard draft"</button>
+            }>
+                <p>"Discard this conversation’s draft on this desktop? This removes its unsent text and reply context. It cannot undo a reply already sent."</p>
+                <button node_ref=cancel_discard_button type="button" disabled=move ||busy.get() on:click=move |_|{
+                    confirm_discard.set(None);
+                    #[cfg(target_arch = "wasm32")]
+                    set_timeout(move ||{if let Some(button)=discard_button.get_untracked(){let options=web_sys::FocusOptions::new();options.set_prevent_scroll(true);let _=button.focus_with_options(&options);}},std::time::Duration::ZERO);
+                }>"Cancel"</button>
+                <button type="button" disabled=move ||busy.get() on:click=move |_|{
+                    if let Some(reviewed)=confirm_discard.get_untracked(){sharing.drafts.get_value().discard(&id.get_value(),&reviewed);}
+                    confirm_discard.set(None);
+                }>"Discard draft"</button>
+            </Show>
         </Show>
     </Modal>}
 }
@@ -622,7 +670,7 @@ fn ReplyRow(
     can_reply: Signal<bool>,
     on_reply: UnsyncCallback<String>,
     on_remove: UnsyncCallback<String>,
-    busy: RwSignal<bool>,
+    busy: Signal<bool>,
 ) -> impl IntoView {
     let conversation = expect_context::<RwSignal<Option<api::Conversation>>>();
     let share_id = StoredValue::new(share_id);

@@ -81,6 +81,28 @@ fn conversation_access(
         reason,
     }
 }
+
+// Call only after the store has checked the original root's local reading scope.
+// Recovery ownership permits inspection, never an operational sharing action.
+fn retained_conversation_access(
+    store: &carrel_store::Store,
+    id: &str,
+    withdrawn: bool,
+) -> Result<ConversationAccess> {
+    if store.self_identity()?.is_none() {
+        return Ok(ConversationAccess {
+            can_reply: false,
+            can_leave: false,
+            reason: Some(
+                "This restored conversation is available locally. Resume identity in Settings → Devices before making sharing changes.",
+            ),
+        });
+    }
+    Ok(conversation_access(
+        store.conversation_participation(id)?,
+        withdrawn,
+    ))
+}
 #[derive(Serialize)]
 pub(crate) struct Provenance {
     id: String,
@@ -105,27 +127,29 @@ pub(crate) async fn list_article_conversations(
     item_id: String,
 ) -> Result<Vec<ConversationLink>> {
     let store = state.store.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        store
-            .received_item_conversations(&item_id)?
-            .into_iter()
-            .map(|thread| {
-                let access = conversation_access(
-                    store.conversation_participation(&thread.id)?,
-                    thread.closed,
-                );
-                Ok(ConversationLink {
-                    id: thread.id,
-                    from: thread.from,
-                    date: date(thread.at_micros),
-                    closed: thread.closed,
-                    access,
-                })
+    tauri::async_runtime::spawn_blocking(move || article_conversations(&store, &item_id))
+        .await
+        .map_err(worker_error)?
+}
+
+fn article_conversations(
+    store: &carrel_store::Store,
+    item_id: &str,
+) -> Result<Vec<ConversationLink>> {
+    store
+        .item_conversations(item_id)?
+        .into_iter()
+        .map(|thread| {
+            let access = retained_conversation_access(store, &thread.id, thread.closed)?;
+            Ok(ConversationLink {
+                id: thread.id,
+                from: thread.from,
+                date: date(thread.at_micros),
+                closed: thread.closed,
+                access,
             })
-            .collect::<Result<_>>()
-    })
-    .await
-    .map_err(worker_error)?
+        })
+        .collect()
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -324,70 +348,68 @@ pub(crate) async fn get_conversation(
     id: String,
 ) -> Result<ConversationSummary> {
     let store = state.store.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        let conversation = store.social_conversation(&id)?;
-        let access =
-            conversation_access(store.conversation_participation(&id)?, conversation.closed);
-        let scope = carrel_core::conversation::ThreadScope::from_share(&conversation.share)
-            .map_err(worker_error)?;
-        let local = store
-            .self_identity()?
-            .ok_or_else(|| worker_error("create an identity first"))?
-            .master_pubkey;
-        let participants = scope
-            .participants()
-            .into_iter()
-            .map(|key| participant(&store, key))
-            .collect::<Result<Vec<_>>>()?;
-        let by_key = participants
-            .iter()
-            .map(|person| (person.key.clone(), person.clone()))
-            .collect::<std::collections::BTreeMap<_, _>>();
-        let replies = conversation
-            .replies
-            .into_iter()
-            .map(|reply| {
-                let record = reply.record;
-                let Content::Reply {
-                    id, parent, body, ..
-                } = record.content
-                else {
-                    return Err(worker_error("invalid reply"));
-                };
-                let mut author = by_key
-                    .get(&record.certificate.master_pubkey.to_hex())
-                    .cloned()
-                    .ok_or_else(|| worker_error("reply author is outside this audience"))?;
-                // Pictures are sent once in the participant list, not once per message.
-                author.image = None;
-                Ok(ReplySummary {
-                    id,
-                    author,
-                    body: (!reply.removed).then_some(body),
-                    date: date(record.created_at_micros),
-                    parent,
-                    can_remove: !reply.removed && record.certificate.master_pubkey == local,
-                })
-            })
-            .collect::<Result<_>>()?;
-        Ok(ConversationSummary {
-            id,
-            title: conversation.share.article.title,
-            item_id: conversation.item_id,
-            opener: by_key
-                .get(&scope.sharer.to_hex())
+    tauri::async_runtime::spawn_blocking(move || conversation_summary(&store, &id))
+        .await
+        .map_err(worker_error)?
+}
+
+fn conversation_summary(store: &carrel_store::Store, id: &str) -> Result<ConversationSummary> {
+    let conversation = store.social_conversation(id)?;
+    let access = retained_conversation_access(store, id, conversation.closed)?;
+    let scope = carrel_core::conversation::ThreadScope::from_share(&conversation.share)
+        .map_err(worker_error)?;
+    let local = store.self_identity()?.map(|binding| binding.master_pubkey);
+    let participants = scope
+        .participants()
+        .into_iter()
+        .map(|key| participant(store, key))
+        .collect::<Result<Vec<_>>>()?;
+    let by_key = participants
+        .iter()
+        .map(|person| (person.key.clone(), person.clone()))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let replies = conversation
+        .replies
+        .into_iter()
+        .map(|reply| {
+            let record = reply.record;
+            let Content::Reply {
+                id, parent, body, ..
+            } = record.content
+            else {
+                return Err(worker_error("invalid reply"));
+            };
+            let mut author = by_key
+                .get(&record.certificate.master_pubkey.to_hex())
                 .cloned()
-                .ok_or_else(|| worker_error("conversation author is unavailable"))?,
-            note: conversation.share.note,
-            date: date(conversation.share.created_at_micros),
-            participants,
-            replies,
-            closed: conversation.closed,
-            access,
+                .ok_or_else(|| worker_error("reply author is outside this audience"))?;
+            // Pictures are sent once in the participant list, not once per message.
+            author.image = None;
+            Ok(ReplySummary {
+                id,
+                author,
+                body: (!reply.removed).then_some(body),
+                date: date(record.created_at_micros),
+                parent,
+                can_remove: !reply.removed && Some(record.certificate.master_pubkey) == local,
+            })
         })
+        .collect::<Result<_>>()?;
+    Ok(ConversationSummary {
+        id: id.into(),
+        title: conversation.share.article.title,
+        item_id: conversation.item_id,
+        opener: by_key
+            .get(&scope.sharer.to_hex())
+            .cloned()
+            .ok_or_else(|| worker_error("conversation author is unavailable"))?,
+        note: conversation.share.note,
+        date: date(conversation.share.created_at_micros),
+        participants,
+        replies,
+        closed: conversation.closed,
+        access,
     })
-    .await
-    .map_err(worker_error)?
 }
 #[tauri::command]
 pub(crate) async fn leave_conversation(state: State<'_, AppState>, share_id: String) -> Result<()> {
@@ -489,6 +511,124 @@ fn worker_error(error: impl std::fmt::Display) -> AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn restored_native_projection_exposes_retained_conversation_without_sharing_actions() {
+        use carrel_core::{
+            identity::{DeviceCert, Keypair},
+            private_library::SavedItem,
+            sharing::Share,
+        };
+        use cozo::DataValue;
+        use std::collections::BTreeMap;
+
+        let store = carrel_store::Store::open_in_memory().unwrap();
+        store.migrate().unwrap();
+        let master = Keypair::from_seed(&[91; 32]);
+        let device = Keypair::from_seed(&[92; 32]);
+        let friend = Keypair::from_seed(&[93; 32]);
+        let friend_device = Keypair::from_seed(&[94; 32]);
+        let recovered = Keypair::from_seed(&[95; 32]);
+        store
+            .bind_self_identity(
+                &DeviceCert::new_at_micros(&master, device.public(), 1, None),
+                &device,
+            )
+            .unwrap();
+        store
+            .follow_social_contact(*friend.public(), "Friend", None)
+            .unwrap();
+        let root = Share::sign(
+            "native-recovery".into(),
+            *master.public(),
+            SavedItem {
+                id: "a".repeat(64),
+                kind: "article".into(),
+                title: "Retained conversation".into(),
+                creators: vec![],
+                primary_url: Some("https://example.test/native-recovery".into()),
+                published_at_micros: None,
+                language: None,
+                summary: None,
+                discovered_at_micros: 0,
+                article: None,
+                identifiers: vec![],
+                contents: vec![],
+                resources: vec![],
+                current_images: None,
+            },
+            Some("Opening note".into()),
+            2,
+            DeviceCert::new_at_micros(&friend, friend_device.public(), 1, None),
+            &friend_device,
+        )
+        .unwrap();
+        store
+            .accept_social_record(
+                &ShareFact::Share(Box::new(root.clone())),
+                friend.public(),
+                2,
+                &device,
+            )
+            .unwrap();
+        let reply = store
+            .reply_to_social_share(
+                &root.id,
+                "local-reply",
+                None,
+                "Retained reply 文",
+                3,
+                &device,
+            )
+            .unwrap();
+        let Content::Reply { id: parent, .. } = reply.content else {
+            panic!("expected reply");
+        };
+        let before = conversation_summary(&store, &root.id).unwrap();
+        assert!(before.access.can_reply && before.access.can_leave);
+        assert!(before.replies[0].can_remove);
+
+        // Model the store's validated restore result at this projection boundary.
+        // Encrypted restore/rekeying itself is exercised by the store tests.
+        store.query("::set_triggers self_identity").unwrap();
+        store
+            .query_with_params(
+                "{ ?[singleton] <- [[0]] :rm self_identity {singleton} }\n{ ?[singleton,master_pubkey,device_pubkey,legacy_devices] <- [[0,$master,$fresh,[$old]]] :put restore_origin {singleton=>master_pubkey,device_pubkey,legacy_devices} }",
+                BTreeMap::from([
+                    ("master".into(), DataValue::Bytes(master.public().as_bytes().to_vec())),
+                    ("fresh".into(), DataValue::Bytes(recovered.public().as_bytes().to_vec())),
+                    ("old".into(), DataValue::Bytes(device.public().as_bytes().to_vec())),
+                ]),
+            )
+            .unwrap();
+        let proof_state = store
+            .query("?[key,encoded] := *self_fact_history{key,encoded} :sort key")
+            .unwrap()
+            .rows;
+        let restored = conversation_summary(&store, &root.id).unwrap();
+        assert!(!restored.access.can_reply && !restored.access.can_leave);
+        assert!(restored.access.reason.unwrap().contains("Resume identity"));
+        assert!(!restored.replies[0].can_remove);
+        assert_eq!(
+            restored.replies[0].body.as_deref(),
+            Some("Retained reply 文")
+        );
+        assert_eq!(restored.note, before.note);
+        assert_eq!(restored.replies[0].id, parent);
+        let links = article_conversations(&store, &restored.item_id).unwrap();
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].id, root.id);
+        assert!(!links[0].access.can_reply && !links[0].access.can_leave);
+        assert_eq!(
+            store
+                .query("?[key,encoded] := *self_fact_history{key,encoded} :sort key")
+                .unwrap()
+                .rows,
+            proof_state,
+        );
+        assert!(store.conversation_participation(&root.id).is_err());
+    }
+
     #[test]
     fn conversation_access_keeps_consent_separate_from_withdrawal() {
         for participation in [

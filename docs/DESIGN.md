@@ -1169,10 +1169,25 @@ shallow context quotation rather than growing indentation. Each message offers
 provenance/ancestry on request. Removed messages keep a quiet placeholder.
 The composer states its fixed audience, retains failed drafts and retry tokens,
 and sends explicitly (button or Cmd+Enter). Closing restores initiating focus
-and passage. Unsent replies stay available when reopening a conversation during
-the same app session; only explicit Send writes a durable queued message. A late
+and passage. Unsent replies save privately on this desktop and remain available
+after restart. Wait for their confirmed load before allowing composition; a
+failed load offers Retry and must not replace a retained draft with an empty one.
+Autosave preserves exact text, parent context and retry identity. Show a quiet
+save failure with Retry and keep the text selectable. Normal quit and encrypted
+backup flush pending edits and stop with an actionable message if saving fails.
+Only explicit Send creates a queued message. A late
 save acknowledges its exact submitted draft and preserves newer text. A withdrawal
 leaves history readable, retains an unfinished draft for copying, and disables new replies.
+Offer **Discard draft** with an inline confirmation whenever unfinished text or
+reply context is retained, including after Leave. Discard affects only that
+conversation's local draft. Cancellation restores focus and preserves text.
+Explain that drafts stay on this desktop and are included in its encrypted
+backup. Do not show a spinner or add a draft count, notification or sidebar badge.
+After restoring, Reader Info → Conversations keeps received and own sent threads
+reachable before identity resumption. Show retained history and the unsent draft
+with Copy and confirmed Discard. Explain that sharing changes require resuming
+identity in Settings → Devices; hide Reply, Leave and removal controls until then.
+This does not reopen a declined, left or withdrawn conversation after resumption.
 There are no reply counts, badges, notifications or typing signals.
 
 Participant names/avatars open a small native person card with their verified key

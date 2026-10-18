@@ -68,6 +68,17 @@ impl Store {
             .transpose()
     }
 
+    /// Identify the local reader only for retained conversation and ancestry reads.
+    /// Recovery provenance grants no operational, consent or peer authorization.
+    pub fn local_conversation_history_master(&self) -> Result<Option<PublicKey>> {
+        if let Some(binding) = self.self_identity()? {
+            return Ok(Some(binding.master_pubkey));
+        }
+        Ok(self
+            .restore_origin()?
+            .and_then(|origin| origin.master_pubkey))
+    }
+
     /// Prepare an isolated restored store; never call against an active installation.
     pub(crate) fn prepare_restored_archive(
         &self,
@@ -288,6 +299,68 @@ mod tests {
             .prepare_restored_archive(Some(*original.public()), fresh)
             .unwrap();
         store
+    }
+
+    #[test]
+    fn conversation_history_master_never_infers_identity_from_self_peer_metadata() {
+        let store = Store::open_in_memory().unwrap();
+        store.migrate().unwrap();
+        let peer = Keypair::generate();
+        let fresh = Keypair::generate();
+        store.query_with_params(
+            "?[pubkey,pet_name,self_described_name,is_self,added_at,last_seen] <- [[$key,null,null,true,$at,null]] :put peer {pubkey=>pet_name,self_described_name,is_self,added_at,last_seen}",
+            BTreeMap::from([
+                ("key".into(), value(*peer.public())),
+                ("at".into(), DataValue::Validity(cozo::Validity::from((1, true)))),
+            ]),
+        ).unwrap();
+        assert_eq!(store.local_conversation_history_master().unwrap(), None);
+        store
+            .prepare_restored_archive(Some(*peer.public()), &fresh)
+            .unwrap();
+        assert_eq!(store.local_conversation_history_master().unwrap(), None);
+        assert!(
+            store
+                .item_conversations("unbound-article")
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            store
+                .received_item_conversations("unbound-article")
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn conversation_history_master_uses_restore_provenance_and_prefers_a_binding() {
+        let master = Keypair::generate();
+        let original = Keypair::generate();
+        let fresh = Keypair::generate();
+        let store = restored(&master, &original, &fresh);
+        assert_eq!(
+            store.local_conversation_history_master().unwrap(),
+            Some(*master.public())
+        );
+        assert!(store.self_identity().unwrap().is_none());
+        store
+            .authorize_restored_identity(&master, &fresh, "Recovered")
+            .unwrap();
+        // A diagnostic provenance row cannot override the explicitly bound reader.
+        let other = Keypair::generate();
+        store.query_with_params(
+            "?[singleton,master_pubkey,device_pubkey,legacy_devices] <- [[0,$master,$device,[]]] :put restore_origin {singleton=>master_pubkey,device_pubkey,legacy_devices}",
+            BTreeMap::from([("master".into(), value(*other.public())), ("device".into(), value(*fresh.public()))]),
+        ).unwrap();
+        assert_eq!(
+            store.local_conversation_history_master().unwrap(),
+            Some(*master.public())
+        );
+        assert_eq!(
+            store.self_identity().unwrap().unwrap().master_pubkey,
+            *master.public()
+        );
     }
 
     #[test]

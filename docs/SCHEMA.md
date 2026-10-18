@@ -1099,6 +1099,69 @@ Older desktops do not understand these private controls. Use the same current
 build on all own desktops for opt-out/leave enforcement; no new social wire fact
 or remotely observable participation state is introduced.
 
+### Durable local reply drafts (version 15)
+
+An unfinished reply is installation-local working state. It is neither a signed
+reply nor a private-sync fact, and it never enters a social mirror, publication
+queue or peer payload. The encrypted full backup includes it. One draft belongs
+to one immutable accepted share root, with its exact body, optional parent and
+retry identity retained across restart:
+
+```
+:create social_reply_draft {
+    share_id: String =>
+    revision: Int,
+    body: String?,
+    parent: String?,
+    request_id: String?,
+    retry_device: Bytes?
+}
+```
+
+Absence is revision zero. Revisions are nonnegative and advance without wrapping.
+A live row has a body, request ID and operational retry-device key; an empty or
+whitespace body is valid composition, even though it cannot be sent. Parents
+must belong to the same accepted conversation. A cleared row retains its advanced
+revision with all payload fields null. Rows and their revision tombstones are
+never deleted or reset by ordinary draft operations.
+
+Typed reads and edits verify the local reader's participation in the original
+root. Reading, copying and explicit discard do not require an authorized network
+endpoint. An unbound recovered installation uses only the source master recorded
+in `restore_origin` to read its retained fixed-audience conversations, including
+its own sent roots. Reader article information exposes those conversations and
+their drafts before identity resumption. This local ownership grant authorizes
+no Send, Leave, removal, follow, publication or network access. Operational
+consent and certificate checks continue to require the bound identity. Saving
+never grants consent or follows anybody. Save and discard use
+compare-and-swap under the social lock: stale input cannot overwrite a newer
+composition or resurrect a sent/discarded draft. An identical current snapshot
+is a no-op; replay of the exact immediately preceding save may acknowledge its
+already persisted result after a lost response. Other stale mutations return a
+typed conflict and retain the user's submitted text for deliberate review.
+
+Send requires the exact persisted snapshot, the current operational signer and
+the existing withdrawal/consent checks under
+`private_state → identity → social`. Commit the original signed reply, its index,
+private journal/outbox and advanced cleared draft row in one transaction. A
+failed transaction clears nothing. Retrying an already committed exact Send may
+acknowledge its original proof without clearing a subsequent draft or recreating
+delivery work. No automatic retry, restart or restore may send a draft.
+
+Leave, decline and withdrawal retain unfinished text and parent context for
+copying or deliberate discard. Native commands expose revision tokens without
+loss through JavaScript number conversion. The webview serializes a thread's
+save/send/discard operations and preserves newer in-memory composition across a
+late acknowledgement. A save error prevents normal quit and a new backup until
+the user retries successfully or explicitly discards the unsaved composition.
+
+Migration 15 adds only this local relation and its guards. Known encrypted backup
+schemas 13, 14 and 15 remain supported through exact source-catalog validation
+before the known upgrade. During isolated restore preparation, keep draft text
+and parent but advance its revision and replace its retry token/device with a
+fresh identity for the recovered operational key. Restoring never clones the
+old sender, replays an old pending Send, or authorizes a new endpoint.
+
 ### Explicit sharing mode and local send batches (version 12)
 
 One composer can select several people and local groups. The store expands the

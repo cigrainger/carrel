@@ -21,7 +21,7 @@ described in
 and distinct from the implemented [backup contract](BACKUP_RESTORE_PLAN.md).
 Neither is included in the published alpha.3 packages. Recovery ownership is
 specified in schema 13; the private consent contract and legacy adoption are
-specified in schema 14.
+specified in schema 14. Installation-local reply drafts are specified in schema 15.
 
 ## The shape of the system
 
@@ -190,6 +190,21 @@ can still update retained history. The original audience and other readers'
 rights remain unchanged. Private control facts never travel to social peers.
 Older own desktops cannot enforce this contract; all own desktops must use the
 same current build.
+
+Unsent replies use an installation-local Cozo draft relation. The webview's
+app-owned writer hydrates before editing, coalesces and serializes saves, and
+retains failed composition for explicit retry. Store revision checks and retained
+empty tombstones reject delayed writes after Send or Discard. Sending requires
+the exact persisted snapshot and commits the signed reply, journal/outbox and
+draft clear together. Normal close and backup creation flush pending drafts and
+check for failed saves. Drafts never enter either Iroh mirror; the encrypted
+database backup preserves them and restore assigns fresh retry identities.
+Before identity resumption, a recovered archive can read retained conversations
+whose immutable audience contains its recorded source master. Article information
+links both received and own sent conversations so restored drafts remain reachable
+for copying or deliberate discard. Native projections keep these conversations
+read-only; recovery ownership never substitutes for operational consent or a
+certificate when sending, leaving, removing, following or serving peers.
 
 Audience review expands local group snapshots in the store. An explicit send mode
 creates either one fixed-audience root or independent one-person roots. A local
@@ -473,7 +488,9 @@ The solution: a thin bridge layer that mirrors *outgoing* shareable facts from C
 
 The bridge maintains a small set of iroh-docs per user:
 
-- `doc:self` — private state, syncs only between the user's own devices. Read-state, private tags, drafts, configuration.
+- `doc:self` — signed private reading state and archive/history, synchronized only
+  between the user's own certified devices. Unsent reply drafts and local
+  contact/group configuration remain installation-local.
 - `doc:public` — facts the user shares with all followers. Their public shares, public highlights, public reactions.
 - `doc:audience:{id}` — facts shared with a specific audience. One per audience.
 

@@ -81,8 +81,16 @@ the same article has a separate conversation.
 
 Choose Reply for shallow context, write your message and **Send reply** (or
 Cmd+Enter). It queues locally while offline. Failed sends keep the draft and
-retry identity. Unsent text survives reopening the conversation during the same
-app session; only Send makes it durable. Closing resumes the article/list behind it.
+retry identity. Unsent text saves privately on this desktop and survives restart.
+It stays here when you leave a conversation, and is included in encrypted backups.
+Only Send queues a message for the original audience. **Discard draft** asks you
+to confirm before clearing this conversation's local composition. A failed local
+save keeps your text and offers Retry; normal quit and backup wait for it to save.
+Closing the conversation resumes the article/list behind it.
+After a backup restore, **Info → Conversations** keeps received and sent threads
+and their drafts reachable locally. You can read, copy or discard before resuming
+identity in **Settings → Devices**; replying and other sharing changes wait for
+authorization.
 Provenance and reply ancestry shows original author/device keys and the parent
 chain. Private note editing has its own Revision provenance disclosure.
 

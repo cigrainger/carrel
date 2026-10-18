@@ -3,8 +3,9 @@
 **Implemented in current source; not included in the published alpha.3 packages.**
 A Carrel backup preserves a
 reading life: archived text/images, annotations and their complete history,
-subscriptions/folders, personal state, conversations, local contact/group settings
-and the identity material actually held on this desktop. Private sharing and
+subscriptions/folders, personal state, conversations, local contact/group settings,
+unfinished local reply drafts and the identity material actually held on this
+desktop. Private sharing and
 introductions remain the other immediate priority, described in
 [CONVERSATION_PLAN.md](CONVERSATION_PLAN.md#introductions-with-a-choice).
 
@@ -75,12 +76,12 @@ memory. Version the outer format and authenticate its manifest, entry order,
 lengths and final completion. Bound work and lengths before allocation or expensive
 passphrase derivation. Keep all sensitive filenames, keys and metadata inside
 the encrypted payload. Do not invent a new cryptographic primitive or reuse a
-nonce/key pair. Format 1 accepts the known schema versions 13 and 14. Its fixed entries are
+nonce/key pair. Format 1 accepts the known schema versions 13, 14 and 15. Its fixed entries are
 `database.sqlite`, optional `master.enc`, and `blobs/<lowercase BLAKE3 hash>`.
 The encrypted manifest is bounded to 16 MiB and 100,002 entries, total declared
 content to 1 TiB, and the age header to 8 KiB. The scrypt work factor and accepted
 maximum are both 18. Validate the manifest's exact source catalog, columns,
-triggers and portable records before executing the known 13→14 migration;
+triggers, portable records and local draft bounds before executing known migrations;
 validate the current catalog again before recovery preparation. Unknown schemas
 remain refused. See [ADR 0005](ADR-0005-local-backup-recovery.md).
 
@@ -141,7 +142,10 @@ Verification covers a tested restore, rather than just a successful export:
   unresolved note branches, read/star positions, removed subscriptions and folders.
 - Preserve sent/received conversations, withdrawals, reply removals, local
   contacts/groups, signed provenance and durable pending work, including private
-  conversation consent/leave history.
+  conversation consent/leave history and unfinished installation-local reply drafts.
+- Before identity authorization, reach received and own sent conversations through
+  reader article information; retain read-only history, draft copying and explicit
+  discard without enabling replies, Leave, removals, follows or peer access.
 - Cover unbound reading, originating-master and paired-device backups; no cloned
   operational identity, automatic friend follow or wider audience after restore.
 - Exercise wrong passphrases, corrupt/truncated files, excessive input bounds,

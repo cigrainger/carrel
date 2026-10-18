@@ -342,6 +342,7 @@ pub fn open_backup(
         .map(parse_key)
         .transpose()?;
     store.prepare_restored_archive(source, &fresh)?;
+    store.rekey_restored_reply_drafts(fresh.public())?;
     drop(store);
     fs::remove_file(directory.path().join("database.sqlite"))?;
     Ok(RestoredArchive {
@@ -505,7 +506,7 @@ fn parse_key(value: &str) -> Result<PublicKey> {
     Ok(key)
 }
 fn validate_manifest(m: &Manifest) -> Result<()> {
-    if m.version != 1 || !matches!(m.preview.schema_version, 13 | 14) {
+    if m.version != 1 || !matches!(m.preview.schema_version, 13..=15) {
         return Err(BackupError::Unsupported);
     }
     if m.entries.len() > MAX_ENTRIES || m.preview.app_version.len() > 128 {
@@ -666,7 +667,7 @@ fn validate_catalog(store: &Store) -> Result<()> {
 }
 
 fn validate_catalog_version(store: &Store, version: u32) -> Result<()> {
-    if !matches!(version, 13 | 14) {
+    if !matches!(version, 13..=15) {
         return Err(BackupError::Unsupported);
     }
     if store.current_schema_version()? != version {
@@ -694,6 +695,9 @@ fn validate_catalog_version(store: &Store, version: u32) -> Result<()> {
     }
     // Verify every immutable portable record before restoring any network identity.
     visit_private_records(store, |_| Ok(()))?;
+    if version >= 15 {
+        store.validate_local_reply_drafts()?;
+    }
     Ok(())
 }
 

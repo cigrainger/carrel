@@ -6,7 +6,7 @@ The published **alpha.3 installers do not include it**. For those builds, use th
 
 A backup keeps the complete database, available cached text and images,
 highlights and note revisions, subscriptions and folders, private reading state,
-conversation history, contacts and groups. It includes the encrypted master key
+conversation history, unsent reply drafts, contacts and groups. It includes the encrypted master key
 only when this desktop holds it. Appearance and keyboard preferences stay on the
 installation. The backup does not copy the desktop's operational private key.
 
@@ -22,6 +22,8 @@ Keep the passphrase separately and safely. Carrel cannot reset it. Your identity
 master key retains its own original recovery passphrase; the backup passphrase
 does not replace it. Creation leaves the archive available and does not publish
 anything. A failed write preserves an existing destination file.
+Pending draft saves finish first. If a save fails, creation stops and keeps the
+text available for Retry, copying or explicit discard in its conversation.
 
 ## Preview and restore
 
@@ -39,7 +41,7 @@ merge or replace an existing archive.
    Carrel restarts. **Cancel review** discards the preview without importing.
 
 Wrong passphrases, damaged files and unsupported formats leave the current archive
-intact. Current source accepts backup schemas 13 and 14: it validates the exact
+intact. Current source accepts backup schemas 13, 14 and 15: it validates the exact
 source schema before applying the known upgrade. Unknown future schemas are
 refused. Keep a copy of the source app and backup when moving between versions.
 Keep the backup file until you have reopened the restored archive and checked important offline
@@ -51,6 +53,11 @@ the prepared activation. If it has not begun, Backups also offers cancellation.
 The restored archive works locally straight away. Carrel creates a **fresh device
 key** and waits for authorization before syncing or sharing. Original notes and
 conversation records retain their authors and signatures.
+Unsent drafts keep their text and reply context, with fresh retry identities
+for the recovered desktop. Open the article's **Info → Conversations** to read
+retained received or sent threads and copy or deliberately discard a draft.
+Sharing changes wait for identity authorization. Restoration never sends drafts
+automatically or reopens a conversation you left or declined.
 
 - **The backup holds your encrypted master:** open **Settings → Devices → Resume
   identity** and unlock it with the original recovery passphrase. On each other

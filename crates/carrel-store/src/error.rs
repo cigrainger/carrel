@@ -9,6 +9,26 @@ pub type Result<T> = std::result::Result<T, StoreError>;
 /// Errors raised by the Carrel store boundary.
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
+    /// A local reply draft changed; retain submitted text and explicitly review it.
+    #[error(
+        "reply draft changed for {share_id}: expected revision {expected_revision}, current revision {current_revision}; reload and review the retained text"
+    )]
+    ReplyDraftConflict {
+        /// Original immutable conversation root.
+        share_id: String,
+        /// Revision submitted by the composer.
+        expected_revision: i64,
+        /// Current durable revision, including clear tombstones.
+        current_revision: i64,
+    },
+    /// A draft counter cannot advance without wrapping; nothing was changed.
+    #[error(
+        "reply draft revision exhausted for {share_id}; copy the retained text before recovery"
+    )]
+    ReplyDraftRevisionExhausted {
+        /// Original immutable conversation root.
+        share_id: String,
+    },
     /// Private consent prevents a new conversation action; the draft is untouched.
     #[error("conversation is unavailable: {0:?}")]
     ConversationUnavailable(carrel_core::conversation::ConversationParticipation),

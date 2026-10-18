@@ -36,11 +36,14 @@ definitions against a pristine schema, and verify retained portable signatures.
 No backup-provided trigger runs before its definition is checked. Store-internal
 staging clears the copied installation binding, reinstates the immutable-binding
 guard, creates an independent device key and records local recovery ownership.
-Schema 14 extends compatibility to the explicit source-version set `{13, 14}`.
+Schema 15 extends compatibility to the explicit source-version set `{13, 14, 15}`.
 Reconstruct the exact historical catalog using its original migrations and
 validate it before executing the known upgrade. Match the manifest to that source
 version, then validate the current catalog again. This preserves the first backup
 format without trusting arbitrary future schema or backup-provided triggers.
+Installation-local reply drafts are included in that snapshot. Restore keeps
+their exact text and reply context, advances retained revisions and replaces
+retry identities for the fresh device. It never signs or queues a reply.
 Preserve original certified authors, revocations and private document capabilities.
 The Iroh disk mirror is reconstructed only after explicit identity authorization.
 

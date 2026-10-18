@@ -34,12 +34,13 @@ Paths below are relative to `crates/`. Integration tests live in each crate's
 | Private device authorization | Sync `authorization.rs`, `transport.rs`, `pairing.rs` | Real-peer transport/pairing, revocation and restart tests |
 | Private header retries | Sync `runtime.rs`, `runtime/tests.rs` | Live announcer/relay preference, offline-provider failover, sender and signature refusals |
 | Friend / group audience isolation | Core `sharing.rs`, `conversation.rs`; store `sharing/`; sync `sharing.rs` | Adversarial/property tests, receipts and four-peer reply relay |
-| Conversation / revision ancestry | Store `sharing/conversation.rs`, `notes.rs`; app `commands/conversations.rs` | Out-of-order/cycle/removal, branch provenance and self-bridge tests |
+| Conversation / revision ancestry | Store `sharing/conversation.rs`, `recovery.rs`, `notes.rs`; app `commands/conversations.rs` | Out-of-order/cycle/removal, branch provenance, recovered read-only history and self-bridge tests |
+| Durable local reply drafts | Core `conversation/draft.rs`; store `sharing/draft.rs`, migration 15; app `commands/reply_drafts.rs`; frontend `drafts.rs` | Store `tests/reply_drafts.rs`: CAS/tombstones, atomic Send, retries, restart, backup/recovery and no-sync invariants |
 | Private conversation consent / Leave | Core `conversation/consent.rs`; store `sharing/consent.rs`, migration 14; sync `sharing.rs`, `bridge.rs` | Causal policy conflicts, terminal leave/decline, replay, stale-mirror serving and backup compatibility |
 | Private profiles / pictures | Core `conversation.rs`; app `commands/conversations.rs`; frontend `conversations.rs` | Recipient scope, alias precedence and bounded raster normalization |
 | Audience review / separate sends | Core `sharing/selection.rs`; store `sharing/send.rs`; app `commands/send.rs`; frontend `share_composer.rs` | Overlap property, atomic rollback, independent proofs, retry and restart |
 | Contextual introductions | App `commands/person_card.rs`; frontend `person_card.rs` | Participant/key pinning, forged/mismatched codes and no implicit follow |
-| Close / pending writes | App `close.rs`; frontend `progress.rs`, `writes.rs`, `requests.rs` | Unit tests and bounded native/browser review |
+| Close / pending writes | App `close.rs`; frontend `drafts.rs`, `progress.rs`, `writes.rs`, `requests.rs` | Unit tests and bounded native/browser review |
 | Keyboard / modal focus | Core `keymap/`; frontend `keymap/`, `components/modal.rs` | Keymap unit tests and actual webview review |
 
 Test key seeds and encrypted compatibility fixtures are deterministic test

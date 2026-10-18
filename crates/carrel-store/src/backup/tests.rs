@@ -270,9 +270,11 @@ fn malformed_manifest_paths_duplicates_versions_lengths_and_passwords_are_reject
         }],
     };
     assert!(validate_manifest(&valid()).is_ok());
-    let mut legacy = valid();
-    legacy.preview.schema_version = 13;
-    assert!(validate_manifest(&legacy).is_ok());
+    for version in [13, 14, 15] {
+        let mut known = valid();
+        known.preview.schema_version = version;
+        assert!(validate_manifest(&known).is_ok());
+    }
     for version in [0, 12, CURRENT_SCHEMA_VERSION + 1, u32::MAX] {
         let mut unknown = valid();
         unknown.preview.schema_version = version;
@@ -317,7 +319,7 @@ fn malformed_manifest_paths_duplicates_versions_lengths_and_passwords_are_reject
 
 #[test]
 fn injected_database_triggers_are_rejected_before_recovery() {
-    for version in [13, CURRENT_SCHEMA_VERSION] {
+    for version in [13, 14, 15] {
         let f = Fixture::at_schema(version);
         f.store.query("::set_triggers item on put { ?[id] := _new[id,kind,title,creators,primary_url,published_at,language,summary,discovered_at] :rm item {id} }").unwrap();
         assert!(matches!(
@@ -328,44 +330,56 @@ fn injected_database_triggers_are_rejected_before_recovery() {
 }
 
 #[test]
-fn schema_13_backup_is_validated_then_migrated_without_changing_signed_history() {
-    let f = Fixture::at_schema(13);
-    f.store
-        .add_feed("https://example.test/legacy-feed")
-        .unwrap();
-    let note = f
-        .store
-        .put_note(
-            PutNoteInput {
-                body: "A note made before the consent upgrade — 文".into(),
-                target_kind: None,
-                target_id: None,
-                created_at_micros: Some(1),
-            },
-            &f.device,
-        )
-        .unwrap();
-    let prepared = open_backup(&f.save(), PASSWORD, f.dir.path()).unwrap();
-    assert_eq!(prepared.preview.schema_version, 13);
-    let restored = Store::open(&prepared.path().join("store")).unwrap();
-    assert_eq!(
-        restored.current_schema_version().unwrap(),
-        CURRENT_SCHEMA_VERSION
-    );
-    assert_eq!(restored.get_note(&note.id).unwrap(), Some(note));
-    assert_eq!(
-        restored.list_feeds().unwrap(),
-        f.store.list_feeds().unwrap()
-    );
-    assert!(restored.self_identity().unwrap().is_none());
-    drop(restored);
-    validate_staged(prepared.path()).unwrap();
-    assert_eq!(f.store.current_schema_version().unwrap(), 13);
+fn schema_13_and_14_backups_are_validated_then_migrated_without_changing_signed_history() {
+    for version in [13, 14] {
+        let f = Fixture::at_schema(version);
+        f.store
+            .add_feed("https://example.test/legacy-feed")
+            .unwrap();
+        let note = f
+            .store
+            .put_note(
+                PutNoteInput {
+                    body: "A note made before the consent upgrade — 文".into(),
+                    target_kind: None,
+                    target_id: None,
+                    created_at_micros: Some(1),
+                },
+                &f.device,
+            )
+            .unwrap();
+        let prepared = open_backup(&f.save(), PASSWORD, f.dir.path()).unwrap();
+        assert_eq!(prepared.preview.schema_version, version);
+        let restored = Store::open(&prepared.path().join("store")).unwrap();
+        assert_eq!(
+            restored.current_schema_version().unwrap(),
+            CURRENT_SCHEMA_VERSION
+        );
+        assert_eq!(restored.get_note(&note.id).unwrap(), Some(note));
+        assert_eq!(
+            restored.list_feeds().unwrap(),
+            f.store.list_feeds().unwrap()
+        );
+        assert!(restored.self_identity().unwrap().is_none());
+        drop(restored);
+        validate_staged(prepared.path()).unwrap();
+        assert_eq!(f.store.current_schema_version().unwrap(), version);
+        assert!(restored_drafts_empty(prepared.path()));
+    }
+}
+
+fn restored_drafts_empty(path: &Path) -> bool {
+    let store = Store::open(&path.join("store")).unwrap();
+    store
+        .query("?[share_id] := *social_reply_draft{share_id}")
+        .unwrap()
+        .rows
+        .is_empty()
 }
 
 #[test]
 fn catalog_validation_requires_the_exact_declared_schema_and_historical_guards() {
-    for version in [13, CURRENT_SCHEMA_VERSION] {
+    for version in [13, 14, 15] {
         let f = Fixture::at_schema(version);
         validate_catalog_version(&f.store, version).unwrap();
         let other = if version == 13 {
@@ -384,6 +398,280 @@ fn catalog_validation_requires_the_exact_declared_schema_and_historical_guards()
             validate_catalog_version(&f.store, version),
             Err(BackupError::Integrity)
         ));
+    }
+}
+
+fn received_draft_root(f: &Fixture, master: &Keypair, token: &str) -> carrel_core::sharing::Share {
+    use carrel_core::{
+        private_library::SavedItem,
+        sharing::{Share, ShareFact},
+    };
+    let friend = Keypair::from_seed(&[91; 32]);
+    let friend_device = Keypair::from_seed(&[92; 32]);
+    f.store
+        .follow_social_contact(*friend.public(), "Friend", None)
+        .unwrap();
+    let root = Share::sign(
+        token.into(),
+        *master.public(),
+        SavedItem {
+            id: "d".repeat(64),
+            kind: "article".into(),
+            title: "Draft backup article".into(),
+            creators: vec![],
+            primary_url: Some("https://example.test/draft-backup".into()),
+            published_at_micros: None,
+            language: None,
+            summary: None,
+            // This is the signed public snapshot, not a private archive row.
+            discovered_at_micros: 0,
+            article: None,
+            identifiers: vec![],
+            contents: vec![],
+            resources: vec![],
+            current_images: None,
+        },
+        Some("Opening note".into()),
+        2,
+        DeviceCert::new_at_micros(&friend, friend_device.public(), 1, None),
+        &friend_device,
+    )
+    .unwrap();
+    f.store
+        .accept_social_record(
+            &ShareFact::Share(Box::new(root.clone())),
+            friend.public(),
+            2,
+            &f.device,
+        )
+        .unwrap();
+    root
+}
+
+#[test]
+fn schema_15_encrypted_backup_retains_draft_context_but_rekeys_each_recovered_sender() {
+    use carrel_core::conversation::{ConversationContent, ReplyDraftInput};
+    let f = Fixture::new();
+    let master = Keypair::generate();
+    f.store
+        .bind_self_identity(
+            &DeviceCert::new_at_micros(&master, f.device.public(), 1, None),
+            &f.device,
+        )
+        .unwrap();
+    let root = received_draft_root(&f, &master, "draft-root");
+    let discarded_root = received_draft_root(&f, &master, "discarded-root");
+    let parent = f
+        .store
+        .reply_to_social_share(&root.id, "parent", None, "Accepted parent", 3, &f.device)
+        .unwrap();
+    let ConversationContent::Reply { id: parent_id, .. } = parent.content else {
+        panic!()
+    };
+    let marker = "PRIVATE unsent draft — 文\n  retained exactly";
+    let original = f
+        .store
+        .save_reply_draft(
+            &root.id,
+            0,
+            ReplyDraftInput {
+                body: marker.into(),
+                parent: Some(parent_id.clone()),
+                request_id: "source-draft".into(),
+            },
+            f.device.public(),
+        )
+        .unwrap();
+    let discarded = f
+        .store
+        .save_reply_draft(
+            &discarded_root.id,
+            0,
+            ReplyDraftInput {
+                body: "Explicitly discarded".into(),
+                parent: None,
+                request_id: "discard-me".into(),
+            },
+            f.device.public(),
+        )
+        .unwrap();
+    let cleared = f
+        .store
+        .discard_reply_draft(&discarded_root.id, discarded.revision)
+        .unwrap();
+    let history = f
+        .store
+        .query("?[key,encoded] := *self_fact_history{key,encoded} :sort key")
+        .unwrap()
+        .rows;
+    let outbox = f
+        .store
+        .query("?[key,encoded] := *self_fact_outbox{key,encoded} :sort key")
+        .unwrap()
+        .rows;
+    let path = f.save();
+    assert!(
+        !fs::read(&path)
+            .unwrap()
+            .windows(marker.len())
+            .any(|bytes| bytes == marker.as_bytes())
+    );
+    let restored = open_backup(&path, PASSWORD, f.dir.path()).unwrap();
+    assert_eq!(restored.preview.schema_version, 15);
+    let store = Store::open(&restored.path().join("store")).unwrap();
+    let keys = Keystore::open(&restored.path().join("keys"));
+    let fresh = keys.load_device().unwrap();
+    let recovered = store.load_reply_draft(&root.id).unwrap();
+    assert!(store.self_identity().unwrap().is_none());
+    assert_eq!(recovered.revision, original.revision + 1);
+    let draft = recovered.draft.as_ref().unwrap();
+    assert_eq!(draft.body, marker);
+    assert_eq!(draft.parent.as_deref(), Some(parent_id.as_str()));
+    assert_eq!(&draft.retry_device, fresh.public());
+    assert_ne!(
+        draft.retry_device,
+        original.draft.as_ref().unwrap().retry_device
+    );
+    assert_ne!(
+        draft.request_id,
+        original.draft.as_ref().unwrap().request_id
+    );
+    let recovered_clear = store.load_reply_draft(&discarded_root.id).unwrap();
+    assert_eq!(recovered_clear.revision, cleared.revision + 1);
+    assert!(recovered_clear.draft.is_none());
+    assert!(
+        store
+            .reply_from_draft(&root.id, &recovered, 4, &fresh)
+            .is_err()
+    );
+    assert_eq!(
+        store
+            .query("?[key,encoded] := *self_fact_history{key,encoded} :sort key")
+            .unwrap()
+            .rows,
+        history
+    );
+    assert_eq!(
+        store
+            .query("?[key,encoded] := *self_fact_outbox{key,encoded} :sort key")
+            .unwrap()
+            .rows,
+        outbox
+    );
+
+    // A backup made before authorizing this recovered desktop must rekey again.
+    let second_path = f.dir.path().join("second-draft.carrel-backup");
+    store
+        .create_backup(
+            &BlobStore::open(restored.path().join("blobs")),
+            &keys,
+            File::create(&second_path).unwrap(),
+            PASSWORD,
+            "fixture",
+            456,
+        )
+        .unwrap();
+    let second = open_backup(&second_path, PASSWORD, f.dir.path()).unwrap();
+    let second_store = Store::open(&second.path().join("store")).unwrap();
+    let second_keys = Keystore::open(&second.path().join("keys"));
+    let second_key = second_keys.load_device().unwrap();
+    let second_draft = second_store.load_reply_draft(&root.id).unwrap();
+    assert_eq!(second_draft.revision, recovered.revision + 1);
+    assert_eq!(second_draft.draft.as_ref().unwrap().body, marker);
+    assert_ne!(
+        second_draft.draft.as_ref().unwrap().request_id,
+        draft.request_id
+    );
+    assert_eq!(
+        &second_draft.draft.as_ref().unwrap().retry_device,
+        second_key.public()
+    );
+    second_store
+        .discard_reply_draft(&root.id, second_draft.revision)
+        .unwrap();
+    drop(second_store);
+    validate_staged(second.path()).unwrap();
+
+    store
+        .authorize_restored_identity(&master, &fresh, "Recovered")
+        .unwrap();
+    assert!(
+        store
+            .reply_from_draft(&root.id, &original, 5, &fresh)
+            .is_err()
+    );
+    assert_eq!(store.load_reply_draft(&root.id).unwrap(), recovered);
+    let sent = store
+        .reply_from_draft(&root.id, &recovered, 6, &fresh)
+        .unwrap();
+    assert_eq!(&sent.record.certificate.device_pubkey, fresh.public());
+    assert!(sent.draft.draft.is_none());
+    assert_eq!(f.store.load_reply_draft(&root.id).unwrap(), original);
+    drop(store);
+}
+
+#[test]
+fn restore_rejects_unsigned_draft_payload_corruption_before_rekeying() {
+    use carrel_core::conversation::ReplyDraftInput;
+    for corruption in [
+        "revision=0",
+        "revision=1,body=null",
+        "revision=1,retry_device=null",
+        "revision=1,retry_device=$other_device",
+        "revision=1,parent=$missing_parent",
+    ] {
+        let f = Fixture::new();
+        let master = Keypair::generate();
+        f.store
+            .bind_self_identity(
+                &DeviceCert::new_at_micros(&master, f.device.public(), 1, None),
+                &f.device,
+            )
+            .unwrap();
+        let root = received_draft_root(&f, &master, "corrupt-root");
+        f.store
+            .save_reply_draft(
+                &root.id,
+                0,
+                ReplyDraftInput {
+                    body: "Keep".into(),
+                    parent: None,
+                    request_id: "draft".into(),
+                },
+                f.device.public(),
+            )
+            .unwrap();
+        f.store.query("::set_triggers social_reply_draft").unwrap();
+        // Restore the exact catalog after corrupting only the unsigned row data.
+        let columns = ["revision", "body", "parent", "request_id", "retry_device"];
+        let mut values = ["1", "'Keep'", "null", "'draft'", "$device"].map(str::to_owned);
+        for assignment in corruption.split(',') {
+            let (column, value) = assignment.split_once('=').unwrap();
+            values[columns.iter().position(|name| *name == column).unwrap()] = value.into();
+        }
+        let query = format!(
+            "?[share_id,revision,body,parent,request_id,retry_device] <- [[$share,{}]] :put social_reply_draft {{share_id=>revision,body,parent,request_id,retry_device}}",
+            values.join(",")
+        );
+        f.store
+            .query_with_params(
+                &query,
+                BTreeMap::from([
+                    ("share".into(), DataValue::from(root.id)),
+                    (
+                        "device".into(),
+                        DataValue::Bytes(f.device.public().as_bytes().to_vec()),
+                    ),
+                    (
+                        "other_device".into(),
+                        DataValue::Bytes(Keypair::generate().public().as_bytes().to_vec()),
+                    ),
+                    ("missing_parent".into(), DataValue::from("f".repeat(64))),
+                ]),
+            )
+            .unwrap();
+        f.store.query(crate::schema::REPLY_DRAFT_GUARD).unwrap();
+        assert!(open_backup(&f.save(), PASSWORD, f.dir.path()).is_err());
     }
 }
 

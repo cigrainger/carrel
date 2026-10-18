@@ -362,6 +362,71 @@ pub(crate) struct ConversationAccess {
     pub can_leave: bool,
     pub reason: Option<String>,
 }
+
+/// Exact native draft token. Revisions stay strings across the WASM boundary.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ReplyDraftSnapshot {
+    pub revision: String,
+    pub draft: Option<ReplyDraft>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ReplyDraft {
+    pub body: String,
+    pub parent: Option<String>,
+    pub request_id: String,
+    pub retry_device: String,
+}
+
+pub(crate) async fn load_reply_draft(share_id: &str) -> Result<ReplyDraftSnapshot, ApiError> {
+    local_call("load_reply_draft", serde_json::json!({"shareId": share_id})).await
+}
+
+pub(crate) async fn save_reply_draft(
+    share_id: &str,
+    expected_revision: &str,
+    body: &str,
+    parent: &Option<String>,
+    request_id: &str,
+) -> Result<ReplyDraftSnapshot, ApiError> {
+    local_call(
+        "save_reply_draft",
+        serde_json::json!({
+            "shareId": share_id,
+            "expectedRevision": expected_revision,
+            "draft": {"body": body, "parent": parent, "requestId": request_id},
+        }),
+    )
+    .await
+}
+
+pub(crate) async fn discard_reply_draft(
+    share_id: &str,
+    expected_revision: &str,
+) -> Result<ReplyDraftSnapshot, ApiError> {
+    local_call(
+        "discard_reply_draft",
+        serde_json::json!({
+            "shareId": share_id, "expectedRevision": expected_revision,
+        }),
+    )
+    .await
+}
+
+pub(crate) async fn send_reply_draft(
+    share_id: &str,
+    snapshot: &ReplyDraftSnapshot,
+) -> Result<ReplyDraftSnapshot, ApiError> {
+    local_call(
+        "send_reply_draft",
+        serde_json::json!({
+            "shareId": share_id, "snapshot": snapshot,
+        }),
+    )
+    .await
+}
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) struct ReplyProvenance {
     pub id: String,
@@ -656,6 +721,28 @@ impl ApiError {
 
     pub fn is_annotation_conflict(&self) -> bool {
         self.kind.as_deref() == Some("annotation_conflict")
+    }
+
+    pub(crate) fn is_draft_conflict(&self) -> bool {
+        self.kind.as_deref() == Some("draft_conflict")
+    }
+
+    /// Only explicit refusals establish that Send did not commit. Generic
+    /// storage, worker and transport failures must retain its exact retry token.
+    pub(crate) fn is_draft_send_refusal(&self) -> bool {
+        matches!(
+            self.kind.as_deref(),
+            Some(
+                "draft_conflict"
+                    | "draft_revision_exhausted"
+                    | "conversation_pending"
+                    | "conversation_declined"
+                    | "conversation_left"
+                    | "conversation_unavailable"
+                    | "config"
+                    | "keystore"
+            )
+        )
     }
 
     pub(crate) fn is_pairing_invitation_error(&self) -> bool {
@@ -1302,4 +1389,30 @@ fn api_error_from_js(value: wasm_bindgen::JsValue) -> ApiError {
 struct CommandError {
     message: String,
     kind: Option<String>,
+}
+
+#[cfg(test)]
+mod draft_error_tests {
+    use super::ApiError;
+
+    #[test]
+    fn generic_failures_do_not_confirm_that_send_was_refused() {
+        for kind in [
+            None,
+            Some("store"),
+            Some("background_task"),
+            Some("unknown"),
+        ] {
+            let error = ApiError {
+                message: "The commit outcome is unavailable".into(),
+                kind: kind.map(str::to_owned),
+            };
+            assert!(!error.is_draft_send_refusal());
+        }
+        let refused = ApiError {
+            message: "The draft changed before Send".into(),
+            kind: Some("draft_conflict".into()),
+        };
+        assert!(refused.is_draft_send_refusal());
+    }
 }

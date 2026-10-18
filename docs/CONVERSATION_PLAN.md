@@ -148,10 +148,15 @@ shallow parent context and a composer naming the participants.
 
 Send is explicit, including Cmd+Enter. It commits locally without waiting for
 delivery. Failures retain the text, parent and retry identity. Unsent replies
-survive closing/reopening the conversation during the current app session;
-only Send makes a durable queued message. Late saves acknowledge exactly their
-submitted draft and preserve newer composition. Palette and native-dialog guards
-leave drafts intact. Background refresh does not replace the composer.
+save privately on this desktop and survive restart. The composer loads their
+confirmed native snapshot before enabling edits. Autosave failure retains the
+text and offers retry; normal quit and backup flush it and stop if saving fails.
+Only Send makes a durable queued message, atomically clearing the exact submitted
+draft. Late acknowledgements preserve newer composition. Discard draft is
+explicit and confirmed. Leaving, declining and withdrawal keep drafts for copying
+or discard. Palette and native-dialog guards leave drafts intact. Background
+refresh does not replace the composer. These local drafts never sync or travel
+to other participants; the encrypted backup includes them.
 
 Replies are immutable. Their author can deliberately remove a message; its
 placeholder and ancestry remain, while its body is omitted from presentation.
