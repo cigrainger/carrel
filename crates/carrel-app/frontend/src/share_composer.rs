@@ -111,8 +111,12 @@ pub(crate) fn ShareComposer(target: ShareTarget) -> impl IntoView {
             }>
                 <h3>"Share article"</h3><p class="share-title">{target.get_value().title}</p>
                 <Show when=move ||saved.get().is_none() fallback=move ||view! {
-                    <p role="status">{move ||saved.get().unwrap_or_default()}</p>
-                    <p class="capture-notice">"Saved here; delivery waits while desktops are offline."</p>
+                    <p role="status">{move ||match mode.get() {
+                        Some(SendMode::Conversation)=>"Group share saved here. Each person addressed chooses whether to take part.",
+                        _ if multiple.get()=>"Separate shares saved here. Other recipients stay private, and each person chooses whether to reply.",
+                        _=>"Share saved here. The recipient chooses whether to reply.",
+                    }}</p>
+                    <p class="capture-notice">"Delivery may wait while desktops are offline."</p>
                     <div class="feed-dialog-actions"><button type="button" on:click=move |_|cancel.run(())>"Done"</button></div>
                 }>
                     <fieldset class="share-choices" disabled=move ||busy.get()>
@@ -141,8 +145,8 @@ pub(crate) fn ShareComposer(target: ShareTarget) -> impl IntoView {
                     </Show>
                     <Show when=move ||multiple.get()>
                         <fieldset class="share-mode" disabled=move ||busy.get()><legend>"How would you like to share?"</legend>
-                            <label><input type="radio" name="send-mode" value="conversation" prop:checked=move ||mode.get()==Some(SendMode::Conversation) on:change=move |_|mode.set(Some(SendMode::Conversation))/><span><strong>"Start a group conversation"</strong><small>"Everyone selected can see the participants and replies. You are introducing them through this article."</small></span></label>
-                            <label><input type="radio" name="send-mode" value="separately" prop:checked=move ||mode.get()==Some(SendMode::Separately) on:change=move |_|mode.set(Some(SendMode::Separately))/><span><strong>"Send separately"</strong><small>"Each person receives a private share and conversation with you. Other recipients stay private."</small></span></label>
+                            <label><input type="radio" name="send-mode" value="conversation" prop:checked=move ||mode.get()==Some(SendMode::Conversation) on:change=move |_|mode.set(Some(SendMode::Conversation))/><span><strong>"Start a group conversation"</strong><small>"Bring these people together around this article. They can see the original audience, and each chooses whether to take part in shared replies."</small></span></label>
+                            <label><input type="radio" name="send-mode" value="separately" prop:checked=move ||mode.get()==Some(SendMode::Separately) on:change=move |_|mode.set(Some(SendMode::Separately))/><span><strong>"Send separately"</strong><small>"Send a separate article and opening note to each person. Other recipients stay private, and each person chooses whether to reply."</small></span></label>
                         </fieldset>
                     </Show>
                     <label for="share-note">"A note (optional)"</label>

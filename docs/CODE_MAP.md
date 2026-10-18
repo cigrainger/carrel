@@ -32,8 +32,10 @@ Paths below are relative to `crates/`. Integration tests live in each crate's
 | Identity / key files | Core `identity/`; store `keystore.rs`, `identity.rs` | Keystore/identity tests and fixed compatibility fixture |
 | Encrypted backup / fresh-device recovery | Store `backup.rs`, `recovery.rs`; app `backup.rs`, `commands/backups.rs`; frontend `backups.rs` | Store round trips and property tests; activation interruption/eligibility tests; app recovery over real Iroh peers |
 | Private device authorization | Sync `authorization.rs`, `transport.rs`, `pairing.rs` | Real-peer transport/pairing, revocation and restart tests |
+| Private header retries | Sync `runtime.rs`, `runtime/tests.rs` | Live announcer/relay preference, offline-provider failover, sender and signature refusals |
 | Friend / group audience isolation | Core `sharing.rs`, `conversation.rs`; store `sharing/`; sync `sharing.rs` | Adversarial/property tests, receipts and four-peer reply relay |
 | Conversation / revision ancestry | Store `sharing/conversation.rs`, `notes.rs`; app `commands/conversations.rs` | Out-of-order/cycle/removal, branch provenance and self-bridge tests |
+| Private conversation consent / Leave | Core `conversation/consent.rs`; store `sharing/consent.rs`, migration 14; sync `sharing.rs`, `bridge.rs` | Causal policy conflicts, terminal leave/decline, replay, stale-mirror serving and backup compatibility |
 | Private profiles / pictures | Core `conversation.rs`; app `commands/conversations.rs`; frontend `conversations.rs` | Recipient scope, alias precedence and bounded raster normalization |
 | Audience review / separate sends | Core `sharing/selection.rs`; store `sharing/send.rs`; app `commands/send.rs`; frontend `share_composer.rs` | Overlap property, atomic rollback, independent proofs, retry and restart |
 | Contextual introductions | App `commands/person_card.rs`; frontend `person_card.rs` | Participant/key pinning, forged/mismatched codes and no implicit follow |

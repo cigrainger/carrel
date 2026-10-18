@@ -1184,16 +1184,33 @@ and explicitly follow. Both people choose independently. A mismatched code canno
 change the card's selected identity. Joining a thread never follows someone or
 distributes their connection address. Closing restores the thread and its draft.
 
-The next conversation pass prioritizes mutual-friend introductions and recipient
-choice. **Planned, not implemented in alpha.3:** Settings → People will offer
-**Allow group conversations with people I haven't followed**, enabled by default.
-Disabling it declines new conversations with an unfollowed participant while
-retaining direct shares and access to the shared article. Existing threads have
-a separate **Leave conversation** action, preserving their saved article and
-accepted history. Introductions name the mutual sharer and show the fixed audience;
-they never infer a follow or disclose a contact code. The receiving engine owns
-consent, including restart and sync behavior; see
-[the introduction plan](CONVERSATION_PLAN.md#next-priority-introductions-with-a-choice).
+Mutual-friend introductions lead with **“[Sharer] shared this article with you
+and …”**, followed by that person's opening note. Label the fixed recipient list
+**Original audience**, explaining that each person chooses whether to take part.
+A chosen recipient is not evidence of accepted participation. Send review and
+receipts use the same distinction. The composer states who a reply is addressed
+to and explains that delivery may wait while desktops are offline.
+
+Settings → People offers **Allow group conversations with people I haven't
+followed**, enabled by default in the engine. Render its confirmed value only
+after loading it; preserve a pending choice and failed-save recovery across
+background refresh. Disabling it declines new conversations with an unfollowed
+participant while retaining direct shares, the shared article and opening note.
+The setting and per-thread decisions follow the reader across their own desktops.
+Neither a decline nor a leave sends a participation receipt or contact information.
+
+Existing threads have a separate **Leave conversation** action with a deliberate
+inline confirmation. Preserve the saved article and accepted history. Keep any
+unsent reply available as selectable text with a Copy action; cancellation,
+failed saves, late responses and background changes must retain it. Explain
+declined, left, withdrawn and not-yet-available discussion states distinctly.
+The native projection controls reply/leave availability, including Cmd+Enter;
+the frontend never decides admission from a displayed audience or cached setting.
+Person cards remain deliberate connections and never infer a follow or disclose
+a contact code. The receiving engine owns consent, including restart and sync
+behavior; see
+[the introduction plan](CONVERSATION_PLAN.md#introductions-with-a-choice).
+These refinements are outside the published alpha.3 packages.
 
 Backup and restore is implemented in current source, beyond the alpha.3 packages.
 Settings provides Backups with

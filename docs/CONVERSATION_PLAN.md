@@ -6,22 +6,22 @@ groups select people for a share; each sent share fixes its own audience. This
 is discussion around something a person chose to share, without a public stream,
 notifications, reply counts or popularity signals.
 
-## Next priority: introductions with a choice
+## Introductions with a choice
 
-**Planned; not in alpha.3.** Prioritize the experience of a mutual friend bringing
-people together around an article they thought each person would appreciate.
+**Implemented in current source; not in alpha.3.** A mutual friend brings people
+together around an article they thought each person would appreciate.
 Encrypted backup/restore is implemented in current source and awaits a release;
 see
 [BACKUP_RESTORE_PLAN.md](BACKUP_RESTORE_PLAN.md).
 
-The opening should make the human context clear: who brought the conversation
+The opening makes the human context clear: who brought the conversation
 together, their opening note, and exactly who can read and reply. Participant
 cards retain the introduction context and explicit connection flow. Taking part
 never follows another participant or gives them a contact code. Names and pictures
 must respect their signed recipient scope; a warmer presentation cannot justify
 forwarding somebody else's private profile or the sharer's local contact aliases.
 
-Settings → People will offer **Allow group conversations with people I haven't
+Settings → People offers **Allow group conversations with people I haven't
 followed**, on by default. “Known” means a current explicit follow on this reader's
 desktop, not an inferred social connection. Turning it off declines new group
 conversations containing an unfollowed participant, including groups sent by a
@@ -30,25 +30,42 @@ the recipient's follows and cannot override this choice through a signed audienc
 The receiving engine must enforce the decision, including delayed delivery,
 replays and own-device synchronization; hiding a composer is insufficient.
 
-The shared article and the friend's opening note should remain useful even when
+The shared article and the friend's opening note remain useful even when
 the recipient declines the group discussion. Declining must not publish a reply,
 profile, contact code or acknowledgement of participation. A sender can still
 address a signed record to a public key while its owner is offline; inclusion in
 that record must not be presented as accepted participation.
 
-An individual conversation will also offer **Leave conversation**. It stops new
+An individual conversation also offers **Leave conversation**. It stops new
 discussion on that thread, preserves the saved article and accepted history, and
 keeps an unsent reply available for copying. Leaving grants no new access and
 cannot erase copies already received. The original signed audience remains an
 immutable historical fact. The general setting affects new conversations;
 existing conversations have their own explicit leave action.
 
-Before implementation, document the signed private consent/leave records and
-their concurrency rules in SCHEMA. These decisions must follow the reader across
-their own desktops, survive restart, and stay out of the social contact graph.
-Admission must serialize with preference changes and sending a reply. A delayed
-root, reply or private replay cannot silently rejoin a declined or left thread.
-The UI must distinguish the root's fixed audience from current participation.
+Schema 14 documents the signed private consent/leave operations and their causal
+rules. One global private-state register retains policy, admission, decline and
+leave history. Policy-off wins concurrent policy conflicts; a causally later
+change preserves existing conversations. Terminal leave/decline and immutable
+concurrent opt-out decisions cannot be undone by re-enabling, following someone
+later or replaying a root. These decisions follow the reader across their own
+desktops and stay out of the social contact graph.
+
+Admission serializes with preference changes and sending a reply. Private replay
+can restore history but cannot mint admission or grant publication by itself.
+Separately verified admission and audience checks preserve queued reply delivery
+through another own desktop.
+A replayed root awaiting its control history stays pending. Leave also stops
+serving already mirrored reply bodies; it does not erase copies delivered before
+the decision was known. Authenticated own-device replay can fill missing retained
+history, so this is not a per-message causal cutoff. The UI distinguishes the
+root's **Original audience** from current participation. Every own desktop must
+use the current build; older desktops cannot enforce the new controls.
+
+Migration 14 marks only exact legacy accepted roots, then an authorized key signs
+their explicit legacy admissions. It does not sign during migration or grandfather
+arbitrary replays. Schema-13 backups are validated against their original catalog
+before the known upgrade, preserving backups made before this feature.
 
 Extend the three-reader trial to cover:
 

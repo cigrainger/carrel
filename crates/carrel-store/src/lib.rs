@@ -127,6 +127,19 @@ impl Store {
 
     /// Apply all pending schema migrations.
     pub fn migrate(&self) -> Result<()> {
+        // Freeze typed writers while a migration validates its source rows. In
+        // particular the consent boundary must not miss a root accepted between
+        // its Rust-side signature check and the atomic marker/version write.
+        let _private = self
+            .private_state_lock
+            .lock()
+            .expect("migration state lock");
+        let _annotation = self
+            .annotation_lock
+            .lock()
+            .expect("migration annotation lock");
+        let _identity = self.identity_lock.lock().expect("migration identity lock");
+        let _social = self.social_lock.lock().expect("migration social lock");
         migrations::migrate(&self.db, self.current_schema_version()?)
     }
 

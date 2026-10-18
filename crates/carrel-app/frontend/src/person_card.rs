@@ -93,12 +93,12 @@ fn PersonCard(share_id: String, person_key: String, on_close: UnsyncCallback<()>
                 </div>
                 <p>{move ||data.with(|data|data.as_ref().map(|data|if data.is_self{"This is you.".into()}else{format!("Introduced through {}'s share.",data.introduced_by)}).unwrap_or_default())}</p>
                 <CopyTextField id="introduced-person-key" label="Verified public key" button="Copy this public key" text=Signal::derive(move ||key.get_value())/>
-                <p class="capture-notice">"This key belongs to a participant in the original signed share. Recognizing the person is your choice."</p>
+                <p class="capture-notice">"This key is in the original signed audience. Each person chooses whether to take part. Recognizing the person is your choice."</p>
                 <Show when=move ||data.with(|data|data.as_ref().is_some_and(|data|!data.is_self))>
                     <Show when=move ||!connecting.get() fallback=move ||view! {
                         <section class="person-card-connect">
                             <h4>"Exchange contact codes"</h4>
-                            <p>"Exchange codes privately with this person, then each choose to follow the other. Ask how to reach them in this conversation."</p>
+                            <p>"Arrange a private exchange of contact codes, then each choose to follow the other. Opening this card does not follow anyone."</p>
                             <Show when=move ||sharing.people.with(|people|people.contact_code.is_some()) fallback=move ||view!{<p>"Your contact code is preparing. You can return to the conversation and try again."</p><button type="button" on:click=move |_|sharing.refresh()>"Refresh your code"</button>}>
                                 <CopyTextField id="introduction-own-code" label="Your contact code" button="Copy your contact code" text=Signal::derive(move ||sharing.people.with(|people|people.contact_code.clone().unwrap_or_default()))/>
                             </Show>

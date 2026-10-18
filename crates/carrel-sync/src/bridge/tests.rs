@@ -124,6 +124,7 @@ async fn original_social_history_and_profiles_reach_another_certified_own_deskto
             &ShareFact::Share(Box::new(root.clone())),
             friend_master.public(),
             11,
+            &p.ka,
         )
         .unwrap();
     let reply = ConversationRecord::sign(
@@ -144,6 +145,7 @@ async fn original_social_history_and_profiles_reach_another_certified_own_deskto
             &ShareFact::Conversation(Box::new(reply.clone())),
             friend_master.public(),
             13,
+            &p.ka,
         )
         .unwrap();
     p.a.store
@@ -164,10 +166,37 @@ async fn original_social_history_and_profiles_reach_another_certified_own_deskto
         p.b.store.social_contacts().unwrap().is_empty(),
         "contacts are never silently followed"
     );
+    assert_eq!(
+        p.b.store.conversation_participation(&root.id).unwrap(),
+        carrel_store::sharing::ConversationParticipation::Admitted,
+        "the original desktop's signed admission travels separately from history"
+    );
+    let own_reply =
+        p.b.store
+            .reply_to_social_share(
+                &root.id,
+                "queued-on-own-desktop",
+                None,
+                "Forward this when my connected desktop is online",
+                15,
+                &p.kb,
+            )
+            .unwrap();
+    let own_reply = ShareFact::Conversation(Box::new(own_reply));
     p.b.store
         .save_social_profile("Edited on my other desktop", None, 15, &p.kb)
         .unwrap();
-    synchronize(&p.b,&p.a,||p.a.store.social_profile(p.root.public()).unwrap().is_some_and(|record|matches!(record.content,ConversationContent::Profile{name,..} if name=="Edited on my other desktop"))).await;
+    synchronize(&p.b, &p.a, || {
+        p.a.store.social_record(&own_reply.key().unwrap()).unwrap() == Some(own_reply.clone())
+            && p.a.store.social_profile(p.root.public()).unwrap().is_some_and(|record| matches!(record.content, ConversationContent::Profile { name, .. } if name == "Edited on my other desktop"))
+    }).await;
+    assert!(
+        p.a.store.social_record_servable(&own_reply).unwrap(),
+        "an admitted thread preserves queued own-desktop reply forwarding"
+    );
+    p.a.store
+        .authorize_social_recipient(friend_master.public())
+        .unwrap();
     p.a.store.publish_current_social_profiles(&p.ka).unwrap();
     assert!(p.a.store.social_history(None,100).unwrap().iter().any(|fact|matches!(fact,ShareFact::Conversation(record) if matches!(&record.content,ConversationContent::Profile{recipient,name,..} if *recipient==*friend_master.public() &&name=="Edited on my other desktop"))),"the desktop with the followed contact prepares the updated private profile");
     assert_eq!(
@@ -187,6 +216,302 @@ async fn original_social_history_and_profiles_reach_another_certified_own_deskto
             .all(|fact| fact.author() == *p.root.public())
     );
     assert!(p.a.cache.get_blocking(&body).is_ok());
+    stop(p.a).await;
+    stop(p.b).await;
+}
+
+async fn receive_fact(from: &SelfBridge, to: &SelfBridge, fact: &PrivateFact) -> PrivateReceive {
+    let key = format!("fact/{}", fact.key().unwrap());
+    let entry = from
+        .doc
+        .get_exact(from.author, key.as_bytes(), false)
+        .await
+        .unwrap()
+        .unwrap();
+    to.receive(&entry, from.address()).await.unwrap()
+}
+
+#[tokio::test]
+async fn own_peer_replay_restores_staged_history_without_admitting_or_republishing_it() {
+    use carrel_core::{
+        conversation::{ConversationContent, ConversationRecord, ThreadScope},
+        sharing::{Share, ShareFact, public_article_snapshot},
+    };
+    use carrel_store::sharing::ConversationParticipation::{Admitted, Left, Pending};
+    let p = pair().await;
+    article(&p.a, "History", b"<p>Retained article.</p>");
+    let friend_master = Keypair::from_seed(&[201; 32]);
+    let friend = Keypair::from_seed(&[202; 32]);
+    let certificate = DeviceCert::new_at_micros(&friend_master, friend.public(), 1, None);
+    p.a.store
+        .follow_social_contact(*friend_master.public(), "Friend", None)
+        .unwrap();
+    let root = Share::sign(
+        "history-root".into(),
+        *p.root.public(),
+        public_article_snapshot(
+            p.a.store
+                .saved_article_snapshot("article")
+                .unwrap()
+                .unwrap(),
+            vec![],
+        )
+        .unwrap(),
+        Some("Original opening note".into()),
+        10,
+        certificate.clone(),
+        &friend,
+    )
+    .unwrap();
+    let root_fact = ShareFact::Share(Box::new(root.clone()));
+    p.a.store
+        .accept_social_record(&root_fact, friend_master.public(), 11, &p.ka)
+        .unwrap();
+    let reply = ConversationRecord::sign(
+        ConversationContent::Reply {
+            scope: ThreadScope::from_share(&root).unwrap(),
+            id: Share::draft_id(&certificate, "historical-parent").unwrap(),
+            request_id: "historical-parent".into(),
+            parent: None,
+            body: "Original accepted history".into(),
+        },
+        12,
+        certificate,
+        &friend,
+    )
+    .unwrap();
+    let reply_fact = ShareFact::Conversation(Box::new(reply.clone()));
+    p.a.store
+        .accept_social_record(&reply_fact, friend_master.public(), 13, &p.ka)
+        .unwrap();
+    publish_all(&p.a).await;
+
+    // Download original own-device proofs out of order through the real private
+    // transport. Staging must remember this is history, not a friend candidate.
+    assert_eq!(
+        receive_fact(
+            &p.a,
+            &p.b,
+            &PrivateFact::Social(Box::new(reply_fact.clone()))
+        )
+        .await,
+        PrivateReceive::Pending
+    );
+    receive_fact(&p.a, &p.b, &PrivateFact::Social(Box::new(root_fact))).await;
+    p.b.promote_dependencies().await.unwrap();
+    assert_eq!(
+        p.b.store.conversation_participation(&root.id).unwrap(),
+        Pending
+    );
+    assert_eq!(
+        p.b.store.social_conversation(&root.id).unwrap().replies[0].record,
+        reply
+    );
+    assert!(!p.b.store.social_record_servable(&reply_fact).unwrap());
+    assert!(
+        p.b.store
+            .reply_to_social_share(&root.id, "no-admission", None, "Draft", 14, &p.kb)
+            .is_err()
+    );
+    assert!(
+        p.b.store
+            .private_state_heads(&StateKey {
+                kind: StateKind::ConversationControl,
+                target: "global".into()
+            })
+            .unwrap()
+            .is_empty()
+    );
+
+    synchronize(&p.a, &p.b, || {
+        p.b.store.conversation_participation(&root.id).unwrap() == Admitted
+    })
+    .await;
+    p.b.store
+        .leave_social_conversation(&root.id, 15, &p.kb)
+        .unwrap();
+    // A has not learned Leave. Its queued offline work can fill B's retained
+    // history through the own channel, without granting publication rights.
+    let offline =
+        p.a.store
+            .reply_to_social_share(
+                &root.id,
+                "offline-before-leave",
+                None,
+                "Offline history — 文",
+                16,
+                &p.ka,
+            )
+            .unwrap();
+    let offline_fact = ShareFact::Conversation(Box::new(offline.clone()));
+    publish_all(&p.a).await;
+    receive_fact(
+        &p.a,
+        &p.b,
+        &PrivateFact::Social(Box::new(offline_fact.clone())),
+    )
+    .await;
+    assert_eq!(
+        p.b.store.conversation_participation(&root.id).unwrap(),
+        Left
+    );
+    assert!(
+        p.b.store
+            .social_conversation(&root.id)
+            .unwrap()
+            .replies
+            .iter()
+            .any(|r| r.record == offline)
+    );
+    assert!(!p.b.store.social_record_servable(&offline_fact).unwrap());
+    synchronize(&p.b, &p.a, || {
+        p.a.store.conversation_participation(&root.id).unwrap() == Left
+    })
+    .await;
+    assert!(!p.a.store.social_record_servable(&offline_fact).unwrap());
+    assert_eq!(
+        p.a.store
+            .reply_to_social_share(
+                &root.id,
+                "offline-before-leave",
+                None,
+                "Offline history — 文",
+                16,
+                &p.ka
+            )
+            .unwrap(),
+        offline
+    );
+    for _ in 0..2 {
+        assert!(p.b.replay(p.a.address()).await.unwrap().is_empty());
+        assert_eq!(
+            p.b.store.conversation_participation(&root.id).unwrap(),
+            Left
+        );
+    }
+    assert_eq!(
+        p.b.store
+            .social_conversation(&root.id)
+            .unwrap()
+            .replies
+            .len(),
+        2
+    );
+    assert!(p.b.store.social_contacts().unwrap().is_empty());
+    stop(p.a).await;
+    stop(p.b).await;
+}
+
+#[tokio::test]
+async fn own_peers_converge_on_concurrent_opt_out_without_closing_prior_admissions() {
+    use carrel_core::sharing::{Share, ShareFact, public_article_snapshot};
+    use carrel_store::sharing::ConversationParticipation::{Admitted, Declined};
+    let p = pair().await;
+    article(&p.a, "Concurrent consent", b"<p>Fixed article.</p>");
+    let friend_master = Keypair::from_seed(&[211; 32]);
+    let friend = Keypair::from_seed(&[212; 32]);
+    let unfamiliar = Keypair::from_seed(&[213; 32]);
+    let certificate = DeviceCert::new_at_micros(&friend_master, friend.public(), 1, None);
+    p.b.store
+        .follow_social_contact(*friend_master.public(), "Friend", None)
+        .unwrap();
+    let public = public_article_snapshot(
+        p.a.store
+            .saved_article_snapshot("article")
+            .unwrap()
+            .unwrap(),
+        vec![],
+    )
+    .unwrap();
+    let make_root = |request: &str| {
+        Share::sign_for(
+            request.into(),
+            vec![*p.root.public(), *unfamiliar.public()],
+            public.clone(),
+            Some("An unfamiliar group".into()),
+            10,
+            certificate.clone(),
+            &friend,
+        )
+        .unwrap()
+    };
+    let prior = make_root("prior");
+    p.b.store
+        .accept_social_record(
+            &ShareFact::Share(Box::new(prior.clone())),
+            friend_master.public(),
+            11,
+            &p.kb,
+        )
+        .unwrap();
+    synchronize(&p.b, &p.a, || {
+        p.a.store
+            .conversation_participation(&prior.id)
+            .is_ok_and(|state| state == Admitted)
+    })
+    .await;
+
+    p.a.store
+        .set_allow_unfollowed_group_conversations(false, 12, &p.ka)
+        .unwrap();
+    let concurrent = make_root("concurrent");
+    p.b.store
+        .accept_social_record(
+            &ShareFact::Share(Box::new(concurrent.clone())),
+            friend_master.public(),
+            13,
+            &p.kb,
+        )
+        .unwrap();
+    assert_eq!(
+        p.b.store
+            .conversation_participation(&concurrent.id)
+            .unwrap(),
+        Admitted
+    );
+    synchronize(&p.a, &p.b, || {
+        p.b.store
+            .conversation_participation(&concurrent.id)
+            .unwrap()
+            == Declined
+    })
+    .await;
+    synchronize(&p.b, &p.a, || {
+        p.a.store.social_conversation(&concurrent.id).is_ok()
+            && p.a
+                .store
+                .conversation_participation(&concurrent.id)
+                .unwrap()
+                == Declined
+    })
+    .await;
+    for bridge in [&p.a, &p.b] {
+        assert_eq!(
+            bridge.store.conversation_participation(&prior.id).unwrap(),
+            Admitted
+        );
+        assert!(!bridge.store.allow_unfollowed_group_conversations().unwrap());
+    }
+    p.a.store
+        .set_allow_unfollowed_group_conversations(true, 14, &p.ka)
+        .unwrap();
+    synchronize(&p.a, &p.b, || {
+        p.b.store.allow_unfollowed_group_conversations().unwrap()
+    })
+    .await;
+    for bridge in [&p.a, &p.b] {
+        assert_eq!(
+            bridge
+                .store
+                .conversation_participation(&concurrent.id)
+                .unwrap(),
+            Declined
+        );
+        assert_eq!(
+            bridge.store.conversation_participation(&prior.id).unwrap(),
+            Admitted
+        );
+    }
     stop(p.a).await;
     stop(p.b).await;
 }

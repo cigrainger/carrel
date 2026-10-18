@@ -15,13 +15,13 @@ into an empty installation. Public syndication, OPDS and mobile are future
 designs. They are marked below; a design sketch does not establish an implemented
 API. [CODE_MAP.md](CODE_MAP.md) locates source and tests.
 
-The next priority is recipient consent and leaving mutual-friend conversations,
+Current source adds recipient consent and leaving mutual-friend conversations,
 described in
-[CONVERSATION_PLAN.md](CONVERSATION_PLAN.md#next-priority-introductions-with-a-choice)
+[CONVERSATION_PLAN.md](CONVERSATION_PLAN.md#introductions-with-a-choice)
 and distinct from the implemented [backup contract](BACKUP_RESTORE_PLAN.md).
-Neither is included in the published alpha.3 packages. The recovery ownership
-relation is specified in schema 13; future signed consent facts require their own
-schema decision before code changes.
+Neither is included in the published alpha.3 packages. Recovery ownership is
+specified in schema 13; the private consent contract and legacy adoption are
+specified in schema 14.
 
 ## The shape of the system
 
@@ -148,6 +148,12 @@ historical resources do not expand it. Native commands prepare the public articl
 subset and compose these store operations. The frontend only renders people,
 vouches and archives and dispatches explicit commands.
 
+The private worker remembers which peer announced a queued header. It prefers
+that peer, then its certified header author, and tries other available own peers
+after retryable transfer failures. A stale offline hint cannot monopolize every
+retry. Provider preference is only scheduling: each attempt still verifies the
+active sender, certified historical author, content hash and original signature.
+
 An app-owned social worker runs with the self transport while dialogs are closed.
 It repairs publication, receives pages and rotates failed cache transfers, with
 two bounded peer exchanges at a time. Store revision changes refresh the existing
@@ -163,6 +169,27 @@ original signatures on the user's other desktops. Local contact/group setup
 does not replicate or grant a friend private document access. Avatars are small
 normalized raster payloads inside recipient-scoped signed profiles, never URLs
 or generic blob grants. See SCHEMA's version 11 contract.
+
+Conversation consent uses the existing signed private-state envelope, with one
+global causal register of cumulative policy, admission, decline and leave
+operations. Pure core resolution retains the whole control DAG: causally later
+policy changes preserve existing admissions, concurrent opt-outs resolve
+conservatively, and terminal per-thread decisions cannot reopen through replay.
+Cozo serializes policy/admission/leave and reply saves using
+`private_state → identity → social`. First friend-root receipt commits its
+article, opening proof and local consent together. Known participants mean
+explicit local follows at admission, never inferred trust. Native projections
+expose permitted actions; the webview does not infer admission from an audience.
+
+Own-device social replay restores retained history without minting admission or
+granting publication by itself. Separately verified admission and audience checks
+still allow queued replies to travel through another own desktop. A root arriving
+before its control history stays pending. Social publication and serving recheck current participation so
+old Iroh mirror entries cannot bypass Leave. Author removal and root withdrawal
+can still update retained history. The original audience and other readers'
+rights remain unchanged. Private control facts never travel to social peers.
+Older own desktops cannot enforce this contract; all own desktops must use the
+same current build.
 
 Audience review expands local group snapshots in the store. An explicit send mode
 creates either one fixed-audience root or independent one-person roots. A local

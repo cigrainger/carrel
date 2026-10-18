@@ -393,6 +393,7 @@ impl Store {
         at: i64,
         device: &Keypair,
     ) -> Result<Record> {
+        let _private = self.private_state_lock.lock().expect("reply consent lock");
         let _identity = self.identity_lock.lock().expect("reply identity lock");
         let _social = self.social_lock.lock().expect("reply write lock");
         let certificate = self.social_local_certificate(device.public())?;
@@ -417,6 +418,10 @@ impl Store {
         }
         if self.social_conversation(share_id)?.closed {
             return Err(invalid("this share has been withdrawn"));
+        }
+        let participation = self.conversation_participation_unlocked(&scope)?;
+        if participation != ConversationParticipation::Admitted {
+            return Err(StoreError::ConversationUnavailable(participation));
         }
         if let Some(parent) = &parent
             && self.social_record(&format!("reply/{parent}"))?.is_none()
@@ -446,6 +451,10 @@ impl Store {
         at: i64,
         device: &Keypair,
     ) -> Result<()> {
+        let _private = self
+            .private_state_lock
+            .lock()
+            .expect("reply removal consent lock");
         let _identity = self
             .identity_lock
             .lock()
@@ -477,10 +486,10 @@ impl Store {
         record.verify()?;
         let fact = ShareFact::Conversation(Box::new(record.clone()));
         let key = fact.key()?;
-        if let Some(existing) = self.social_record(&key)? {
-            if existing == fact {
-                return Ok(SocialReceive::Existing);
-            }
+        let existing = self.social_record(&key)?;
+        if let Some(existing) = &existing
+            && *existing != fact
+        {
             return Err(invalid("immutable conversation conflict"));
         }
         let local = self
@@ -498,10 +507,22 @@ impl Store {
             if !scope.contains(&local) || (!from_self && !scope.contains(sender)) {
                 return Err(invalid("conversation sender is not a participant"));
             }
+            if matches!(&record.content, Content::Reply { .. }) && !from_self {
+                match self.conversation_participation_unlocked(scope)? {
+                    ConversationParticipation::Declined | ConversationParticipation::Left => {
+                        self.discard_staged_social(&fact, false)?;
+                        return Ok(SocialReceive::Ignored);
+                    }
+                    ConversationParticipation::Pending => {
+                        return self.stage_social_record(&fact, false);
+                    }
+                    ConversationParticipation::Admitted => {}
+                }
+            }
             let Some(ShareFact::Share(root)) =
                 self.social_record(&format!("share/{}", scope.share_id))?
             else {
-                return self.stage_social_record(&fact);
+                return self.stage_social_record(&fact, from_self);
             };
             if ThreadScope::from_share(&root)? != *scope {
                 return Err(invalid("conversation audience differs from original vouch"));
@@ -515,7 +536,7 @@ impl Store {
                 let Some(ShareFact::Conversation(parent)) =
                     self.social_record(&format!("reply/{id}"))?
                 else {
-                    return self.stage_social_record(&fact);
+                    return self.stage_social_record(&fact, from_self);
                 };
                 if parent.scope() != Some(scope)
                     || (matches!(record.content, Content::Remove { .. })
@@ -524,6 +545,10 @@ impl Store {
                     return Err(invalid("reply parent or removal author does not match"));
                 }
             }
+        }
+        if existing.is_some() {
+            self.discard_staged_social(&fact, from_self)?;
+            return Ok(SocialReceive::Existing);
         }
         let mut params = record_params(&fact)?;
         let mut script = PUT_RECORD.to_owned();
@@ -538,12 +563,47 @@ impl Store {
             ]);
             script.push_str("{ ?[id,key,share_id,parent] <- [[$reply,$key,$thread,$parent]] :put social_reply {id=>key,share_id,parent} }");
         }
-        script.push_str("{ ?[key] <- [[$key]] :rm social_pending {key} }");
+        if from_self {
+            script.push_str("{ ?[key] <- [[$pf_key]] :rm self_library_incoming {key} }");
+        } else {
+            script.push_str("{ ?[key] <- [[$key]] :rm social_pending {key} }");
+        }
         self.query_with_params(&script, params)?;
         self.social_changed();
         Ok(SocialReceive::Applied)
     }
-    fn stage_social_record(&self, fact: &ShareFact) -> Result<SocialReceive> {
+    fn stage_social_record(&self, fact: &ShareFact, from_self: bool) -> Result<SocialReceive> {
+        if from_self {
+            // Own replay is already accepted history on another desktop. Keep
+            // that provenance separate so terminal consent drops peer candidates
+            // while still allowing missing historical parents to be restored.
+            let private = carrel_core::private_library::PrivateFact::Social(Box::new(fact.clone()));
+            let key = private.key()?;
+            let rows = self.query_with_params(
+                "?[encoded] := *self_library_incoming{key:$key,encoded}",
+                BTreeMap::from([("key".into(), DataValue::from(key))]),
+            )?;
+            if let Some(row) = rows.rows.first() {
+                if row[0] != DataValue::Bytes(private.to_bytes()?) {
+                    return Err(invalid("immutable own history conflict"));
+                }
+                return Ok(SocialReceive::Pending);
+            }
+            let sizes = self.query("?[key,size] := *self_library_incoming{key,kind:'social',encoded}, size=length(encoded)")?;
+            let size: i64 = sizes
+                .rows
+                .iter()
+                .map(|r| integer(&r[1]))
+                .collect::<Result<Vec<_>>>()?
+                .into_iter()
+                .sum();
+            if sizes.rows.len() >= 512 || size + private.to_bytes()?.len() as i64 > 32 * 1024 * 1024
+            {
+                return Err(invalid("own conversation dependency queue is full"));
+            }
+            self.stage_library_fact(&private, None)?;
+            return Ok(SocialReceive::Pending);
+        }
         if let ShareFact::Conversation(record) = fact
             && let Content::Reply {
                 scope,
@@ -585,6 +645,19 @@ impl Store {
                 next = parent;
             }
         }
+        if !self.social_pending_has_capacity_unlocked(fact)? {
+            return Ok(SocialReceive::Deferred);
+        }
+        self.query_with_params(
+            "?[key,encoded] <- [[$key,$encoded]] :put social_pending {key=>encoded}",
+            record_params(fact)?,
+        )?;
+        Ok(SocialReceive::Pending)
+    }
+
+    // All typed peer staging holds the social lock through its write transaction.
+    // Root callers include the marker in the article/proof transaction as well.
+    pub(super) fn social_pending_has_capacity_unlocked(&self, fact: &ShareFact) -> Result<bool> {
         let params = record_params(fact)?;
         let existing = self.query_with_params(
             "?[encoded] := *social_pending{key:$key,encoded}",
@@ -594,7 +667,7 @@ impl Store {
             if row[0] != params["encoded"] {
                 return Err(invalid("immutable pending conversation conflict"));
             }
-            return Ok(SocialReceive::Pending);
+            return Ok(true);
         }
         let rows =
             self.query("?[key,size] := *social_pending{key,encoded}, size=length(encoded)")?;
@@ -605,17 +678,90 @@ impl Store {
             .collect::<Result<Vec<_>>>()?
             .into_iter()
             .sum::<i64>();
-        if rows.rows.len() >= 512 || size + fact.to_bytes()?.len() as i64 > 32 * 1024 * 1024 {
-            return Err(invalid("conversation dependency queue is full"));
-        }
-        self.query_with_params(
-            "?[key,encoded] <- [[$key,$encoded]] :put social_pending {key=>encoded}",
-            params,
-        )?;
-        Ok(SocialReceive::Pending)
+        Ok(rows.rows.len() < 512 && size + fact.to_bytes()?.len() as i64 <= 32 * 1024 * 1024)
     }
-    /// Promote verified dependencies after root/parent arrival, in bounded passes.
+    fn discard_staged_social(&self, fact: &ShareFact, from_self: bool) -> Result<()> {
+        let (table, key) = if from_self {
+            (
+                "self_library_incoming",
+                carrel_core::private_library::PrivateFact::Social(Box::new(fact.clone())).key()?,
+            )
+        } else {
+            ("social_pending", fact.key()?)
+        };
+        self.query_with_params(
+            &format!("?[key] <- [[$key]] :rm {table} {{key}}"),
+            BTreeMap::from([("key".into(), DataValue::from(key))]),
+        )?;
+        Ok(())
+    }
+    /// Complete up to 50 durable peer-root receipts after control ancestry resolves.
+    ///
+    /// Requires the active installation's operational signer and current explicit
+    /// follows. The decisions and removal of their peer-origin markers commit together.
+    /// Self-replayed roots have no such marker and cannot gain admission here.
+    /// Returns the number of completed receipts, including terminal decisions.
+    pub fn admit_pending_social_roots(&self, at: i64, device: &Keypair) -> Result<usize> {
+        let _private = self
+            .private_state_lock
+            .lock()
+            .expect("pending root consent lock");
+        let _identity = self
+            .identity_lock
+            .lock()
+            .expect("pending root identity lock");
+        let _social = self.social_lock.lock().expect("pending root social lock");
+        self.social_local_certificate(device.public())?;
+        if self.pending_conversation_controls_unlocked()? {
+            return Ok(0);
+        }
+        let rows = self.query(
+            "?[key,encoded] := *social_pending{key,encoded}, *social_record{key,kind:'share',author}, *social_contact{master:author,followed:true} :sort key :limit 50",
+        )?;
+        let completed = rows.rows.len();
+        let mut params = BTreeMap::new();
+        let mut script = String::new();
+        let mut removals = String::new();
+        let mut roots = Vec::new();
+        // Like a send batch, this atomic pass signs the heads observed before
+        // the batch; its independent roots do not supersede one another.
+        for (index, row) in rows.rows.into_iter().enumerate() {
+            let DataValue::Bytes(bytes) = &row[1] else {
+                return Err(invalid("invalid pending root"));
+            };
+            let fact = ShareFact::from_bytes(bytes)?;
+            let ShareFact::Share(root) = &fact else {
+                return Err(invalid("pending root is not a share"));
+            };
+            let key = fact.key()?;
+            if row[0] != DataValue::from(key.as_str())
+                || self.social_record(&key)?.as_ref() != Some(&fact)
+            {
+                return Err(invalid("pending root differs from its accepted proof"));
+            }
+            self.require_social_contact(&fact.author())?;
+            roots.push(root.as_ref().clone());
+            let param = format!("pending_root_{index}");
+            params.insert(param.clone(), row[0].clone());
+            removals.push_str(&format!(
+                "{{ ?[key] <- [[${param}]] :rm social_pending {{key}} }}"
+            ));
+        }
+        if completed > 0 {
+            self.append_social_admissions_unlocked(&mut script, &mut params, &roots, at, device)?;
+            script.push_str(&removals);
+            self.query_with_params(&script, params)?;
+            self.social_changed();
+        }
+        Ok(completed)
+    }
+
+    /// Promote retained history and peer replies without signing root admissions.
     pub fn promote_pending_social(&self) -> Result<bool> {
+        let _private = self
+            .private_state_lock
+            .lock()
+            .expect("pending social consent lock");
         let _identity = self
             .identity_lock
             .lock()
@@ -629,22 +775,45 @@ impl Store {
         for _ in 0..16 {
             let rows =
                 self.query("?[key,encoded] := *social_pending{key,encoded} :sort key :limit 512")?;
+            let own = self.query("?[key,encoded] := *self_library_incoming{key,encoded,kind:'social'} :sort key :limit 512")?;
             let mut progressed = false;
-            for row in rows.rows {
+            for (row, from_self) in rows
+                .rows
+                .into_iter()
+                .map(|r| (r, false))
+                .chain(own.rows.into_iter().map(|r| (r, true)))
+            {
                 let DataValue::Bytes(bytes) = &row[1] else {
                     return Err(invalid("invalid pending conversation"));
                 };
-                let fact = ShareFact::from_bytes(bytes)?;
+                let fact = if from_self {
+                    let carrel_core::private_library::PrivateFact::Social(fact) =
+                        carrel_core::private_library::PrivateFact::from_bytes(bytes)?
+                    else {
+                        return Err(invalid("invalid own conversation history"));
+                    };
+                    *fact
+                } else {
+                    ShareFact::from_bytes(bytes)?
+                };
                 if let ShareFact::Conversation(record) = fact {
-                    match self.accept_conversation_unlocked(&record, &local, true) {
+                    match self.accept_conversation_unlocked(&record, &local, from_self) {
                         Ok(SocialReceive::Applied | SocialReceive::Existing) => {
                             progressed = true;
                             changed = true;
                         }
+                        Ok(SocialReceive::Ignored) => {
+                            progressed = true;
+                        }
                         Ok(_) => {}
                         Err(StoreError::InvalidInput { .. } | StoreError::Share(_)) => {
+                            let table = if from_self {
+                                "self_library_incoming"
+                            } else {
+                                "social_pending"
+                            };
                             self.query_with_params(
-                                "?[key] <- [[$key]] :rm social_pending {key}",
+                                &format!("?[key] <- [[$key]] :rm {table} {{key}}"),
                                 BTreeMap::from([("key".into(), row[0].clone())]),
                             )?;
                             progressed = true;
@@ -672,15 +841,20 @@ impl Store {
                 &author,
                 (time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1000) as i64,
                 Some(sender),
+                None,
             )? {
                 SocialReceive::Applied => PrivateReceive::Applied,
                 SocialReceive::Existing => PrivateReceive::Existing,
                 SocialReceive::Pending => PrivateReceive::Pending,
                 SocialReceive::Retracted => PrivateReceive::Removed,
+                SocialReceive::Ignored => PrivateReceive::Removed,
+                SocialReceive::Deferred => {
+                    return Err(invalid("unexpected peer backpressure on own history"));
+                }
             },
         )
     }
-    fn conversation_root(&self, id: &str) -> Result<Share> {
+    pub(super) fn conversation_root(&self, id: &str) -> Result<Share> {
         match self.social_record(&format!("share/{id}"))? {
             Some(ShareFact::Share(root)) => Ok(*root),
             _ => Err(invalid("conversation is unavailable")),

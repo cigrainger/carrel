@@ -67,8 +67,8 @@ pub(crate) async fn send_article_batch(
         };
         let names=roots.iter().flat_map(|root|root.recipients()).collect::<std::collections::BTreeSet<_>>().iter().map(|key|context.store.social_name(key)).collect::<carrel_store::Result<Vec<_>>>()?.join(", ");
         let message=match mode {
-            SendMode::Separately=>format!("Share saved separately for {names}. Each person has a private conversation with you."),
-            SendMode::Conversation=>format!("Conversation saved for {names}. Everyone selected can see the participants and replies."),
+            SendMode::Separately=>format!("Share saved separately for {names}. Each person chooses whether to take part in their private conversation with you."),
+            SendMode::Conversation=>format!("Share saved for {names}. Each person chooses whether to take part. Replies are addressed to this original audience and may wait while desktops are offline."),
         };
         let shares=roots.into_iter().map(|share|Ok(SentShareSummary{
             to:context.store.social_audience_name(&share)?,id:share.id,item_id:share.article.id,title:share.article.title,

@@ -12,10 +12,16 @@ history remains in Git.
   reconnection requires explicit authorization. Appearance/keymap stay local.
 - Settings → Backups and Getting started → Restore backup, with recovery guidance
   and a reviewed fresh-device reconnection flow in Settings → Devices.
+- A private People setting to decline new group conversations with people you
+  have not followed, while retaining the article and opening note. Direct shares
+  and existing conversations remain available.
+- Leave a conversation without losing its saved article, retained history or
+  unsent draft text. Consent and Leave decisions converge across your own desktops.
 
-These changes require schema 13 and are not in the alpha.3 installers. Do not
-open a migrated archive with an older app. Physical file-picker/recovery trials
-remain manual checks.
+Current source upgrades to schema 14 and is not in the alpha.3 installers. Use
+the same current build on every own desktop to enforce conversation decisions.
+Do not open a migrated archive with an older app. Physical file-picker/recovery
+trials remain manual checks.
 
 ## 0.1.0-alpha.3
 

@@ -977,6 +977,128 @@ verified legacy records, and journals their original bytes without signing or
 rewriting them. It never follows a person or enables networking. Version is
 recorded last.
 
+### Private conversation consent (version 14)
+
+The original signed audience describes who was addressed, never who accepted.
+Consent is private state shared only between the reader's own certified desktops.
+No participation receipt, follow list, profile or contact code is sent to the
+other participants. Direct shares remain available independently of the group
+preference.
+
+`StateKind::ConversationControl` adds one register, with the sole permitted target
+`global`, to the existing signed `StateRevision`/`PrivateFact::State` envelope.
+Existing kind encodings and signatures remain unchanged. Its value contains one
+of four cumulative operations:
+
+```
+Policy { allow_unfollowed_groups: Bool }
+Admit { scope: ThreadScope, basis: AdmissionBasis }
+Decline { scope: ThreadScope }
+Leave { scope: ThreadScope }
+
+AdmissionBasis = AllFollowed | IntroductionsAllowed | LegacyAccepted
+```
+
+`ThreadScope` retains its exact canonical root digest, sharer and immutable
+recipient set. Controls validate this bounded scope even before the social root
+arrives; later root matching is exact. Each operation signs all observed heads
+of the global control register. Display time never decides consent. Resolve the
+complete retained control DAG rather than treating its heads as replacement
+values: a later policy write cannot erase an admission or leave.
+
+The preference defaults to on. Resolve only causally maximal Policy operations;
+concurrent on/off resolves off. An explicit on observing both branches enables
+future admissions. A group has more than one recipient. It is unfamiliar when
+any participant other than the local master lacks a current explicit follow on
+the admitting desktop. That decision is captured under the social lock without
+putting follows into the signed payload.
+
+Admission and policy resolve as follows:
+
+- A causally later off does not close a conversation already admitted in its
+  causal past. The setting governs new conversations, including delayed roots,
+  according to recipient admission history rather than sender timestamps.
+- First receipt of an unfamiliar group while off atomically retains the article
+  and opening note and signs Decline. All-followed groups and direct shares can
+  be admitted while off.
+- An IntroductionsAllowed admission concurrent with off resolves declined unless
+  an admission for that exact root already exists in the off operation's causal
+  past. A duplicate admission from another own desktop must not turn an existing
+  conversation into a new one. AllFollowed and LegacyAccepted admissions are
+  unaffected by concurrent policy changes.
+- Explicit Decline or Leave anywhere in accepted control history is terminal.
+  A decline derived from an immutable concurrent admission/off pair is also
+  retained by resolution after re-enabling. Later follows, policy changes,
+  replay and duplicate admissions cannot reopen that root.
+
+Unresolved incoming control ancestry blocks new admission conservatively. A
+self-replayed root can restore its article and opening proof, but remains pending
+until signed control history authorizes participation. Private replay never
+mints an admission. Controls can arrive before their root; root delivery cannot
+bypass a previously received leave or decline.
+
+Policy writes, first admission, Leave, incoming controls and local reply saves
+use lock order `private_state → identity → social`. Article/proof, admission and
+private journal work commit atomically for a new root. If a reply commits before
+Leave, retain its history; once Leave is known, stop further publication or relay
+of reply bodies, including already queued replies and stale mirror entries. If
+Leave commits first, refuse a new save before signing. Retrying an existing save
+may acknowledge it but cannot recreate delivery work. An offline desktop may
+have transmitted bytes before learning a concurrent opt-out; those copies cannot
+be retracted.
+
+Authenticated own-device history may fill missing retained replies. Replay alone
+cannot authorize participation, clear terminal decisions or grant publication.
+Separately verified admission and the ordinary audience checks still permit
+queued replies to travel through another own desktop. Pending, declined and left
+threads cannot publish reply bodies. This is not a per-reply causal cutoff. New friend-delivered
+replies to declined/left roots are consumed without accepting their bodies or
+repeatedly failing a page. Author removals and root withdrawal can still update
+retained history. Leave does not withdraw the original vouch or change another
+reader's rights. Social serving rechecks the current engine decision, rather
+than trusting an old mirror entry.
+
+Peer candidates remain in `social_pending`. Authenticated own history awaiting
+roots/parents uses `self_library_incoming` with its verified `PrivateFact::Social`
+wrapper, preserving its origin across restart. Each social queue is bounded to
+512 records and 32 MiB. Promotion must not treat a staged peer candidate as own
+accepted history merely because the local desktop retries it.
+Once control ancestry is complete, an authorized local operational signer may
+finish deferred admission from the durable peer-root marker, rechecking its
+followed author. This continues an already verified first receipt; an accepted
+root or private replay alone is insufficient evidence of peer origin. Drain
+these markers before processing more candidate replies so capacity backpressure
+cannot permanently hide the roots needed to make progress.
+Capacity refusal is a typed deferred receive, not acceptance. Continue the
+bounded page scan to reach roots/parents and retry deferred records on subsequent
+full scans. A full dependency queue cannot reset every scan before those records.
+
+Migration 14 records exact already accepted roots, including locally authored
+roots but excluding pending peer candidates, in a local-only legacy marker:
+
+```
+:create social_conversation_legacy { share_id: String => scope: Bytes }
+```
+
+Marker creation and the version boundary commit together so interrupted retry
+cannot grandfather later arrivals. Migration never signs or chooses an identity.
+An authorized operational-key adoption pass later signs LegacyAccepted from
+these markers; it does not grandfather arbitrary private replay. Until adoption,
+legacy history stays readable and cannot gain new participation by bypassing
+initialization. Empty installations have no marker rows and remain eligible for
+restore. Version 14 installs its own private-state target guard admitting the
+singleton control register; the historical version-6 guard stays unchanged.
+
+Both known backup schemas 13 and 14 remain restorable. Authenticate the complete
+archive, match the manifest to its source database version, and validate that
+version's exact catalog, columns, triggers and portable records before migration.
+Only then run the known 13→14 migration and validate the current catalog before
+recovery preparation/activation. Future or unknown schemas remain refused.
+
+Older desktops do not understand these private controls. Use the same current
+build on all own desktops for opt-out/leave enforcement; no new social wire fact
+or remotely observable participation state is introduced.
+
 ### Explicit sharing mode and local send batches (version 12)
 
 One composer can select several people and local groups. The store expands the

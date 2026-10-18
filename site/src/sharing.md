@@ -74,8 +74,10 @@ available. Groups are local selections, not accounts or shared directories.
 
 Open **Conversation** beside a received vouch or in People → Sent articles.
 Article Info also lists received conversations, including withdrawn shares.
-The vouch starts the exchange; replies stay visible only to that share's fixed
-participants. A separate share of the same article has a separate conversation.
+The vouch starts the exchange; replies are addressed only to that share's fixed
+audience. The **Original audience** is who was invited, not confirmation that
+everyone joined. Each person chooses whether to take part. A separate share of
+the same article has a separate conversation.
 
 Choose Reply for shallow context, write your message and **Send reply** (or
 Cmd+Enter). It queues locally while offline. Failed sends keep the draft and
@@ -93,7 +95,7 @@ already received. There are no reply counts or notification pings.
 
 ## Connect through a conversation
 
-Open a person's name or **People in this conversation** to see their person card.
+Open a person's name in **Original audience** to see their person card.
 It shows the verified participant key and who opened the share. Names/pictures are
 optional and remain private profiles; an unknown person can appear by key.
 
@@ -112,6 +114,31 @@ versions during the trial. Signed conversation/profile history follows your
 private own-device sync; contacts, group selections and connection information
 must still be set up explicitly for direct friend exchange on another desktop.
 That desktop can read retained history and queue replies through own-device sync.
+
+## Choose which conversations to join
+
+**Current source only; not in the alpha.3 installers.** In **Settings → People**,
+**Allow group conversations with people I haven't followed** starts on. It lets
+a mutual friend bring people together around an article without requiring each
+pair to follow one another first.
+
+Turn it off to decline new group conversations containing someone you have not
+explicitly followed, including groups sent by a followed friend. Direct shares
+and groups containing only people you follow remain available. You still keep
+the shared article and opening note. Existing conversations stay open unless
+you leave them individually. Turning the setting back on affects future
+conversations; it does not reopen a declined one.
+
+In a thread, choose **Leave conversation**, then confirm. You retain the article
+and existing history. An unfinished reply stays selectable with **Copy unsent reply**;
+leaving does not silently send it. You cannot rejoin that same conversation by
+reopening it. Other readers' conversations and copies stay theirs.
+
+These choices are private and synchronize between your own desktops. They send
+no participation receipt and never follow another reader or exchange contact
+codes. Use the same current build on all own desktops: older builds cannot
+enforce opt-out or Leave. A desktop that was offline may have sent a reply before
+learning a decision made elsewhere; already delivered copies cannot be recalled.
 
 ## Recover or stop a connection
 

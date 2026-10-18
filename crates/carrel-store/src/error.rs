@@ -9,6 +9,9 @@ pub type Result<T> = std::result::Result<T, StoreError>;
 /// Errors raised by the Carrel store boundary.
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
+    /// Private consent prevents a new conversation action; the draft is untouched.
+    #[error("conversation is unavailable: {0:?}")]
+    ConversationUnavailable(carrel_core::conversation::ConversationParticipation),
     /// Invalid signed recipient-scoped share or contact proof.
     #[error(transparent)]
     Share(#[from] carrel_core::sharing::ShareError),

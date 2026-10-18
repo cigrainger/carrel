@@ -148,11 +148,12 @@ impl SocialBridge {
     }
     /// Publish one bounded history page; cache loss is repaired by cycling history.
     pub async fn publish(&self, after: Option<String>) -> Result<Option<String>> {
+        self.promote_received_dependencies().await?;
         let source = self.store.clone();
         let device = self.device.clone();
         tokio::task::spawn_blocking(move || source.publish_current_social_profiles(&device))
             .await
-            .map_err(|e| transport_error("prepare current profile delivery", e))??;
+            .map_err(|e| transport_error("prepare social publication", e))??;
         let source = self.store.clone();
         let records = tokio::task::spawn_blocking(move || {
             source.social_publication_history(after.as_deref(), 50)
@@ -163,6 +164,14 @@ impl SocialBridge {
         for fact in records {
             let portable = fact.key()?;
             next = Some(portable.clone());
+            let source = self.store.clone();
+            let candidate = fact.clone();
+            if !tokio::task::spawn_blocking(move || source.social_record_servable(&candidate))
+                .await
+                .map_err(|e| transport_error("check social publication consent", e))??
+            {
+                continue;
+            }
             let bytes = fact.to_bytes()?;
             for recipient in fact.recipients() {
                 let key = mirror_key(recipient, &portable);
@@ -195,6 +204,7 @@ impl SocialBridge {
         tokio::task::spawn_blocking(move || source.authorize_social_recipient(&recipient))
             .await
             .map_err(|e| transport_error("authorize share recipient", e))??;
+        self.promote_received_dependencies().await?;
         if after.as_ref().is_some_and(|key| key.len() > 256) {
             return Err(SyncError::InvalidEntry);
         }
@@ -242,6 +252,16 @@ impl SocialBridge {
                 || fact.key()? != key
             {
                 return Err(SyncError::InvalidEntry);
+            }
+            // A mirror entry may predate Leave or a resolved private opt-out.
+            // Cozo owns the current permission even when these bytes are cached.
+            let source = self.store.clone();
+            let candidate = fact.clone();
+            if !tokio::task::spawn_blocking(move || source.social_record_servable(&candidate))
+                .await
+                .map_err(|e| transport_error("check mirrored conversation consent", e))??
+            {
+                continue;
             }
             found.insert(key, fact);
             // Select a bounded page in SDK key order without reading all bodies.
@@ -410,20 +430,22 @@ impl SocialBridge {
         }
         contact_address(&card)?;
         self.store.complete_social_contact(&card)?;
-        let mut changed = false;
+        // Finish durable peer receipts before an earlier reply can consume the
+        // remaining queue space. This never admits history-only self replay.
+        let mut changed = self.promote_received_dependencies().await?;
         for fact in records {
             let source = self.store.clone();
+            let device = self.device.clone();
             let result = tokio::task::spawn_blocking(move || {
-                source.accept_social_record(&fact, &expected, now_micros())
+                source.accept_social_record(&fact, &expected, now_micros(), &device)
             })
             .await
             .map_err(|e| transport_error("accept signed share", e))??;
+            // Deferred candidates stay on the sender. Advance through this page
+            // to reach later roots/parents, then retry them on the next full scan.
             changed |= result == SocialReceive::Applied;
         }
-        let source = self.store.clone();
-        changed |= tokio::task::spawn_blocking(move || source.promote_pending_social())
-            .await
-            .map_err(|e| transport_error("promote conversation dependencies", e))??;
+        changed |= self.promote_received_dependencies().await?;
         if changed {
             self.cache_cursors
                 .lock()
@@ -431,6 +453,21 @@ impl SocialBridge {
                 .remove(&expected);
         }
         Ok((after, changed))
+    }
+
+    async fn promote_received_dependencies(&self) -> Result<bool> {
+        let source = self.store.clone();
+        let device = self.device.clone();
+        let changed = tokio::task::spawn_blocking(move || {
+            let mut changed = !source.promote_pending_state()?.applied.is_empty();
+            changed |= source.adopt_legacy_social_conversations(now_micros(), &device)? > 0;
+            changed |= source.admit_pending_social_roots(now_micros(), &device)? > 0;
+            changed |= source.promote_pending_social()?;
+            carrel_store::Result::Ok(changed)
+        })
+        .await
+        .map_err(|e| transport_error("promote conversation dependencies", e))??;
+        Ok(changed)
     }
     /// Transfer even already-known digests: the source must possess this share's bytes.
     pub async fn transfer_cache(&self, card: &ContactCard) -> Result<SocialCacheTransfer> {

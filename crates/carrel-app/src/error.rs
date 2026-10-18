@@ -97,6 +97,15 @@ impl Serialize for AppError {
             Self::Store(carrel_store::StoreError::AnnotationConflict { .. }) => {
                 "annotation_conflict"
             }
+            Self::Store(carrel_store::StoreError::ConversationUnavailable(participation)) => {
+                use carrel_core::conversation::ConversationParticipation;
+                match participation {
+                    ConversationParticipation::Pending => "conversation_pending",
+                    ConversationParticipation::Declined => "conversation_declined",
+                    ConversationParticipation::Left => "conversation_left",
+                    ConversationParticipation::Admitted => "conversation_unavailable",
+                }
+            }
             Self::Store(_) => "store",
             Self::Blob(_) => "blob",
             Self::Keystore(carrel_store::keystore::KeystoreError::WrongPassphrase) => {
@@ -112,17 +121,51 @@ impl Serialize for AppError {
             Self::InvalidData { .. } => "invalid_data",
         };
 
-        SerializedAppError {
-            kind,
-            message: self.to_string(),
-        }
-        .serialize(serializer)
+        let message = match self {
+            Self::Store(carrel_store::StoreError::ConversationUnavailable(participation)) => {
+                use carrel_core::conversation::ConversationParticipation;
+                match participation {
+                    ConversationParticipation::Pending => "This conversation is still syncing. Your draft is still here.",
+                    ConversationParticipation::Declined => "This group conversation was declined under your conversation preference. Your draft is still here.",
+                    ConversationParticipation::Left => "You left this conversation. Your draft is still here.",
+                    ConversationParticipation::Admitted => "This conversation is unavailable. Refresh it to check its current state. Your draft is still here.",
+                }.to_owned()
+            }
+            _ => self.to_string(),
+        };
+        SerializedAppError { kind, message }.serialize(serializer)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn conversation_refusals_keep_typed_reasons_at_the_ui_boundary() {
+        use carrel_core::conversation::ConversationParticipation;
+        for (participation, kind) in [
+            (ConversationParticipation::Pending, "conversation_pending"),
+            (ConversationParticipation::Declined, "conversation_declined"),
+            (ConversationParticipation::Left, "conversation_left"),
+            (
+                ConversationParticipation::Admitted,
+                "conversation_unavailable",
+            ),
+        ] {
+            let error = AppError::Store(carrel_store::StoreError::ConversationUnavailable(
+                participation,
+            ));
+            let encoded = serde_json::to_value(error).unwrap();
+            assert_eq!(encoded["kind"], kind);
+            assert!(
+                encoded["message"]
+                    .as_str()
+                    .unwrap()
+                    .contains("draft is still here")
+            );
+        }
+    }
 
     #[test]
     fn pairing_recovery_errors_have_typed_ui_kinds() {

@@ -39,9 +39,10 @@ merge or replace an existing archive.
    Carrel restarts. **Cancel review** discards the preview without importing.
 
 Wrong passphrases, damaged files and unsupported formats leave the current archive
-intact. This initial format requires the supported schema exactly; keep a copy of
-the source app and backup when moving between versions. Keep the backup file
-until you have reopened the restored archive and checked important offline
+intact. Current source accepts backup schemas 13 and 14: it validates the exact
+source schema before applying the known upgrade. Unknown future schemas are
+refused. Keep a copy of the source app and backup when moving between versions.
+Keep the backup file until you have reopened the restored archive and checked important offline
 articles, passages and notes. If restart was interrupted, reopen Carrel to resume
 the prepared activation. If it has not begun, Backups also offers cancellation.
 

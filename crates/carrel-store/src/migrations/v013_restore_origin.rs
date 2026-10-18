@@ -24,12 +24,9 @@ mod tests {
     fn interrupted_recovery_migration_resumes_without_choosing_an_identity() {
         for exists in [false, true] {
             let store = Store::open_in_memory().unwrap();
-            store.migrate().unwrap();
-            store
-                .query("?[version] <- [[13]] :rm schema_version {version}")
-                .unwrap();
-            if !exists {
-                store.query("::remove restore_origin").unwrap();
+            super::super::migrate_through(&store.db, 0, 12).unwrap();
+            if exists {
+                store.query(":create restore_origin {singleton:Int=>master_pubkey:Bytes?,device_pubkey:Bytes,legacy_devices:[Bytes]}").unwrap();
             }
             store.migrate().unwrap();
             store.migrate().unwrap();

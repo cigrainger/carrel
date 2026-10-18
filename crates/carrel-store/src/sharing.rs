@@ -7,8 +7,10 @@ use carrel_core::sharing::{
 };
 use cozo::{DataValue, JsonData, Validity};
 use std::collections::BTreeMap;
+mod consent;
 mod conversation;
 mod send;
+pub use carrel_core::conversation::ConversationParticipation;
 pub use conversation::{Conversation, ConversationReply, ReceivedConversation, SocialGroup};
 
 /// A manually pinned person, with optional signed connection information.
@@ -34,7 +36,7 @@ pub struct ShareDraft {
     /// Deliberately entered optional note.
     pub note: Option<String>,
 }
-/// Durable receipt result.
+/// Receipt result, including retryable peer backpressure without a local receipt.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SocialReceive {
     /// New signed record and local projections committed together.
@@ -45,6 +47,10 @@ pub enum SocialReceive {
     Retracted,
     /// Verified bytes await their original root or parent.
     Pending,
+    /// Consent consumed this peer candidate without accepting its discussion body.
+    Ignored,
+    /// The peer dependency queue is full. Nothing was retained; retry on a later scan.
+    Deferred,
 }
 /// A bounded cache download that must be authorized against its original share.
 #[derive(Clone, Debug)]
@@ -102,7 +108,7 @@ pub struct SentSharePage {
     pub next_cursor: Option<SentShareCursor>,
 }
 
-const PUT_RECORD: &str = r#"{
+pub(crate) const PUT_RECORD: &str = r#"{
     ?[key, encoded, author, recipient, share_id, kind, created_at] <- [[$key,$encoded,$author,$recipient,$share_id,$kind,$created]]
     :put social_record {key => encoded, author, recipient, share_id, kind, created_at}
 }
@@ -330,10 +336,18 @@ impl Store {
                 device,
             )?
         };
-        self.query_with_params(
-            PUT_RECORD,
-            record_params(&ShareFact::Share(Box::new(share.clone())))?,
+        let mut script = PUT_RECORD.to_owned();
+        let mut params = record_params(&ShareFact::Share(Box::new(share.clone())))?;
+        self.append_social_admission_unlocked(
+            &mut script,
+            &mut params,
+            &share,
+            at_micros,
+            device,
+            "send",
         )?;
+        self.query_with_params(&script, params)?;
+        self.social_changed();
         Ok(share)
     }
     /// Retract only this master's own vouch; an older timestamp still withdraws it.
@@ -500,8 +514,9 @@ impl Store {
         fact: &ShareFact,
         expected_author: &PublicKey,
         at_micros: i64,
+        device: &Keypair,
     ) -> Result<SocialReceive> {
-        self.accept_social_record_from(fact, expected_author, at_micros, None)
+        self.accept_social_record_from(fact, expected_author, at_micros, None, Some(device))
     }
     fn accept_social_record_from(
         &self,
@@ -509,6 +524,7 @@ impl Store {
         expected_author: &PublicKey,
         at_micros: i64,
         self_sender: Option<&PublicKey>,
+        device: Option<&Keypair>,
     ) -> Result<SocialReceive> {
         fact.verify()?;
         let _private = self.private_state_lock.lock().expect("shared article lock");
@@ -519,6 +535,9 @@ impl Store {
         let _social = self.social_lock.lock().expect("share receipt lock");
         let binding = self.self_identity()?.ok_or(StoreError::IdentityUnbound)?;
         self.social_local_certificate(&binding.device_pubkey)?;
+        if let Some(device) = device {
+            self.social_local_certificate(device.public())?;
+        }
         if let Some(sender) = self_sender {
             self.require_private_sender(sender, None)?;
         } else {
@@ -548,6 +567,30 @@ impl Store {
             if existing != *fact {
                 return Err(invalid("immutable share record conflict"));
             }
+            // The durable peer receipt also permits signer-backed continuation;
+            // a self replay alone never creates this marker or an admission.
+            if let (ShareFact::Share(root), Some(device)) = (fact, device) {
+                let staged = self.query_with_params(
+                    "?[key] := *social_pending{key}, key=$key",
+                    BTreeMap::from([("key".into(), DataValue::from(fact.key()?))]),
+                )?;
+                if !staged.rows.is_empty() && !self.pending_conversation_controls_unlocked()? {
+                    let mut params = record_params(fact)?;
+                    let mut script = String::new();
+                    self.append_social_admission_unlocked(
+                        &mut script,
+                        &mut params,
+                        root,
+                        at_micros,
+                        device,
+                        "retry",
+                    )?;
+                    script.push_str("{ ?[key] <- [[$key]] :rm social_pending {key} }");
+                    self.query_with_params(&script, params)?;
+                    self.social_changed();
+                    return Ok(SocialReceive::Applied);
+                }
+            }
             return Ok(SocialReceive::Existing);
         }
         let mut params = record_params(fact)?;
@@ -568,6 +611,29 @@ impl Store {
                 SocialReceive::Applied
             }
             ShareFact::Share(share) => {
+                if let Some(device) = device {
+                    if self.pending_conversation_controls_unlocked()? {
+                        // Keep the article while admission waits. This root's
+                        // peer origin is durable, unlike a history-only replay.
+                        // The social lock keeps the capacity check and transaction
+                        // together; overflow retains neither proof nor article.
+                        if !self.social_pending_has_capacity_unlocked(fact)? {
+                            return Ok(SocialReceive::Deferred);
+                        }
+                        script.push_str("{ ?[key,encoded] <- [[$key,$encoded]] :put social_pending {key=>encoded} }");
+                    } else {
+                        self.append_social_admission_unlocked(
+                            &mut script,
+                            &mut params,
+                            share,
+                            at_micros,
+                            device,
+                            "receive",
+                        )?;
+                    }
+                } else {
+                    self.verify_replayed_root_scope_unlocked(share)?;
+                }
                 if share.version == 2 {
                     let legacy = self.query_with_params(
                         "?[key] := *social_record{share_id:$id,kind:'retraction',key}",

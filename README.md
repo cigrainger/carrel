@@ -51,8 +51,11 @@ conversations. Alpha.2 does not support those additions. See the
 for the changes and upgrade guidance.
 
 Current source also adds encrypted backups and previewed restore into an empty
-installation, with a fresh device key and explicit identity recovery. These are
-not in the published alpha.3 installers. See [backup and recovery](site/src/backups.md).
+installation, with a fresh device key and explicit identity recovery. It adds
+private opt-outs from new group conversations with unfamiliar people and a
+per-conversation Leave action that retains the article and history. These are
+not in the published alpha.3 installers. See [backup and recovery](site/src/backups.md)
+and [private conversations](site/src/sharing.md).
 
 Physical two-computer sharing, installed app-link handoff and passage focus,
 native file-picker selection and broader platform usability remain manual release

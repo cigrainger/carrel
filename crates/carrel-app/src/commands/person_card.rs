@@ -166,6 +166,7 @@ mod tests {
                 &ShareFact::Share(Box::new(share.clone())),
                 sharer.public(),
                 2,
+                &local_device,
             )
             .unwrap();
         let code = ContactCard::sign(

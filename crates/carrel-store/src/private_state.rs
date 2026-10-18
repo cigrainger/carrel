@@ -61,6 +61,9 @@ impl Store {
         at_micros: i64,
         signer: &Keypair,
     ) -> Result<StateRevision> {
+        if key.kind == StateKind::ConversationControl {
+            return Err(invalid("use the typed conversation consent API"));
+        }
         let _guard = self
             .private_state_lock
             .lock()
@@ -522,7 +525,10 @@ impl Store {
             .expect("private state write lock");
         let _identity_guard = self.identity_lock.lock().expect("identity write lock");
         record.verify()?;
+        let _social = (record.key.kind == StateKind::ConversationControl)
+            .then(|| self.social_lock.lock().expect("control social lock"));
         validate_key(&record.key)?;
+        self.validate_conversation_control_unlocked(record)?;
         let devices = self.self_devices()?;
         if !devices
             .iter()
@@ -625,14 +631,18 @@ impl Store {
             .lock()
             .expect("private state write lock");
         let _identity_guard = self.identity_lock.lock().expect("identity write lock");
+        let _social = self
+            .social_lock
+            .lock()
+            .expect("state promotion social lock");
         let mut report = StatePromotions::default();
         loop {
             let rows = self.query(r#"
                 missing[reg, rev] := *self_state_incoming{register: reg, revision_id: rev, parents},
                     parent in parents, not *self_state{revision_id: parent}
-                removed[reg, rev] := *self_state_incoming{register: reg, revision_id: rev, kind, target}, kind != 'subscription', *entity_tombstone{id: target @ "END"}
-                ready[reg, rev] := *self_state_incoming{register: reg, revision_id: rev, kind}, kind == 'subscription', not missing[reg, rev]
-                ready[reg, rev] := *self_state_incoming{register: reg, revision_id: rev, kind, target}, kind != 'subscription', *item{id: target}, not missing[reg, rev]
+                removed[reg, rev] := *self_state_incoming{register: reg, revision_id: rev, kind, target}, kind != 'subscription', kind != 'conversation_control', *entity_tombstone{id: target @ "END"}
+                ready[reg, rev] := *self_state_incoming{register: reg, revision_id: rev, kind}, (kind == 'subscription' || kind == 'conversation_control'), not missing[reg, rev]
+                ready[reg, rev] := *self_state_incoming{register: reg, revision_id: rev, kind, target}, kind != 'subscription', kind != 'conversation_control', *item{id: target}, not missing[reg, rev]
                 selected[reg, rev] := ready[reg, rev]
                 selected[reg, rev] := removed[reg, rev]
                 ?[reg, rev, encoded] := selected[reg, rev], *self_state_incoming{register: reg, revision_id: rev, encoded}
@@ -693,7 +703,10 @@ impl Store {
     }
 
     fn target_status(&self, key: &StateKey) -> Result<TargetStatus> {
-        if key.kind == StateKind::Subscription {
+        if matches!(
+            key.kind,
+            StateKind::Subscription | StateKind::ConversationControl
+        ) {
             return Ok(TargetStatus::Ready);
         }
         let params = BTreeMap::from([("id".into(), DataValue::from(key.target.as_str()))]);
@@ -723,14 +736,25 @@ impl Store {
     fn apply_state(&self, record: &StateRevision, current: &[StateRevision]) -> Result<()> {
         let (script, params) = self.prepare_state(record, current)?;
         self.query_with_params(&script, params)?;
+        if record.key.kind == StateKind::ConversationControl {
+            self.social_revision
+                .fetch_add(1, std::sync::atomic::Ordering::Release);
+        }
         Ok(())
     }
 
-    fn prepare_state(
+    pub(crate) fn prepare_state(
         &self,
         record: &StateRevision,
         current: &[StateRevision],
     ) -> Result<(String, BTreeMap<String, DataValue>)> {
+        if record.key.kind == StateKind::ConversationControl {
+            self.validate_conversation_control_unlocked(record)?;
+            let mut history = self.conversation_control_history_unlocked()?;
+            history.push(record.clone());
+            carrel_core::conversation::resolve_conversation_controls(&history)?;
+            return conversation_control_write(record);
+        }
         let mut next: Vec<_> = current
             .iter()
             .filter(|head| !record.parents.contains(&head.revision_id))
@@ -746,6 +770,7 @@ impl Store {
         let mut params = record_params(record)?;
         params.extend(private_fact_params(&PrivateFact::State(record.clone()))?);
         let projection = match value {
+            StateValue::ConversationControl(_) => unreachable!("handled above"),
             StateValue::Star(starred) => {
                 params.insert("starred".into(), DataValue::Bool(starred));
                 params.insert(
@@ -815,6 +840,22 @@ impl Store {
         ))
     }
 
+    /// Prepare independent controls against the caller's locked history snapshot.
+    /// Validate their combined DAG once before exposing any journal/outbox writes.
+    pub(crate) fn prepare_conversation_control_batch(
+        &self,
+        history: &[StateRevision],
+        records: &[StateRevision],
+    ) -> Result<Vec<(String, BTreeMap<String, DataValue>)>> {
+        let mut combined = history.to_vec();
+        for record in records {
+            self.validate_conversation_control_unlocked(record)?;
+            combined.push(record.clone());
+        }
+        carrel_core::conversation::resolve_conversation_controls(&combined)?;
+        records.iter().map(conversation_control_write).collect()
+    }
+
     fn read_projection_params(
         &self,
         target: &str,
@@ -873,6 +914,14 @@ fn validate_key(key: &StateKey) -> Result<()> {
         return Err(invalid("subscription URL is not canonical"));
     }
     Ok(())
+}
+
+fn conversation_control_write(
+    record: &StateRevision,
+) -> Result<(String, BTreeMap<String, DataValue>)> {
+    let mut params = record_params(record)?;
+    params.extend(private_fact_params(&PrivateFact::State(record.clone()))?);
+    Ok((format!("{WRITE_HISTORY}\n{QUEUE_PRIVATE_FACT}"), params))
 }
 
 fn record_params(record: &StateRevision) -> Result<BTreeMap<String, DataValue>> {

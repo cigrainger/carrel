@@ -192,7 +192,7 @@ fn concurrent_intents_use_selected_policies_and_later_actions_reverse_them() {
                 "?[starred, updated_at] := *item_star{item_id: 'article', starred, updated_at}"
             }
             StateKind::Subscription => "?[url, title, folder] := *feed{url, title, folder}",
-            StateKind::Position => unreachable!(),
+            StateKind::Position | StateKind::ConversationControl => unreachable!(),
         };
         assert_eq!(
             p.a.query(query).unwrap().rows,

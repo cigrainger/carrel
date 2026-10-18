@@ -12,9 +12,12 @@ struct Fixture {
 }
 impl Fixture {
     fn new() -> Self {
+        Self::at_schema(CURRENT_SCHEMA_VERSION)
+    }
+    fn at_schema(version: u32) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let store = Store::open(&dir.path().join("store")).unwrap();
-        store.migrate().unwrap();
+        crate::migrations::migrate_through(&store.db, 0, version).unwrap();
         let keys = Keystore::open(&dir.path().join("keys"));
         let device = Keypair::generate();
         keys.create_device(&device).unwrap();
@@ -267,6 +270,17 @@ fn malformed_manifest_paths_duplicates_versions_lengths_and_passwords_are_reject
         }],
     };
     assert!(validate_manifest(&valid()).is_ok());
+    let mut legacy = valid();
+    legacy.preview.schema_version = 13;
+    assert!(validate_manifest(&legacy).is_ok());
+    for version in [0, 12, CURRENT_SCHEMA_VERSION + 1, u32::MAX] {
+        let mut unknown = valid();
+        unknown.preview.schema_version = version;
+        assert!(matches!(
+            validate_manifest(&unknown),
+            Err(BackupError::Unsupported)
+        ));
+    }
     for name in [
         "../database.sqlite",
         "/database.sqlite",
@@ -303,9 +317,74 @@ fn malformed_manifest_paths_duplicates_versions_lengths_and_passwords_are_reject
 
 #[test]
 fn injected_database_triggers_are_rejected_before_recovery() {
-    let f = Fixture::new();
-    f.store.query("::set_triggers item on put { ?[id] := _new[id,kind,title,creators,primary_url,published_at,language,summary,discovered_at] :rm item {id} }").unwrap();
-    assert!(open_backup(&f.save(), PASSWORD, f.dir.path()).is_err());
+    for version in [13, CURRENT_SCHEMA_VERSION] {
+        let f = Fixture::at_schema(version);
+        f.store.query("::set_triggers item on put { ?[id] := _new[id,kind,title,creators,primary_url,published_at,language,summary,discovered_at] :rm item {id} }").unwrap();
+        assert!(matches!(
+            open_backup(&f.save(), PASSWORD, f.dir.path()),
+            Err(BackupError::Integrity)
+        ));
+    }
+}
+
+#[test]
+fn schema_13_backup_is_validated_then_migrated_without_changing_signed_history() {
+    let f = Fixture::at_schema(13);
+    f.store
+        .add_feed("https://example.test/legacy-feed")
+        .unwrap();
+    let note = f
+        .store
+        .put_note(
+            PutNoteInput {
+                body: "A note made before the consent upgrade — 文".into(),
+                target_kind: None,
+                target_id: None,
+                created_at_micros: Some(1),
+            },
+            &f.device,
+        )
+        .unwrap();
+    let prepared = open_backup(&f.save(), PASSWORD, f.dir.path()).unwrap();
+    assert_eq!(prepared.preview.schema_version, 13);
+    let restored = Store::open(&prepared.path().join("store")).unwrap();
+    assert_eq!(
+        restored.current_schema_version().unwrap(),
+        CURRENT_SCHEMA_VERSION
+    );
+    assert_eq!(restored.get_note(&note.id).unwrap(), Some(note));
+    assert_eq!(
+        restored.list_feeds().unwrap(),
+        f.store.list_feeds().unwrap()
+    );
+    assert!(restored.self_identity().unwrap().is_none());
+    drop(restored);
+    validate_staged(prepared.path()).unwrap();
+    assert_eq!(f.store.current_schema_version().unwrap(), 13);
+}
+
+#[test]
+fn catalog_validation_requires_the_exact_declared_schema_and_historical_guards() {
+    for version in [13, CURRENT_SCHEMA_VERSION] {
+        let f = Fixture::at_schema(version);
+        validate_catalog_version(&f.store, version).unwrap();
+        let other = if version == 13 {
+            CURRENT_SCHEMA_VERSION
+        } else {
+            13
+        };
+        assert!(matches!(
+            validate_catalog_version(&f.store, other),
+            Err(BackupError::Integrity)
+        ));
+        // A valid version number cannot hide an extra relation. This check runs
+        // before a restored database can execute its migration-time triggers.
+        f.store.query(":create unexpected { id: String }").unwrap();
+        assert!(matches!(
+            validate_catalog_version(&f.store, version),
+            Err(BackupError::Integrity)
+        ));
+    }
 }
 
 #[test]
@@ -588,8 +667,16 @@ fn recovery_preserves_conflicting_notes_private_folders_and_withdrawn_group_conv
             &ShareFact::Share(Box::new(received.clone())),
             friend.public(),
             10,
+            &f.device,
         )
         .unwrap();
+    f.store
+        .leave_social_conversation(&received.id, 11, &f.device)
+        .unwrap();
+    f.store
+        .set_allow_unfollowed_group_conversations(false, 12, &f.device)
+        .unwrap();
+    let controls = f.store.query("?[register,revision_id,encoded] := *self_state{register,revision_id,encoded} :sort register,revision_id").unwrap().rows;
     let history = f
         .store
         .social_history(None, 100)
@@ -635,6 +722,12 @@ fn recovery_preserves_conflicting_notes_private_folders_and_withdrawn_group_conv
     restored
         .authorize_restored_identity(&master, &fresh, "Recovered")
         .unwrap();
+    assert!(!restored.allow_unfollowed_group_conversations().unwrap());
+    assert_eq!(
+        restored.conversation_participation(&received.id).unwrap(),
+        carrel_core::conversation::ConversationParticipation::Left
+    );
+    assert_eq!(restored.query("?[register,revision_id,encoded] := *self_state{register,revision_id,encoded} :sort register,revision_id").unwrap().rows, controls);
     assert_eq!(restored.social_groups().unwrap()[0].members, audience);
     assert_eq!(restored.social_contacts().unwrap().len(), 2);
     assert_eq!(

@@ -27,6 +27,8 @@ pub enum StateKind {
     Star,
     /// Subscription membership and portable settings.
     Subscription,
+    /// Cumulative private consent operations, all in the singleton register.
+    ConversationControl,
 }
 
 impl StateKind {
@@ -37,6 +39,7 @@ impl StateKind {
             Self::Position => "position",
             Self::Star => "star",
             Self::Subscription => "subscription",
+            Self::ConversationControl => "conversation_control",
         }
     }
 }
@@ -132,6 +135,8 @@ pub enum StateValue {
     Star(bool),
     /// Subscription membership/settings intent.
     Subscription(SubscriptionState),
+    /// A cumulative operation; resolve its complete DAG, never just its heads.
+    ConversationControl(crate::conversation::ConversationControl),
 }
 
 impl StateValue {
@@ -142,6 +147,7 @@ impl StateValue {
             Self::Position(_) => StateKind::Position,
             Self::Star(_) => StateKind::Star,
             Self::Subscription(_) => StateKind::Subscription,
+            Self::ConversationControl(_) => StateKind::ConversationControl,
         }
     }
 }
@@ -287,6 +293,14 @@ impl StateRevision {
             return Err(StateRevisionError::Parents);
         }
         match &self.value {
+            StateValue::ConversationControl(operation) => {
+                if self.key.target != "global" {
+                    return Err(StateRevisionError::Content);
+                }
+                operation
+                    .verify()
+                    .map_err(|_| StateRevisionError::Content)?;
+            }
             StateValue::Position(position) => {
                 if position
                     .progress
@@ -354,6 +368,9 @@ pub fn resolve_heads(heads: &[StateRevision]) -> Result<Option<StateValue>, Stat
         }
     }
     let value = match first.key.kind {
+        // A head can be a policy write while its ancestors contain every thread
+        // decision. Returning that head as a replacement would erase consent.
+        StateKind::ConversationControl => return Err(StateRevisionError::Content),
         StateKind::Read => StateValue::Read(
             heads
                 .iter()

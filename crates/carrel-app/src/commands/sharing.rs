@@ -12,12 +12,18 @@ use tauri::State;
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct PeopleSnapshot {
+    conversation_preferences: Option<ConversationPreferences>,
     profile: Option<super::conversations::ProfileSummary>,
     groups: Vec<super::conversations::GroupSummary>,
     key: Option<String>,
     contact_code: Option<String>,
     ready: bool,
     people: Vec<PersonSummary>,
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ConversationPreferences {
+    allow_unfollowed_group_conversations: bool,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -94,6 +100,16 @@ pub(crate) async fn list_people(state: State<'_, AppState>) -> Result<PeopleSnap
             })
             .collect::<Result<_>>()?;
         Ok(PeopleSnapshot {
+            conversation_preferences: binding
+                .as_ref()
+                .map(|_| {
+                    store.allow_unfollowed_group_conversations().map(|allow| {
+                        ConversationPreferences {
+                            allow_unfollowed_group_conversations: allow,
+                        }
+                    })
+                })
+                .transpose()?,
             profile: binding
                 .as_ref()
                 .map(|binding| super::conversations::profile(&store, &binding.master_pubkey))
@@ -107,6 +123,33 @@ pub(crate) async fn list_people(state: State<'_, AppState>) -> Result<PeopleSnap
     })
     .await
     .map_err(|_| AppError::Config("Could not read your people. Try again.".into()))?
+}
+
+#[tauri::command]
+pub(crate) async fn set_conversation_preferences(
+    state: State<'_, AppState>,
+    allow_unfollowed_group_conversations: bool,
+) -> Result<ConversationPreferences> {
+    let context = state.inner().clone();
+    let confirmed = tauri::async_runtime::spawn_blocking(move || {
+        let device = super::highlights::load_device_key(&context.paths)?;
+        context.store.set_allow_unfollowed_group_conversations(
+            allow_unfollowed_group_conversations,
+            crate::feed_runner::now_micros(),
+            &device,
+        )?;
+        Ok::<_, AppError>(ConversationPreferences {
+            allow_unfollowed_group_conversations: context
+                .store
+                .allow_unfollowed_group_conversations()?,
+        })
+    })
+    .await
+    .map_err(|_| {
+        AppError::Config("Could not save your conversation preference. Try again.".into())
+    })??;
+    wake(&state).await;
+    Ok(confirmed)
 }
 
 #[derive(Serialize)]

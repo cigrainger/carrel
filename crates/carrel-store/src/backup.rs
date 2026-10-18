@@ -297,7 +297,9 @@ pub fn open_backup(
     store
         .db
         .restore_backup(directory.path().join("database.sqlite"))?;
-    validate_catalog(&store)?;
+    // Inspect the source schema before executing any migration or trigger from
+    // the restored database. A supported manifest cannot bless another catalog.
+    validate_catalog_version(&store, manifest.preview.schema_version)?;
     let restored_files = manifest
         .entries
         .iter()
@@ -321,6 +323,8 @@ pub fn open_backup(
     if actual_master.map(|k| k.to_hex()) != manifest.preview.master {
         return Err(BackupError::Integrity);
     }
+    store.migrate()?;
+    validate_catalog(&store)?;
     let fresh = Keypair::generate();
     let keys = Keystore::open(&directory.path().join("keys"));
     keys.create_device(&fresh)?;
@@ -501,7 +505,7 @@ fn parse_key(value: &str) -> Result<PublicKey> {
     Ok(key)
 }
 fn validate_manifest(m: &Manifest) -> Result<()> {
-    if m.version != 1 || m.preview.schema_version != CURRENT_SCHEMA_VERSION {
+    if m.version != 1 || !matches!(m.preview.schema_version, 13 | 14) {
         return Err(BackupError::Unsupported);
     }
     if m.entries.len() > MAX_ENTRIES || m.preview.app_version.len() > 128 {
@@ -658,11 +662,18 @@ fn check_age_header(file: &mut File) -> Result<()> {
     }
 }
 fn validate_catalog(store: &Store) -> Result<()> {
-    if store.current_schema_version()? != CURRENT_SCHEMA_VERSION {
+    validate_catalog_version(store, CURRENT_SCHEMA_VERSION)
+}
+
+fn validate_catalog_version(store: &Store, version: u32) -> Result<()> {
+    if !matches!(version, 13 | 14) {
         return Err(BackupError::Unsupported);
     }
+    if store.current_schema_version()? != version {
+        return Err(BackupError::Integrity);
+    }
     let expected = Store::open_in_memory()?;
-    expected.migrate()?;
+    crate::migrations::migrate_through(&expected.db, 0, version)?;
     let catalog = expected.query("::relations")?;
     if store.query("::relations")?.rows != catalog.rows {
         return Err(BackupError::Integrity);

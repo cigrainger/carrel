@@ -17,6 +17,25 @@ pub(crate) struct ConversationDraft {
     pub parent: Option<String>,
     pub request_id: String,
 }
+impl ConversationDraft {
+    fn acknowledge(&mut self, submitted: &Self, next_request_id: impl FnOnce() -> String) {
+        if self.request_id != submitted.request_id {
+            return;
+        }
+        if *self == *submitted {
+            self.body.clear();
+            self.parent = None;
+        }
+        // New text or parent context must not reuse an already committed reply ID.
+        self.request_id = next_request_id();
+    }
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub(crate) enum PendingLeave {
+    Saving,
+    Confirming,
+}
 
 #[derive(Clone, Copy)]
 pub(crate) struct Sharing {
@@ -25,6 +44,7 @@ pub(crate) struct Sharing {
     pub target: RwSignal<Option<ShareTarget>>,
     pub conversation: RwSignal<Option<String>>,
     pub conversation_drafts: RwSignal<std::collections::BTreeMap<String, ConversationDraft>>,
+    pub pending_conversation_leaves: RwSignal<std::collections::BTreeMap<String, PendingLeave>>,
     pub(crate) loading: RwSignal<bool>,
     pub(crate) loaded: RwSignal<bool>,
     history_revision: RwSignal<u64>,
@@ -36,12 +56,8 @@ impl Sharing {
     /// A late save acknowledges only its own draft, preserving newer composition.
     pub(crate) fn reply_saved(self, id: &str, submitted: &ConversationDraft) {
         self.conversation_drafts.try_update(|drafts| {
-            if drafts.get(id) == Some(submitted) {
-                drafts.remove(id);
-            } else if let Some(current) = drafts.get_mut(id)
-                && current.request_id == submitted.request_id
-            {
-                current.request_id = request_token();
+            if let Some(current) = drafts.get_mut(id) {
+                current.acknowledge(submitted, request_token);
             }
         });
     }
@@ -52,6 +68,9 @@ impl Sharing {
     }
     pub(crate) fn history_changed(self) {
         self.history_revision.try_update(|revision| *revision += 1);
+    }
+    pub(crate) fn history_revision(self) -> ReadSignal<u64> {
+        self.history_revision.read_only()
     }
     pub fn refresh(self) {
         self.load_people(None);
@@ -102,6 +121,7 @@ pub(crate) fn provide_sharing() {
         target: RwSignal::new(None),
         conversation: RwSignal::new(None),
         conversation_drafts: RwSignal::new(std::collections::BTreeMap::new()),
+        pending_conversation_leaves: RwSignal::new(std::collections::BTreeMap::new()),
         loading: RwSignal::new(false),
         loaded: RwSignal::new(false),
         history_revision: RwSignal::new(0),
@@ -212,6 +232,7 @@ pub(crate) fn PeoplePanel() -> impl IntoView {
     view! { <section class="people-panel"><h3>"People"</h3><p>"Choose the people whose reading you trust. Exchange contact codes directly and check their public key before following."</p>
         {move || error.get().or_else(|| sharing.error.get()).map(|message| view! { <p class="feed-error" role="alert">{message}</p> })}
         <Show when=move || sharing.people.get().key.is_some() fallback=move || view! { <p>"Create your identity before connecting with a person. You can keep reading without one."</p><button type="button" on:click=move |_| sharing.preferences.open_settings(crate::preferences::SettingsSection::Devices)>"Create identity"</button> }>
+            <ConversationPreference/>
             <crate::conversations::ProfileEditor/>
             <CopyTextField id="social-key" label="Your public key" button="Copy public key" text=Signal::derive(move || sharing.people.get().key.unwrap_or_default())/>
             <Show when=move || sharing.people.get().ready fallback=|| view! { <p>"Your contact code is preparing. Reading remains available."</p> }>
@@ -243,6 +264,70 @@ pub(crate) fn PeoplePanel() -> impl IntoView {
         <h4>"Sent articles"</h4><p>"Withdrawing removes your vouch. A person may keep an article they already received."</p>
         <SentHistory busy=busy on_retract=UnsyncCallback::new(move |id: String| change("retract_share",json!({"id":id})))/>
     </section> }
+}
+#[component]
+fn ConversationPreference() -> impl IntoView {
+    let sharing = use_sharing();
+    let choice = RwSignal::new(None::<bool>);
+    let busy = RwSignal::new(false);
+    let error = RwSignal::new(None::<String>);
+    let message = RwSignal::new(None::<String>);
+    let confirmed = Memo::new(move |_| {
+        sharing.people.with(|people| {
+            people
+                .conversation_preferences
+                .map(|preferences| preferences.allow_unfollowed_group_conversations)
+        })
+    });
+    let displayed = Memo::new(move |_| choice.get().or(confirmed.get()));
+    let requests = StoredValue::new(Requests::default());
+    let cleanup = requests.get_value();
+    on_cleanup(move || cleanup.invalidate());
+    let writes = StoredValue::new(crate::writes::use_pending_writes());
+    view! {
+        <section aria-label="Group conversations">
+            <h4>"Group conversations"</h4>
+            <p>"A friend can bring people together around an article. Turning this off declines new group conversations with someone you haven't followed. Direct shares, the article and opening note remain available. Existing conversations have their own Leave action."</p>
+            <Show when=move ||displayed.get().is_some() fallback=move ||view! {
+                <p>"Your conversation setting hasn't been confirmed. Refresh to try again."</p>
+                <button type="button" disabled=move ||sharing.loading.get() on:click=move |_|sharing.refresh()>"Refresh conversation setting"</button>
+            }>
+                <label class="group-member"><input type="checkbox" disabled=move ||busy.get() prop:checked=move ||displayed.get().unwrap_or(false) on:change=move |event| {
+                    choice.set(Some(event_target_checked(&event)));
+                    error.set(None);
+                    message.set(None);
+                }/>"Allow group conversations with people I haven't followed"</label>
+                <Show when=move ||choice.get().is_some()><p class="capture-notice">"Your choice is not saved yet."</p></Show>
+                <button type="button" disabled=move ||busy.get()||choice.get().is_none() on:click=move |_| {
+                    if busy.get_untracked() {return;}
+                    let Some(allow)=choice.get_untracked() else {return;};
+                    busy.set(true);error.set(None);message.set(None);
+                    sharing.requests.get_value().invalidate();
+                    let guard=requests.get_value();let request=guard.begin();let write=writes.get_value().begin();
+                    spawn(async move {
+                        let result=api::sharing_call::<api::ConversationPreferences>("set_conversation_preferences",json!({"allowUnfollowedGroupConversations":allow})).await;
+                        drop(write);
+                        sharing.requests.get_value().invalidate();
+                        if let Ok(preferences)=&result {
+                            sharing.people.try_update(|people|people.conversation_preferences=Some(*preferences));
+                        }
+                        sharing.refresh();
+                        if !guard.accepts(request) {return;}
+                        match result {
+                            Ok(_)=>{
+                                choice.try_update(|choice|{if *choice==Some(allow){*choice=None;}});
+                                message.try_set(Some("Conversation setting saved here.".into()));
+                            },
+                            Err(problem)=>{error.try_set(Some(problem.message().into()));}
+                        }
+                        busy.try_set(false);
+                    });
+                }>"Save conversation setting"</button>
+            </Show>
+            {move ||error.get().map(|text|view!{<p class="feed-error" role="alert">{text}</p>})}
+            {move ||message.get().map(|text|view!{<p role="status">{text}</p>})}
+        </section>
+    }
 }
 #[component]
 fn SentHistory(busy: RwSignal<bool>, on_retract: UnsyncCallback<String>) -> impl IntoView {
@@ -403,6 +488,58 @@ fn spawn(_task: impl std::future::Future<Output = ()> + 'static) {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn draft() -> ConversationDraft {
+        ConversationDraft {
+            body: "A passage 文\nwith a reply".into(),
+            parent: Some("parent".into()),
+            request_id: "submitted".into(),
+        }
+    }
+
+    #[test]
+    fn a_reply_acknowledgement_clears_only_its_exact_draft() {
+        let submitted = draft();
+        let mut current = submitted.clone();
+        current.acknowledge(&submitted, || "next".into());
+        assert!(current.body.is_empty());
+        assert_eq!(current.parent, None);
+        assert_eq!(current.request_id, "next");
+    }
+
+    #[test]
+    fn a_late_reply_acknowledgement_preserves_new_text_and_parent() {
+        let submitted = draft();
+        for (body, parent) in [
+            ("Newer text 文\n".into(), submitted.parent.clone()),
+            (submitted.body.clone(), Some("another-parent".into())),
+            (String::new(), None),
+        ] {
+            let mut current = ConversationDraft {
+                body: body.clone(),
+                parent: parent.clone(),
+                request_id: submitted.request_id.clone(),
+            };
+            current.acknowledge(&submitted, || "next".into());
+            assert_eq!(current.body, body);
+            assert_eq!(current.parent, parent);
+            assert_eq!(current.request_id, "next");
+        }
+    }
+
+    #[test]
+    fn an_old_reply_acknowledgement_cannot_change_another_retry_identity() {
+        let submitted = draft();
+        let mut current = ConversationDraft {
+            request_id: "different-reply".into(),
+            ..submitted.clone()
+        };
+        let expected = current.clone();
+        current.acknowledge(&submitted, || {
+            panic!("unrelated reply must keep its identity")
+        });
+        assert_eq!(current, expected);
+    }
 
     #[test]
     fn sharing_needs_a_followed_person_but_can_queue_while_they_are_offline() {

@@ -3,7 +3,7 @@ use super::sharing::{date, parse_key, wake};
 use crate::{AppError, Result, state::AppState};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use carrel_core::{
-    conversation::{Avatar, ConversationContent as Content},
+    conversation::{Avatar, ConversationContent as Content, ConversationParticipation},
     sharing::ShareFact,
 };
 use serde::{Deserialize, Serialize};
@@ -45,6 +45,41 @@ pub(crate) struct ConversationSummary {
     participants: Vec<Participant>,
     replies: Vec<ReplySummary>,
     closed: bool,
+    access: ConversationAccess,
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ConversationAccess {
+    can_reply: bool,
+    can_leave: bool,
+    reason: Option<&'static str>,
+}
+
+fn conversation_access(
+    participation: ConversationParticipation,
+    withdrawn: bool,
+) -> ConversationAccess {
+    let reason = match participation {
+        ConversationParticipation::Left => {
+            Some("You left this conversation. Its saved article and history remain available.")
+        }
+        ConversationParticipation::Declined => Some(
+            "This group conversation was declined under your conversation preference. You can still read the article and opening note.",
+        ),
+        _ if withdrawn => {
+            Some("This share was withdrawn. Its saved article and history remain available.")
+        }
+        ConversationParticipation::Pending => Some(
+            "This conversation is waiting to finish syncing. You can still read the article and opening note.",
+        ),
+        ConversationParticipation::Admitted => None,
+    };
+    let participating = participation == ConversationParticipation::Admitted && !withdrawn;
+    ConversationAccess {
+        can_reply: participating,
+        can_leave: participating,
+        reason,
+    }
 }
 #[derive(Serialize)]
 pub(crate) struct Provenance {
@@ -61,6 +96,7 @@ pub(crate) struct ConversationLink {
     from: String,
     date: String,
     closed: bool,
+    access: ConversationAccess,
 }
 
 #[tauri::command]
@@ -70,16 +106,23 @@ pub(crate) async fn list_article_conversations(
 ) -> Result<Vec<ConversationLink>> {
     let store = state.store.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        Ok(store
+        store
             .received_item_conversations(&item_id)?
             .into_iter()
-            .map(|thread| ConversationLink {
-                id: thread.id,
-                from: thread.from,
-                date: date(thread.at_micros),
-                closed: thread.closed,
+            .map(|thread| {
+                let access = conversation_access(
+                    store.conversation_participation(&thread.id)?,
+                    thread.closed,
+                );
+                Ok(ConversationLink {
+                    id: thread.id,
+                    from: thread.from,
+                    date: date(thread.at_micros),
+                    closed: thread.closed,
+                    access,
+                })
             })
-            .collect())
+            .collect::<Result<_>>()
     })
     .await
     .map_err(worker_error)?
@@ -283,6 +326,8 @@ pub(crate) async fn get_conversation(
     let store = state.store.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let conversation = store.social_conversation(&id)?;
+        let access =
+            conversation_access(store.conversation_participation(&id)?, conversation.closed);
         let scope = carrel_core::conversation::ThreadScope::from_share(&conversation.share)
             .map_err(worker_error)?;
         let local = store
@@ -338,10 +383,31 @@ pub(crate) async fn get_conversation(
             participants,
             replies,
             closed: conversation.closed,
+            access,
         })
     })
     .await
     .map_err(worker_error)?
+}
+#[tauri::command]
+pub(crate) async fn leave_conversation(state: State<'_, AppState>, share_id: String) -> Result<()> {
+    let context = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let device = super::highlights::load_device_key(&context.paths)?;
+        context.store.leave_social_conversation(
+            &share_id,
+            crate::feed_runner::now_micros(),
+            &device,
+        )?;
+        Ok::<_, AppError>(())
+    })
+    .await
+    .map_err(|source| AppError::BackgroundTask {
+        operation: "leave conversation",
+        source,
+    })??;
+    wake(&state).await;
+    Ok(())
 }
 #[tauri::command]
 pub(crate) async fn reply_to_share(
@@ -423,6 +489,48 @@ fn worker_error(error: impl std::fmt::Display) -> AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn conversation_access_keeps_consent_separate_from_withdrawal() {
+        for participation in [
+            ConversationParticipation::Pending,
+            ConversationParticipation::Admitted,
+            ConversationParticipation::Declined,
+            ConversationParticipation::Left,
+        ] {
+            for withdrawn in [false, true] {
+                let access = conversation_access(participation, withdrawn);
+                let allowed = participation == ConversationParticipation::Admitted && !withdrawn;
+                assert_eq!(access.can_reply, allowed);
+                assert_eq!(access.can_leave, allowed);
+                assert_eq!(access.reason.is_none(), allowed);
+            }
+        }
+        assert!(
+            conversation_access(ConversationParticipation::Left, false)
+                .reason
+                .unwrap()
+                .contains("left")
+        );
+        assert!(
+            conversation_access(ConversationParticipation::Declined, false)
+                .reason
+                .unwrap()
+                .contains("declined")
+        );
+        assert!(
+            conversation_access(ConversationParticipation::Pending, false)
+                .reason
+                .unwrap()
+                .contains("waiting")
+        );
+        assert!(
+            conversation_access(ConversationParticipation::Admitted, true)
+                .reason
+                .unwrap()
+                .contains("withdrawn")
+        );
+    }
+
     #[test]
     fn avatar_import_normalizes_bounds_and_discards_original_encoded_metadata() {
         let pixels = image::RgbaImage::from_pixel(1024, 512, image::Rgba([40, 120, 80, 255]));

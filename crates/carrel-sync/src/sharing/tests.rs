@@ -131,9 +131,505 @@ async fn exchange(from: &Person, to: &Person) {
     }
 }
 
+fn group_share(
+    author: &Person,
+    article: &carrel_core::sharing::Share,
+    recipients: &[&Person],
+    request: &str,
+) -> carrel_core::sharing::Share {
+    let mut recipients = recipients
+        .iter()
+        .map(|person| *person.master.public())
+        .collect::<Vec<_>>();
+    recipients.sort();
+    author
+        .store
+        .create_social_share_for(
+            ShareDraft {
+                request_id: request.into(),
+                recipient: recipients[0],
+                article: article.article.clone(),
+                note: Some("A deliberate introduction — 文".into()),
+            },
+            recipients,
+            101,
+            &author.device,
+        )
+        .unwrap()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn full_reply_queue_reaches_a_later_root_page_and_retries_deferred_bodies_on_the_next_scan() {
+    use carrel_core::conversation::{ConversationContent, ConversationRecord, ThreadScope};
+    use carrel_store::sharing::SocialReceive;
+    let dir = tempfile::tempdir().unwrap();
+    let a = person(&dir.path().join("a"), 241).await;
+    let b = person(&dir.path().join("b"), 243).await;
+    follow(&a, &b);
+    follow(&b, &a);
+    let root = article(
+        &a,
+        "https://example.org/backpressure",
+        "<p>A retained article.</p>",
+        vec![],
+        "backpressure-root",
+        *b.master.public(),
+    );
+    let scope = ThreadScope::from_share(&root).unwrap();
+    let certificate = a.store.social_local_certificate(a.device.public()).unwrap();
+    // These are genuine signed peer candidates received before their root;
+    // none is accepted history or an admission on the receiving desktop.
+    for index in 0..512 {
+        let token = format!("staged-{index}");
+        let fact = ShareFact::Conversation(Box::new(
+            ConversationRecord::sign(
+                ConversationContent::Reply {
+                    scope: scope.clone(),
+                    id: carrel_core::sharing::Share::draft_id(&certificate, &token).unwrap(),
+                    request_id: token,
+                    parent: None,
+                    body: "An earlier signed reply".into(),
+                },
+                101,
+                certificate.clone(),
+                &a.device,
+            )
+            .unwrap(),
+        ));
+        assert_eq!(
+            b.store
+                .accept_social_record(&fact, a.master.public(), 101, &b.device)
+                .unwrap(),
+            SocialReceive::Pending
+        );
+    }
+    let mut deferred = Vec::new();
+    for index in 0..10 {
+        deferred.push(
+            a.store
+                .reply_to_social_share(
+                    &root.id,
+                    &format!("page-{index}"),
+                    None,
+                    "A body on the first full page",
+                    102,
+                    &a.device,
+                )
+                .unwrap(),
+        );
+    }
+    let mut cursor = None;
+    loop {
+        cursor = a.service.publish(cursor).await.unwrap();
+        if cursor.is_none() {
+            break;
+        }
+    }
+    let card = a.service.contact_card().unwrap();
+    let (after, _) = b.service.receive(&card, None).await.unwrap();
+    assert!(after.as_ref().unwrap().starts_with("reply/"));
+    assert!(
+        b.store
+            .social_record(&format!("share/{}", root.id))
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(
+        b.store
+            .query("?[key] := *social_pending{key}")
+            .unwrap()
+            .rows
+            .len(),
+        512
+    );
+    for record in &deferred {
+        assert!(
+            b.store
+                .social_record(&record.key().unwrap())
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    let (after, changed) = b.service.receive(&card, after).await.unwrap();
+    assert!(changed);
+    assert_eq!(
+        b.store.social_conversation(&root.id).unwrap().replies.len(),
+        512
+    );
+    assert!(
+        b.store
+            .query("?[key] := *social_pending{key}")
+            .unwrap()
+            .rows
+            .is_empty()
+    );
+    let (after, _) = b.service.receive(&card, after).await.unwrap();
+    assert!(
+        after.is_none(),
+        "the worker restarts a full scan after this page"
+    );
+
+    b.service.receive(&card, None).await.unwrap();
+    for record in deferred {
+        let fact = ShareFact::Conversation(Box::new(record));
+        assert_eq!(
+            b.store.social_record(&fact.key().unwrap()).unwrap(),
+            Some(fact)
+        );
+    }
+    assert_eq!(
+        b.store.social_conversation(&root.id).unwrap().replies.len(),
+        522
+    );
+}
+
+#[tokio::test]
+async fn introduction_opt_out_keeps_direct_and_all_followed_conversations_and_the_article() {
+    use carrel_store::sharing::ConversationParticipation::{Admitted, Declined};
+    let dir = tempfile::tempdir().unwrap();
+    let a = person(&dir.path().join("a"), 181).await;
+    let b = person(&dir.path().join("b"), 183).await;
+    let c = person(&dir.path().join("c"), 185).await;
+    for recipient in [&b, &c] {
+        follow(&a, recipient);
+        follow(recipient, &a);
+        assert!(
+            recipient
+                .store
+                .allow_unfollowed_group_conversations()
+                .unwrap()
+        );
+        recipient
+            .store
+            .set_allow_unfollowed_group_conversations(false, 1, &recipient.device)
+            .unwrap();
+    }
+    follow(&c, &b);
+    let html = "<p>The article survives declining its discussion.</p>";
+    let direct = article(
+        &a,
+        "https://example.org/consent",
+        html,
+        vec![],
+        "direct",
+        *b.master.public(),
+    );
+    let group = group_share(&a, &direct, &[&b, &c], "unfamiliar-to-b");
+    let staged = a
+        .store
+        .reply_to_social_share(
+            &group.id,
+            "before-root-delivery",
+            None,
+            "A reply whose mirror key precedes its root",
+            102,
+            &a.device,
+        )
+        .unwrap();
+    exchange(&a, &b).await;
+    exchange(&a, &c).await;
+    assert_eq!(
+        b.store.conversation_participation(&direct.id).unwrap(),
+        Admitted
+    );
+    assert_eq!(
+        b.store.conversation_participation(&group.id).unwrap(),
+        Declined
+    );
+    assert_eq!(
+        c.store.conversation_participation(&group.id).unwrap(),
+        Admitted
+    );
+    assert_eq!(b.store.social_conversation(&group.id).unwrap().share, group);
+    assert!(
+        b.store
+            .social_record(
+                &ShareFact::Conversation(Box::new(staged.clone()))
+                    .key()
+                    .unwrap()
+            )
+            .unwrap()
+            .is_none(),
+        "a staged friend candidate cannot become own history during promotion"
+    );
+    assert!(
+        b.store
+            .social_conversation(&group.id)
+            .unwrap()
+            .replies
+            .is_empty()
+    );
+    assert_eq!(
+        c.store.social_conversation(&group.id).unwrap().replies[0].record,
+        staged
+    );
+    let received = b
+        .service
+        .transfer_cache(&a.service.contact_card().unwrap())
+        .await
+        .unwrap();
+    assert!(received.changed);
+    assert!(received.errors.is_empty());
+    let body = BlobId::from_bytes(html.as_bytes());
+    assert_eq!(b.cache.get_blocking(&body).unwrap(), html.as_bytes());
+
+    let reply = a
+        .store
+        .reply_to_social_share(&group.id, "group-reply", None, "Discussion", 103, &a.device)
+        .unwrap();
+    let fact = ShareFact::Conversation(Box::new(reply.clone()));
+    // A still serves its addressed copy: B must consume it without retaining the
+    // body or failing the page, while C accepts the same original signed reply.
+    exchange(&a, &b).await;
+    exchange(&a, &c).await;
+    assert!(
+        b.store
+            .social_record(&fact.key().unwrap())
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(
+        c.store.social_conversation(&group.id).unwrap().replies[1].record,
+        reply
+    );
+    b.store
+        .set_allow_unfollowed_group_conversations(true, 103, &b.device)
+        .unwrap();
+    follow(&b, &c);
+    exchange(&a, &b).await;
+    assert_eq!(
+        b.store.conversation_participation(&group.id).unwrap(),
+        Declined
+    );
+    assert!(
+        b.store
+            .social_conversation(&group.id)
+            .unwrap()
+            .replies
+            .is_empty()
+    );
+    assert!(
+        b.store
+            .reply_to_social_share(&group.id, "cannot-reopen", None, "Draft", 104, &b.device)
+            .is_err()
+    );
+    assert!(
+        b.store
+            .reply_to_social_share(
+                &direct.id,
+                "direct-reply",
+                None,
+                "Direct still works",
+                104,
+                &b.device
+            )
+            .is_ok()
+    );
+    a.host.stop().await.unwrap();
+    b.host.stop().await.unwrap();
+    c.host.stop().await.unwrap();
+}
+
+#[tokio::test]
+async fn leave_suppresses_author_and_relay_mirrors_but_keeps_removals_and_fixed_root_content() {
+    use carrel_store::sharing::ConversationParticipation::Left;
+    let dir = tempfile::tempdir().unwrap();
+    let a = person(&dir.path().join("a"), 191).await;
+    let b = person(&dir.path().join("b"), 193).await;
+    let c = person(&dir.path().join("c"), 195).await;
+    let d = person(&dir.path().join("d"), 197).await;
+    for recipient in [&b, &c, &d] {
+        follow(&a, recipient);
+        follow(recipient, &a);
+    }
+    let html = "<p>Leaving a conversation does not withdraw this article.</p>";
+    let direct = article(
+        &a,
+        "https://example.org/leave",
+        html,
+        vec![],
+        "fixed-article",
+        *b.master.public(),
+    );
+    let group = group_share(&a, &direct, &[&b, &c, &d], "group");
+    exchange(&a, &b).await;
+    exchange(&a, &c).await;
+    exchange(&a, &d).await;
+    let reply = b
+        .store
+        .reply_to_social_share(
+            &group.id,
+            "mirrored",
+            None,
+            "Retained history",
+            102,
+            &b.device,
+        )
+        .unwrap();
+    let fact = ShareFact::Conversation(Box::new(reply.clone()));
+    let portable = fact.key().unwrap();
+    exchange(&b, &a).await;
+    a.service.publish(None).await.unwrap();
+    // C has accepted history; D has only the root. Both remain original recipients.
+    exchange(&a, &c).await;
+    assert_eq!(
+        c.store.social_conversation(&group.id).unwrap().replies[0].record,
+        reply
+    );
+    for (person, recipient) in [(&b, a.master.public()), (&a, c.master.public())] {
+        assert!(
+            person
+                .service
+                .doc
+                .get_exact(
+                    person.service.author,
+                    mirror_key(*recipient, &portable).as_bytes(),
+                    false
+                )
+                .await
+                .unwrap()
+                .is_some()
+        );
+        assert!(
+            person
+                .service
+                .records_for(*recipient, None)
+                .await
+                .unwrap()
+                .0
+                .contains(&fact)
+        );
+    }
+    let queued = b
+        .store
+        .reply_to_social_share(
+            &group.id,
+            "not-yet-mirrored",
+            None,
+            "Queued body",
+            103,
+            &b.device,
+        )
+        .unwrap();
+    let queued_fact = ShareFact::Conversation(Box::new(queued));
+    for person in [&a, &b] {
+        person
+            .store
+            .leave_social_conversation(&group.id, 104, &person.device)
+            .unwrap();
+        assert_eq!(
+            person.store.conversation_participation(&group.id).unwrap(),
+            Left
+        );
+        assert_eq!(
+            person.store.social_conversation(&group.id).unwrap().replies[0].record,
+            reply
+        );
+    }
+    // Do not republish A before checking: its stale relay entry is still present.
+    assert!(
+        !a.service
+            .records_for(*c.master.public(), None)
+            .await
+            .unwrap()
+            .0
+            .contains(&fact)
+    );
+    assert!(
+        !b.service
+            .records_for(*a.master.public(), None)
+            .await
+            .unwrap()
+            .0
+            .contains(&fact)
+    );
+    exchange(&b, &a).await;
+    exchange(&a, &c).await;
+    exchange(&a, &d).await;
+    assert!(
+        b.service
+            .doc
+            .get_exact(
+                b.service.author,
+                mirror_key(*a.master.public(), &queued_fact.key().unwrap()).as_bytes(),
+                false
+            )
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        d.store
+            .social_conversation(&group.id)
+            .unwrap()
+            .replies
+            .is_empty()
+    );
+    for person in [&c, &d] {
+        assert!(
+            person
+                .store
+                .social_record(&queued_fact.key().unwrap())
+                .unwrap()
+                .is_none()
+        );
+    }
+    assert!(!a.store.social_conversation(&group.id).unwrap().closed);
+    let cache = c
+        .service
+        .transfer_cache(&a.service.contact_card().unwrap())
+        .await
+        .unwrap();
+    assert!(cache.changed);
+    assert!(cache.errors.is_empty());
+    assert_eq!(
+        c.cache
+            .get_blocking(&BlobId::from_bytes(html.as_bytes()))
+            .unwrap(),
+        html.as_bytes()
+    );
+
+    let carrel_core::conversation::ConversationContent::Reply { id, .. } = &reply.content else {
+        panic!()
+    };
+    b.store
+        .remove_social_reply(&group.id, id, -1, &b.device)
+        .unwrap();
+    let removal = b.store.social_history(None, 100).unwrap().into_iter().find(|fact| {
+        matches!(fact, ShareFact::Conversation(record) if matches!(&record.content, carrel_core::conversation::ConversationContent::Remove { reply_id, .. } if reply_id == id))
+    }).unwrap();
+    exchange(&b, &a).await;
+    exchange(&a, &c).await;
+    exchange(&a, &d).await;
+    let removal_key = removal.key().unwrap();
+    assert_eq!(c.store.social_record(&removal_key).unwrap(), Some(removal));
+    assert!(a.store.social_conversation(&group.id).unwrap().replies[0].removed);
+    assert!(c.store.social_conversation(&group.id).unwrap().replies[0].removed);
+    // D cannot validate removal ownership without the reply, and receives no body.
+    assert!(d.store.social_record(&portable).unwrap().is_none());
+    assert!(d.store.social_record(&removal_key).unwrap().is_none());
+    a.store
+        .retract_social_share(&group.id, -2, &a.device)
+        .unwrap();
+    exchange(&a, &c).await;
+    exchange(&a, &d).await;
+    assert!(c.store.social_conversation(&group.id).unwrap().closed);
+    assert!(d.store.social_conversation(&group.id).unwrap().closed);
+    assert!(
+        c.cache
+            .get_blocking(&BlobId::from_bytes(html.as_bytes()))
+            .is_ok()
+    );
+    a.host.stop().await.unwrap();
+    b.host.stop().await.unwrap();
+    c.host.stop().await.unwrap();
+    d.host.stop().await.unwrap();
+}
+
 #[tokio::test]
 async fn group_replies_relay_through_the_sharer_without_expanding_any_audience() {
-    use carrel_core::conversation::ConversationContent;
+    use carrel_core::conversation::{ConversationContent, ConversationRecord, ThreadScope};
     let dir = tempfile::tempdir().unwrap();
     let a = person(&dir.path().join("a"), 61).await;
     let b = person(&dir.path().join("b"), 63).await;
@@ -185,7 +681,7 @@ async fn group_replies_relay_through_the_sharer_without_expanding_any_audience()
         .accept_self_device_certificate(&other_certificate)
         .unwrap();
     for (name, certificate, device) in [
-        ("Another desktop", other_certificate, &other_device),
+        ("Another desktop", other_certificate.clone(), &other_device),
         (
             "Concurrent name",
             a.store.social_local_certificate(a.device.public()).unwrap(),
@@ -335,6 +831,52 @@ async fn group_replies_relay_through_the_sharer_without_expanding_any_audience()
     assert_eq!(
         b.store.social_reply_ancestry(&group.id, answer_id).unwrap(),
         vec![answer.clone(), reply.clone()]
+    );
+    // A queued reply from an own desktop is still forwardable when separately
+    // signed control history admits this thread and normal audience checks pass.
+    let own_reply = ConversationRecord::sign(
+        ConversationContent::Reply {
+            scope: ThreadScope::from_share(&group).unwrap(),
+            id: carrel_core::sharing::Share::draft_id(&other_certificate, "own-desktop-reply")
+                .unwrap(),
+            request_id: "own-desktop-reply".into(),
+            parent: None,
+            body: "A thought queued on my other desktop".into(),
+        },
+        105,
+        other_certificate,
+        &other_device,
+    )
+    .unwrap();
+    let own_reply = ShareFact::Conversation(Box::new(own_reply));
+    a.store
+        .accept_self_private_fact(
+            &carrel_core::private_library::PrivateFact::Social(Box::new(own_reply.clone())),
+            a.device.public(),
+        )
+        .unwrap();
+    assert_eq!(
+        a.store.conversation_participation(&group.id).unwrap(),
+        carrel_store::sharing::ConversationParticipation::Admitted
+    );
+    assert!(a.store.social_record_servable(&own_reply).unwrap());
+    exchange(&a, &b).await;
+    exchange(&a, &c).await;
+    exchange(&a, &d).await;
+    for recipient in [&b, &c] {
+        assert_eq!(
+            recipient
+                .store
+                .social_record(&own_reply.key().unwrap())
+                .unwrap(),
+            Some(own_reply.clone())
+        );
+    }
+    assert!(
+        d.store
+            .social_record(&own_reply.key().unwrap())
+            .unwrap()
+            .is_none()
     );
     b.store
         .remove_social_reply(&group.id, reply_id, -1, &b.device)

@@ -235,6 +235,29 @@ pub const PRIVATE_STATE_GUARDS: &[&str] = &[
     }"#,
 ];
 
+/// Version 14 replacement. Do not alter the historical version-6 definition.
+pub const CONVERSATION_STATE_GUARD: &str = r#"::set_triggers self_state on put {
+    invalid[reg,rev] := _new[reg,rev,encoded,parents,kind,target],
+        _old[reg,rev,old_encoded,old_parents,old_kind,old_target],
+        [encoded,parents,kind,target] != [old_encoded,old_parents,old_kind,old_target]
+    invalid[reg,rev] := _new[reg,rev,encoded,parents,kind,target], parent in parents,
+        not *self_state{register:reg,revision_id:parent}
+    invalid[reg,rev] := _new[reg,rev,encoded,parents,kind,target], parent in parents, parent == rev
+    invalid[reg,rev] := _new[reg,rev,encoded,parents,kind,target], kind != 'subscription', kind != 'conversation_control', not *item{id:target}
+    invalid[reg,rev] := _new[reg,rev,encoded,parents,kind,target], kind != 'subscription', kind != 'conversation_control', *entity_tombstone{id:target @ "END"}
+    invalid[reg,rev] := _new[reg,rev,encoded,parents,kind,target], kind == 'conversation_control', (target != 'global' || reg != 'conversation_control:global')
+    ?[reg,rev] := invalid[reg,rev] :assert none
+} on rm { ?[reg,rev] := _old[reg,rev,encoded,parents,kind,target] :assert none }"#;
+
+/// The migration boundary cannot be rewritten by later local writes.
+pub const CONVERSATION_LEGACY_GUARD: &str = r#"::set_triggers social_conversation_legacy
+    on put {
+        ?[id] := _new[id,scope], _old[id,old_scope], scope != old_scope
+        ?[id] := _new[id,scope], not _old[id,_], *schema_version{version:14}
+        :assert none
+    }
+    on rm { ?[id] := _old[id,scope] :assert none }"#;
+
 /// Staging table renamed to `note` after preserving every old signed revision.
 pub const CREATE_CAUSAL_NOTES: &str = r#"
     :create note_v5 {

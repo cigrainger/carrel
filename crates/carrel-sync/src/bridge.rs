@@ -300,7 +300,12 @@ impl SelfBridge {
     pub async fn replay(&self, provider: EndpointAddr) -> Result<Vec<SyncError>> {
         let mut errors = Vec::new();
         let sender = PublicKey::from_bytes(*self.host.endpoint().id().as_bytes());
-        for prefix in ["fact/certificate/", "fact/revocation/", "fact/"] {
+        for prefix in [
+            "fact/certificate/",
+            "fact/revocation/",
+            "fact/state/",
+            "fact/",
+        ] {
             let entries = self
                 .doc
                 .get_many(Query::all().key_prefix(prefix))
@@ -312,6 +317,9 @@ impl SelfBridge {
                 if let Err(error) = self.receive_as(&entry, provider.clone(), sender).await {
                     errors.push(error);
                 }
+            }
+            if prefix == "fact/state/" {
+                self.promote_dependencies().await?;
             }
         }
         self.promote_dependencies().await?;
@@ -523,7 +531,15 @@ impl SelfBridge {
     pub async fn promote_dependencies(&self) -> Result<bool> {
         self.store_call(|store| {
             let mut changed = false;
-            changed |= store.promote_pending_social()?;
+            // Resolve private control ancestry before exposing staged discussion.
+            // Other state can still wait for article targets until the later pass.
+            loop {
+                let result = store.promote_pending_state()?;
+                if result.applied.is_empty() {
+                    break;
+                }
+                changed = true;
+            }
             loop {
                 let applied = store.promote_pending_items()?;
                 if applied.is_empty() {
@@ -552,6 +568,7 @@ impl SelfBridge {
                 }
                 changed = true;
             }
+            changed |= store.promote_pending_social()?;
             Ok(changed)
         })
         .await

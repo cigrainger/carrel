@@ -5,6 +5,12 @@ use crate::identity::{
 use crate::sharing::{Share, ShareError};
 use serde::{Deserialize, Serialize};
 
+mod consent;
+pub use consent::{
+    AdmissionBasis, ConversationControl, ConversationControls, ConversationDecision,
+    ConversationParticipation, conversation_control_key, resolve_conversation_controls,
+};
+
 /// Maximum recipients of one deliberate share (in addition to its author).
 pub const MAX_RECIPIENTS: usize = 16;
 /// Maximum normalized avatar payload. No URL or cache capability is accepted.
@@ -24,6 +30,25 @@ pub struct ThreadScope {
     pub recipients: Vec<PublicKey>,
 }
 impl ThreadScope {
+    /// Bounded canonical scope bytes used by local migration provenance.
+    pub fn to_bytes(&self) -> Result<Vec<u8>, ShareError> {
+        self.verify()?;
+        canonical_bytes(self).map_err(|_| ShareError::Encoding)
+    }
+    /// Decode exactly one bounded scope without requiring its root to be present.
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, ShareError> {
+        if bytes.len() > 4096 {
+            return Err(ShareError::Invalid);
+        }
+        let mut reader = std::io::Cursor::new(bytes);
+        let scope: Self =
+            ciborium::de::from_reader(&mut reader).map_err(|_| ShareError::Encoding)?;
+        if reader.position() != bytes.len() as u64 {
+            return Err(ShareError::Invalid);
+        }
+        scope.verify()?;
+        Ok(scope)
+    }
     /// Derive scope only from a verified root.
     pub fn from_share(share: &Share) -> Result<Self, ShareError> {
         share.verify()?;

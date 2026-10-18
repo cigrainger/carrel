@@ -6,7 +6,7 @@ reading life: archived text/images, annotations and their complete history,
 subscriptions/folders, personal state, conversations, local contact/group settings
 and the identity material actually held on this desktop. Private sharing and
 introductions remain the other immediate priority, described in
-[CONVERSATION_PLAN.md](CONVERSATION_PLAN.md#next-priority-introductions-with-a-choice).
+[CONVERSATION_PLAN.md](CONVERSATION_PLAN.md#introductions-with-a-choice).
 
 ## Agreed first delivery
 
@@ -75,12 +75,14 @@ memory. Version the outer format and authenticate its manifest, entry order,
 lengths and final completion. Bound work and lengths before allocation or expensive
 passphrase derivation. Keep all sensitive filenames, keys and metadata inside
 the encrypted payload. Do not invent a new cryptographic primitive or reuse a
-nonce/key pair. Format 1 requires schema 13 exactly. Its fixed entries are
+nonce/key pair. Format 1 accepts the known schema versions 13 and 14. Its fixed entries are
 `database.sqlite`, optional `master.enc`, and `blobs/<lowercase BLAKE3 hash>`.
 The encrypted manifest is bounded to 16 MiB and 100,002 entries, total declared
 content to 1 TiB, and the age header to 8 KiB. The scrypt work factor and accepted
-maximum are both 18. This first format deliberately refuses incompatible schemas
-rather than guessing a migration path. See [ADR 0005](ADR-0005-local-backup-recovery.md).
+maximum are both 18. Validate the manifest's exact source catalog, columns,
+triggers and portable records before executing the known 13→14 migration;
+validate the current catalog again before recovery preparation. Unknown schemas
+remain refused. See [ADR 0005](ADR-0005-local-backup-recovery.md).
 
 Write to an owner-only temporary destination, sync it, then install the completed
 file atomically. Existing backups are replaced only through the native save
@@ -138,8 +140,8 @@ Verification covers a tested restore, rather than just a successful export:
 - Restore Unicode articles, offline images, historical highlight content,
   unresolved note branches, read/star positions, removed subscriptions and folders.
 - Preserve sent/received conversations, withdrawals, reply removals, local
-  contacts/groups, signed provenance and durable pending work. Consent/leave
-  facts remain part of the separate upcoming conversation milestone.
+  contacts/groups, signed provenance and durable pending work, including private
+  conversation consent/leave history.
 - Cover unbound reading, originating-master and paired-device backups; no cloned
   operational identity, automatic friend follow or wider audience after restore.
 - Exercise wrong passphrases, corrupt/truncated files, excessive input bounds,

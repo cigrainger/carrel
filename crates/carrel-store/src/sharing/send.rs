@@ -216,15 +216,32 @@ impl Store {
             ]));
             keys.push(DataValue::from(fact.key()?));
         }
-        self.query_with_params(r#"
+        let mut script = String::from(
+            r#"
             { ?[key,encoded,author,recipient,share_id,kind,created_at] <- $records :put social_record {key=>encoded,author,recipient,share_id,kind,created_at} }
             { ?[key,encoded] <- $private :put self_fact_history {key=>encoded} }
             { ?[key,encoded] <- $private :put self_fact_outbox {key=>encoded} }
             { ?[id,request,shares] <- [[$id,$request,$shares]] :put social_send {id=>request,shares} }
-        "#,BTreeMap::from([
-            ("records".into(),DataValue::List(records)),("private".into(),DataValue::List(private)),
-            ("id".into(),DataValue::from(id)),("request".into(),DataValue::Bytes(send_request(&draft)?)),("shares".into(),DataValue::List(keys)),
-        ]))?;
+        "#,
+        );
+        let mut params = BTreeMap::from([
+            ("records".into(), DataValue::List(records)),
+            ("private".into(), DataValue::List(private)),
+            ("id".into(), DataValue::from(id)),
+            ("request".into(), DataValue::Bytes(send_request(&draft)?)),
+            ("shares".into(), DataValue::List(keys)),
+        ]);
+        for (index, share) in shares.iter().enumerate() {
+            self.append_social_admission_unlocked(
+                &mut script,
+                &mut params,
+                share,
+                at,
+                device,
+                &format!("batch{index}"),
+            )?;
+        }
+        self.query_with_params(&script, params)?;
         self.social_changed();
         Ok(shares)
     }

@@ -260,6 +260,8 @@ pub struct SharedNoteSummary {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct PeopleSnapshot {
     #[serde(default)]
+    pub conversation_preferences: Option<ConversationPreferences>,
+    #[serde(default)]
     pub profile: Option<ProfileSummary>,
     #[serde(default)]
     pub groups: Vec<GroupSummary>,
@@ -267,6 +269,11 @@ pub(crate) struct PeopleSnapshot {
     pub contact_code: Option<String>,
     pub ready: bool,
     pub people: Vec<PersonSummary>,
+}
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ConversationPreferences {
+    pub allow_unfollowed_group_conversations: bool,
 }
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 pub(crate) struct PersonSummary {
@@ -344,6 +351,16 @@ pub(crate) struct Conversation {
     pub participants: Vec<Participant>,
     pub replies: Vec<ConversationReply>,
     pub closed: bool,
+    #[serde(default)]
+    pub access: ConversationAccess,
+}
+/// Missing permissions from an older response never enable discussion actions.
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ConversationAccess {
+    pub can_reply: bool,
+    pub can_leave: bool,
+    pub reason: Option<String>,
 }
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) struct ReplyProvenance {
@@ -361,6 +378,8 @@ pub(crate) struct ConversationLink {
     pub from: String,
     pub date: String,
     pub closed: bool,
+    #[serde(default)]
+    pub access: ConversationAccess,
 }
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
