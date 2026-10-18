@@ -1,7 +1,7 @@
 //! Application data-directory resolution.
 
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::{AppError, Result};
 
@@ -29,13 +29,21 @@ impl InstallPaths {
             .map(Ok)
             .unwrap_or_else(default_config_dir)?;
 
-        Ok(Self {
+        Ok(Self::from_roots(root, config_root))
+    }
+
+    pub(crate) fn for_profile(profile_root: &Path) -> Self {
+        Self::from_roots(profile_root.join("data"), profile_root.join("config"))
+    }
+
+    fn from_roots(root: PathBuf, config_root: PathBuf) -> Self {
+        Self {
             blobs: root.join("blobs"),
             keys: root.join("keys"),
             keymap_config: config_root.join("keymap.toml"),
             store: root.join("store"),
             root,
-        })
+        }
     }
 
     pub(crate) fn display_root(&self) -> String {
@@ -106,4 +114,20 @@ fn home_dir() -> Result<PathBuf> {
     env::var_os("HOME")
         .map(PathBuf::from)
         .ok_or_else(|| AppError::Config("could not determine home directory".to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn isolated_paths_are_all_beneath_the_profile_without_environment_fallbacks() {
+        let profile = env::temp_dir().join("carrel-profile-paths");
+        let paths = InstallPaths::for_profile(&profile);
+        assert_eq!(paths.root, profile.join("data"));
+        assert_eq!(paths.store, profile.join("data/store"));
+        assert_eq!(paths.blobs, profile.join("data/blobs"));
+        assert_eq!(paths.keys, profile.join("data/keys"));
+        assert_eq!(paths.keymap_config, profile.join("config/keymap.toml"));
+    }
 }

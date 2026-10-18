@@ -817,6 +817,19 @@ User configuration lives in two places:
 
 This split exists because keymaps and themes are *texts the user maintains*, like a `.vimrc`; everything else is *state the app maintains for the user*. Texts go in files; state goes in the database.
 
+An explicit `--isolated-profile /absolute/path` launch supports native recovery
+rehearsals. It uses only that profile's `data` and `config` directories and a
+stable, domain-separated webview store identity derived from its canonical path.
+Restore and operational-key replacement do not change that identity. macOS
+requires version 14 or later for a named persistent WebKit store; unsupported or
+unknown versions refuse isolated startup before creating a webview. Linux and
+Windows use a profile-local webview directory. Explicit builder setters are
+required because the pinned runtime's WindowConfig conversion omits these fields.
+The isolated launch omits the production single-instance plugin and app-link
+integration; operators run one instance per profile. The normal installed launch
+keeps its existing paths and integration. OS URL associations remain bundle-level,
+so this rehearsal does not establish installed app-link behavior.
+
 ### Testing
 
 We use three kinds of tests:

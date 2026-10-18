@@ -61,7 +61,12 @@ cargo clippy -p carrel-app-frontend --target wasm32-unknown-unknown \
   --no-default-features --features csr --locked -- -D warnings
 ```
 
-Use `CARREL_DATA_DIR` and `CARREL_CONFIG_DIR` to isolate a development profile.
+For a native recovery rehearsal, launch with `--isolated-profile /absolute/path`.
+It keeps archive/config state and persistent webview preferences separate; on
+macOS this requires version 14 or later. Run one instance per isolated profile.
+Carrel links and the production single-instance integration are disabled there.
+The usual `CARREL_DATA_DIR` and `CARREL_CONFIG_DIR` overrides select archive and
+keymap paths but do not isolate the webview's preferences or OS integration.
 Normal development/test profiles keep line tables for Carrel, omit dependency
 debug symbols and disable incremental caches. The optional `debugging` profile
 retains full dependency debugging when you need it.

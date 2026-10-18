@@ -41,6 +41,7 @@ Paths below are relative to `crates/`. Integration tests live in each crate's
 | Audience review / separate sends | Core `sharing/selection.rs`; store `sharing/send.rs`; app `commands/send.rs`; frontend `share_composer.rs` | Overlap property, atomic rollback, independent proofs, retry and restart |
 | Contextual introductions | App `commands/person_card.rs`; frontend `person_card.rs` | Participant/key pinning, forged/mismatched codes and no implicit follow |
 | Close / pending writes | App `close.rs`; frontend `drafts.rs`, `progress.rs`, `writes.rs`, `requests.rs` | Unit tests and bounded native/browser review |
+| Isolated native rehearsal | App `profile.rs`, `config.rs`, startup in `lib.rs` | Argument/path/version tests, stable webview identity and private-directory checks |
 | Keyboard / modal focus | Core `keymap/`; frontend `keymap/`, `components/modal.rs` | Keymap unit tests and actual webview review |
 
 Test key seeds and encrypted compatibility fixtures are deterministic test

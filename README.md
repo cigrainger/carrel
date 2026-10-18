@@ -113,9 +113,12 @@ The first build compiles native dependencies and can take a while.
 Close the development app before opening an installed copy: they use the same
 local archive by default. On macOS it lives in
 `~/Library/Application Support/Carrel`; on Linux, `~/.local/share/carrel`
-(or under XDG_DATA_HOME). `CARREL_DATA_DIR` selects an isolated archive for
-development. Keymap configuration uses the platform's configuration directory,
-or `CARREL_CONFIG_DIR`. See [data and recovery](site/src/data-and-recovery.md)
+(or under XDG_DATA_HOME). `CARREL_DATA_DIR` changes the archive path, and
+`CARREL_CONFIG_DIR` changes the keymap directory. These overrides still share
+webview preferences and instance handling. For an isolated rehearsal, use
+`--isolated-profile /absolute/private/directory` as described in the
+[development guide](site/src/development.md); macOS requires version 14 or newer.
+See [data and recovery](site/src/data-and-recovery.md)
 before moving an archive.
 
 ## Find your way around

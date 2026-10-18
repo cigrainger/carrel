@@ -11,6 +11,7 @@ mod commands;
 mod config;
 mod error;
 mod feed_runner;
+mod profile;
 mod state;
 mod sync;
 
@@ -28,13 +29,24 @@ const BLOB_URI_SCHEME: &str = "carrel-blob";
 pub fn run() -> Result<()> {
     init_tracing();
 
-    tauri::Builder::default()
-        .append_invoke_initialization_script(chrome::initialization_script())
+    let profile = profile::IsolatedProfile::resolve()?;
+    let mut context = tauri::generate_context!();
+    if profile.is_some() {
+        for window in &mut context.config_mut().app.windows {
+            window.create = false;
+        }
+    }
+    let mut builder = tauri::Builder::default()
+        .append_invoke_initialization_script(chrome::initialization_script());
+    if profile.is_none() {
         // Forward URL launches before a second process tries to lock Cozo.
-        .plugin(tauri_plugin_single_instance::init(|app, _, _| {
-            app_links::focus_main(app)
-        }))
-        .plugin(tauri_plugin_deep_link::init())
+        builder = builder
+            .plugin(tauri_plugin_single_instance::init(|app, _, _| {
+                app_links::focus_main(app)
+            }))
+            .plugin(tauri_plugin_deep_link::init());
+    }
+    builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(
             tauri_plugin_opener::Builder::new()
@@ -58,7 +70,10 @@ pub fn run() -> Result<()> {
             }
         })
         .setup(move |app| {
-            let paths = config::InstallPaths::resolve()?;
+            let paths = match &profile {
+                Some(profile) => profile.paths(),
+                None => config::InstallPaths::resolve()?,
+            };
             let restore_message = backup::activate_pending(&paths)?;
             let store = carrel_store::Store::open(&paths.store)?;
             let blobs = BlobStore::open(&paths.blobs);
@@ -70,7 +85,11 @@ pub fn run() -> Result<()> {
                     .set_idle(message, state::FeedStatusCounts::default());
             }
             app.manage(background_state.clone());
-            app_links::install(app.handle())?;
+            if let Some(profile) = &profile {
+                profile.create_main_window(app)?;
+            } else {
+                app_links::install(app.handle())?;
+            }
             background::spawn_feed_loop(background_state.clone());
             background::spawn_search_rebuild(background_state.clone());
             sync::spawn(background_state.clone());
@@ -159,7 +178,7 @@ pub fn run() -> Result<()> {
             sync::join_sync_invitation,
             sync::revoke_sync_device,
         ])
-        .build(tauri::generate_context!())?
+        .build(context)?
         .run(close::on_run_event);
     Ok(())
 }
