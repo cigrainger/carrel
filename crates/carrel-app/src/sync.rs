@@ -830,7 +830,9 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    // Native backup commands dispatch their KDF and filesystem work off the
+    // async runtime. Keep peer tasks running during this fixture's direct calls.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn recovered_master_uses_a_fresh_endpoint_and_reconnects_only_after_explicit_review() {
         use carrel_core::private_state::SubscriptionState;
         let dir = tempfile::tempdir().unwrap();

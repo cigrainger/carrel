@@ -56,7 +56,7 @@ impl SelfSyncWorker {
             tracing::debug!("private sync worker started");
             let mut events = pin!(events);
             let mut pending = VecDeque::new();
-            let mut keys = BTreeSet::new();
+            let mut keys = BTreeMap::new();
             // Scan retained headers once, including work interrupted before its
             // body arrived. Subsequent work is driven by insert events and retries.
             for prefix in ["fact/certificate/", "fact/revocation/", "fact/"] {
@@ -67,7 +67,7 @@ impl SelfSyncWorker {
                 {
                     let mut entries = pin!(entries);
                     while let Some(Ok(entry)) = poll_fn(|cx| entries.as_mut().poll_next(cx)).await {
-                        enqueue(&mut pending, &mut keys, entry);
+                        enqueue(&mut pending, &mut keys, entry, None);
                     }
                 }
             }
@@ -82,7 +82,7 @@ impl SelfSyncWorker {
                         Some(Ok(LiveEvent::InsertRemote {from, entry, ..})) => {
                             tracing::debug!(byte_size = entry.content_len(), "received private header");
                             online.insert(from);
-                            if entry.key().starts_with(b"fact/") { enqueue(&mut pending, &mut keys, entry); }
+                            if entry.key().starts_with(b"fact/") { enqueue(&mut pending, &mut keys, entry, Some(from)); }
                         },
                         Some(Ok(LiveEvent::NeighborUp(peer))) => { tracing::debug!("private peer connected"); online.insert(peer); },
                         Some(Ok(LiveEvent::NeighborDown(peer))) => { online.remove(&peer); },
@@ -112,10 +112,11 @@ impl SelfSyncWorker {
                         if let Ok(result) = background.publish(publish_after.take()).await { publish_after = result.after; }
                         let providers: Vec<_> = online.iter().map(|peer| addresses.get(peer).cloned().unwrap_or_else(|| EndpointAddr::new(*peer))).collect();
                         let mut changed = false;
-                        if let Some(provider) = providers.first() {
+                        if !providers.is_empty() {
                             for _ in 0..pending.len().min(100) {
                                 let entry = pending.pop_front().expect("bounded pending queue");
-                                match background.receive(&entry, provider.clone()).await {
+                                let announcer = keys.get(&(entry.author(), entry.key().to_vec())).copied().flatten();
+                                match receive_from_providers(&background, &entry, announcer, &providers).await {
                                     Ok(result) => { tracing::debug!(?result, "private header materialized"); changed |= result == PrivateReceive::Applied; keys.remove(&(entry.author(), entry.key().to_vec())); },
                                     Err(SyncError::Transport {..} | SyncError::BlobIntegrity | SyncError::Blob(_) | SyncError::DeviceUnauthorized) => pending.push_back(entry),
                                     Err(error) => { tracing::debug!(error_kind = ?std::mem::discriminant(&error), "private header rejected"); keys.remove(&(entry.author(), entry.key().to_vec())); },
@@ -158,10 +159,53 @@ impl Drop for SelfSyncWorker {
 
 fn enqueue(
     queue: &mut VecDeque<Entry>,
-    keys: &mut BTreeSet<(iroh_docs::AuthorId, Vec<u8>)>,
+    keys: &mut BTreeMap<(iroh_docs::AuthorId, Vec<u8>), Option<PublicKey>>,
     entry: Entry,
+    announcer: Option<PublicKey>,
 ) {
-    if keys.insert((entry.author(), entry.key().to_vec())) {
-        queue.push_back(entry);
+    match keys.entry((entry.author(), entry.key().to_vec())) {
+        std::collections::btree_map::Entry::Vacant(key) => {
+            key.insert(announcer);
+            queue.push_back(entry);
+        }
+        std::collections::btree_map::Entry::Occupied(mut key) => {
+            if announcer.is_some() {
+                key.insert(announcer);
+            }
+        }
     }
 }
+
+async fn receive_from_providers(
+    bridge: &SelfBridge,
+    entry: &Entry,
+    announcer: Option<PublicKey>,
+    providers: &[EndpointAddr],
+) -> Result<PrivateReceive> {
+    // A recovered desktop can publish while an older peer hint remains offline.
+    // A live announcer may also relay a header written by an offline desktop.
+    let mut candidates: Vec<_> = providers.iter().collect();
+    candidates.sort_by_key(|provider| {
+        (
+            Some(provider.id) != announcer,
+            provider.id.as_bytes() != entry.author().as_bytes(),
+        )
+    });
+    let mut failure = SyncError::DeviceUnauthorized;
+    for provider in candidates {
+        match bridge.receive(entry, provider.clone()).await {
+            Ok(result) => return Ok(result),
+            Err(
+                error @ (SyncError::Transport { .. }
+                | SyncError::BlobIntegrity
+                | SyncError::Blob(_)
+                | SyncError::DeviceUnauthorized),
+            ) => failure = error,
+            Err(error) => return Err(error),
+        }
+    }
+    Err(failure)
+}
+
+#[cfg(test)]
+mod tests;
