@@ -369,6 +369,24 @@ mod tests {
             parse_profile_argument(vec![PROFILE_FLAG.into(), root.clone().into_os_string()])
                 .unwrap()
                 .unwrap();
+        assert_eq!(parsed, root);
+        assert_ne!(
+            webview_id(&parsed),
+            webview_id(&PathBuf::from(root.to_string_lossy().into_owned()))
+        );
+
+        // Some Unix filesystems reject invalid UTF-8 names. Parsing and hashing
+        // must preserve the bytes; preparing a directory must honor the filesystem.
+        if let Err(error) = fs::create_dir(&root) {
+            let expected = format!("could not create isolated profile directory: {error}");
+            assert!(matches!(
+                IsolatedProfile::prepare(&parsed),
+                Err(AppError::Config(message)) if message == expected
+            ));
+            assert_eq!(fs::read_dir(parent.path()).unwrap().count(), 0);
+            return;
+        }
+        fs::remove_dir(&root).unwrap();
         let profile = IsolatedProfile::prepare(&parsed).unwrap();
         assert_eq!(profile.root, root.canonicalize().unwrap());
         assert_eq!(
